@@ -4,6 +4,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -100,6 +101,15 @@ class CheckPinsTests(unittest.TestCase):
     def errors(self):
         return check_pins.consistency(self.root)
 
+    def commit_fixture(self, message):
+        env = os.environ | {
+            "GIT_AUTHOR_NAME": "Test",
+            "GIT_AUTHOR_EMAIL": "test@example.invalid",
+            "GIT_COMMITTER_NAME": "Test",
+            "GIT_COMMITTER_EMAIL": "test@example.invalid",
+        }
+        subprocess.run(["git", "commit", "-qm", message], cwd=self.root, env=env, check=True)
+
     def test_consistency_passes(self):
         self.assertEqual([], self.errors())
 
@@ -145,10 +155,164 @@ class CheckPinsTests(unittest.TestCase):
                 "b" * 40 + "\trefs/tags/6.0.13",
                 "c" * 40 + "\trefs/tags/6.0.14-rc1",
                 "d" * 40 + "\trefs/tags/6.0.15beta",
+                "e" * 40 + "\trefs/tags/6.0.13^{}",
             )
         )
         self.assertEqual("6.0.13", check_pins.latest_stable_tag(tags))
         self.assertGreater(check_pins.parse_version("6.0.13"), check_pins.parse_version("6.0.9"))
+
+    def prepare_upstream_fixture(self, libftdi_branch=None):
+        names = (*check_pins.TAGGED_SUBMODULES, *check_pins.BRANCH_SUBMODULES)
+        self.pinned = {
+            name: chr(ord("a") + index) * 40
+            for index, name in enumerate(names)
+        }
+        lines = []
+        for name in names:
+            lines.extend(
+                (
+                    f'[submodule "vendor/{name}"]',
+                    f"\tpath = vendor/{name}",
+                    f"\turl = https://example.invalid/{name}.git",
+                    "\tshallow = true",
+                )
+            )
+            if name == "libftdi" and libftdi_branch is not None:
+                lines.append(f"\tbranch = {libftdi_branch}")
+        lines.append("")
+        (self.root / ".gitmodules").write_text("\n".join(lines), encoding="utf-8")
+        subprocess.run(["git", "add", ".gitmodules"], cwd=self.root, check=True)
+        for name, sha in self.pinned.items():
+            subprocess.run(
+                [
+                    "git",
+                    "update-index",
+                    "--add",
+                    "--cacheinfo",
+                    f"160000,{sha},vendor/{name}",
+                ],
+                cwd=self.root,
+                check=True,
+            )
+        self.commit_fixture("upstream fixture")
+        return {
+            name: f"{sha}\trefs/tags/v1.0.0\n"
+            for name, sha in self.pinned.items()
+            if name in check_pins.TAGGED_SUBMODULES
+        }
+
+    def upstream_report(self, tag_outputs, branch_output=None, branch_error=False):
+        real_run = check_pins.run
+        module_urls = {
+            f"https://example.invalid/{name}.git": name
+            for name in (*check_pins.TAGGED_SUBMODULES, *check_pins.BRANCH_SUBMODULES)
+        }
+        refs = []
+
+        def fake_run(*args, cwd=check_pins.ROOT):
+            if args[:3] == ("git", "ls-tree", "HEAD"):
+                return real_run(*args, cwd=cwd)
+            if args[:2] == ("git", "ls-remote"):
+                if args[2] == "--tags":
+                    return tag_outputs[module_urls[args[3]]]
+                refs.append(args[3])
+                if branch_error:
+                    raise subprocess.CalledProcessError(2, args)
+                return branch_output or ""
+            raise AssertionError(f"unexpected command: {args}")
+
+        def fake_fetch(url):
+            if url == check_pins.NODE_INDEX:
+                return '[{"version":"v24.22.1","lts":"Krypton"}]'
+            if url == check_pins.ACTIONLINT_RELEASE:
+                return '{"tag_name":"v1.7.12"}'
+            if url == check_pins.RUNNER_IMAGES_README:
+                return "## Available Images\n| `ubuntu-26.04` |\n"
+            raise AssertionError(f"unexpected URL: {url}")
+
+        with patch.object(check_pins, "run", side_effect=fake_run), patch.object(
+            check_pins, "fetch", side_effect=fake_fetch
+        ):
+            report = check_pins.upstream_report(self.root)
+        return check_pins.parse_report_rows(report), refs
+
+    def test_annotated_tag_resolves_gitlink_without_submodule_checkout(self):
+        tags = self.prepare_upstream_fixture()
+        pinned = self.pinned["openFPGALoader"]
+        tags["openFPGALoader"] = "\n".join(
+            (
+                "f" * 40 + "\trefs/tags/v1.0.0",
+                pinned + "\trefs/tags/v1.0.0^{}",
+                "e" * 40 + "\trefs/tags/v1.1.0",
+            )
+        )
+        rows, _ = self.upstream_report(tags, "a" * 40 + "\tHEAD\n")
+        self.assertEqual(
+            ("openFPGALoader", "v1.0.0", "v1.1.0", "更新あり"),
+            next(row for row in rows if row[0] == "openFPGALoader"),
+        )
+        self.assertFalse((self.root / "vendor/openFPGALoader").exists())
+
+    def test_lightweight_tag_resolves_gitlink(self):
+        tags = self.prepare_upstream_fixture()
+        rows, _ = self.upstream_report(tags, self.pinned["libftdi"] + "\tHEAD\n")
+        self.assertEqual(
+            ("libusb", "v1.0.0", "v1.0.0", "最新"),
+            next(row for row in rows if row[0] == "libusb"),
+        )
+
+    def test_gitlink_without_matching_tag_needs_review(self):
+        tags = self.prepare_upstream_fixture()
+        tags["openFPGALoader"] = "f" * 40 + "\trefs/tags/v1.0.0\n"
+        rows, _ = self.upstream_report(tags, self.pinned["libftdi"] + "\tHEAD\n")
+        self.assertEqual(
+            ("openFPGALoader", "取得できません", "取得できません", "要確認"),
+            next(row for row in rows if row[0] == "openFPGALoader"),
+        )
+
+    def test_non_gitlink_entry_needs_review(self):
+        tags = self.prepare_upstream_fixture()
+        subprocess.run(
+            ["git", "update-index", "--force-remove", "vendor/openFPGALoader"],
+            cwd=self.root,
+            check=True,
+        )
+        path = self.root / "vendor/openFPGALoader"
+        path.write_text("not a submodule\n", encoding="utf-8")
+        subprocess.run(["git", "add", "vendor/openFPGALoader"], cwd=self.root, check=True)
+        self.commit_fixture("replace gitlink")
+        rows, _ = self.upstream_report(tags, self.pinned["libftdi"] + "\tHEAD\n")
+        self.assertEqual(
+            ("openFPGALoader", "取得できません", "取得できません", "要確認"),
+            next(row for row in rows if row[0] == "openFPGALoader"),
+        )
+
+    def test_libftdi_branch_at_gitlink_is_latest(self):
+        tags = self.prepare_upstream_fixture()
+        rows, refs = self.upstream_report(tags, self.pinned["libftdi"] + "\tHEAD\n")
+        self.assertEqual(
+            ("libftdi (branch)", self.pinned["libftdi"][:12], self.pinned["libftdi"][:12], "最新"),
+            next(row for row in rows if row[0] == "libftdi (branch)"),
+        )
+        self.assertIn("HEAD", refs)
+
+    def test_libftdi_branch_update_is_reported(self):
+        tags = self.prepare_upstream_fixture(libftdi_branch="next")
+        latest = "f" * 40
+        rows, refs = self.upstream_report(tags, latest + "\trefs/heads/next\n")
+        self.assertEqual(
+            ("libftdi (branch)", self.pinned["libftdi"][:12], latest[:12], "更新あり"),
+            next(row for row in rows if row[0] == "libftdi (branch)"),
+        )
+        self.assertIn("refs/heads/next", refs)
+
+    def test_libftdi_branch_lookup_failure_needs_review(self):
+        tags = self.prepare_upstream_fixture()
+        rows, _ = self.upstream_report(tags, branch_error=True)
+        self.assertEqual(
+            ("libftdi (branch)", "取得できません", "取得できません", "要確認"),
+            next(row for row in rows if row[0] == "libftdi (branch)"),
+        )
 
     def test_node_active_lts_uses_first_lts_entry(self):
         self.assertEqual(

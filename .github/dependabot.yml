@@ -1,12 +1,12 @@
-# branch を追う依存と、パッケージ・アクションの更新を週次で確認します。
+# Dependabot が取得できる依存の更新を週次で確認します。
+# libftdi は developer.intra2net.com に Dependabot が接続できないため、固定版確認ワークフローで監視します。
 version: 2
 updates:
-  # branch を追う submodule だけを更新します。
+  # Dependabot が取得できる branch submodule を対象にします。
   - package-ecosystem: "gitsubmodule"
     directory: "/"
     allow:
       # dependency-name は .gitmodules の path と一致させます。
-      - dependency-name: "vendor/libftdi"
       - dependency-name: "vendor/yomiyasu"
     schedule:
       interval: "weekly"

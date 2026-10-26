@@ -1,11 +1,11 @@
 ---
 name: vendor-update
-description: 午後のFPGA Web Toolchain の依存（vendor/ と third_party/ の submodule、emsdk、GitHub Actions、npm、fixture 用の pip パッケージ）を追加・更新するときと、Dependabot の PR を確かめるときに使う。変更履歴をすべて読み、採否、ライセンス、ビルドの再現性、仮想 USB と E2E の回帰を更新前後で比べる。
+description: 午後のFPGA Web Toolchain の依存（vendor/ と third_party/ の submodule、emsdk、GitHub Actions、npm、fixture 用の pip パッケージ）を追加・更新するときや、Dependabot の PR、「固定版の更新確認」で見つかった更新を確かめるときに使う。変更履歴をすべて読み、採否、ライセンス、ビルドの再現性、仮想 USB と E2E の回帰を更新前後で比べる。
 ---
 
 # vendor-update（依存関係の更新）
 
-依存を追加・更新するときは、対象の変更履歴とライセンスを確認し、更新前後の結果を比べます。Dependabot が作成した PR も同じ手順で確認してから、人間がマージします。
+依存を追加・更新するときは、対象の変更履歴とライセンスを確認し、更新前後の結果を比べます。Dependabot が作成した PR と「固定版の更新確認」で見つかった更新も同じ手順で確認してから、人間がマージします。
 
 ## 対象と変更履歴の参照先
 
@@ -13,7 +13,7 @@ description: 午後のFPGA Web Toolchain の依存（vendor/ と third_party/ �
 |---|---|---|---|
 | openFPGALoader | `git -C vendor/openFPGALoader describe --tags` | release と `git log <old>..<new> -- src/gowin.cpp src/gowin.hpp src/main.cpp src/board.hpp src/part.hpp src/ftdi*.cpp src/spiFlash.cpp CMakeLists.txt` | RESEARCH.md の行番号の引用と「高度な設定」の適用条件を照らし合わせ直す。ずれたら直す |
 | libusb | `git -C vendor/libusb describe --tags` | `ChangeLog` と `libusb/os/emscripten_webusb.cpp`、`libusb/os/events_posix.c` の差分 | WebUSB バックエンドと、共有メモリーの要否が変わっていないかを確かめる |
-| libftdi | `git -C vendor/libftdi rev-parse HEAD`（master を固定） | `git://developer.intra2net.com/libftdi` の log と `ChangeLog` | http の取得元は shallow clone ができない。`git://` の URL を維持する |
+| libftdi | `git -C vendor/libftdi rev-parse HEAD`（gitlink） | `.gitmodules` の URL と branch（既定は upstream の `HEAD`）の log と `ChangeLog` | Dependabot は `developer.intra2net.com` に接続できないため、「固定版の更新確認」が branch 先端を監視する。`git://` の URL を維持する |
 | zlib | `git -C vendor/zlib describe --tags` | `ChangeLog` | タグのオブジェクトではなく、commit の SHA を記録する |
 | emsdk / Emscripten | `git -C vendor/emsdk describe --tags --exact-match` | Emscripten の `ChangeLog.md`（間にある版をすべて）。JSPI、例外、pthread、`settings.js` の廃止・既定値の変更 | タグは版の順（`--sort=-v:refname`）で比べる。廃止された設定は外す（例: `WASM_BIGINT`） |
 | yomiyasu | `git -C vendor/yomiyasu rev-parse HEAD` | https://github.com/nanaism/yomiyasu の commit と release | `.agents/skills/yomiyasu` のリンク先が残っていることを確かめる |
@@ -21,7 +21,7 @@ description: 午後のFPGA Web Toolchain の依存（vendor/ と third_party/ �
 | fixture 用 pip | `tests/fixtures/requirements.txt` | Apycula、yowasp-yosys、yowasp-nextpnr-himbaechel-gowin の release | nextpnr の wheel が指定する Apycula の版に合わせる。合わない版にすると 20K の `.fs` が作れない |
 | GitHub Actions | workflow の `uses:` にある commit SHA と `# vX.Y.Z` | 各 action の release。後続の major も確かめ、`runs.using` の Node.js がサポート対象か調べる | full commit SHA と `# vX.Y.Z` を併記する |
 
-タグで固定した submodule（openFPGALoader、libusb、zlib、emsdk）は Dependabot の対象外です。新しい版が出たことは、「固定版の更新確認」ワークフローが Issue で知らせます。
+タグで固定した submodule（openFPGALoader、libusb、zlib、emsdk）は Dependabot の対象外です。libftdi も取得元に接続できないため Dependabot の対象外とし、`.gitmodules` の URL と branch から求めた upstream 先端を「固定版の更新確認」ワークフローが監視します。更新は Issue で知らせます。
 
 ## 更新手順
 
