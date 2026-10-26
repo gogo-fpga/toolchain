@@ -1,0 +1,423 @@
+name: build
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "23 4 * * 1"
+  workflow_dispatch:
+    inputs:
+      cache:
+        description: Use the emsdk and fixture caches
+        required: false
+        type: boolean
+        default: true
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    name: Changes
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      build: ${{ steps.filter.outputs.build }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - id: filter
+        name: Check whether the build is needed
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          if [[ "$EVENT_NAME" != "pull_request" && "$EVENT_NAME" != "push" ]]; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ "$EVENT_NAME" == "pull_request" ]] &&
+             ! git cat-file -e "$HEAD_SHA^{commit}" 2>/dev/null; then
+            if ! git fetch --no-tags origin \
+              "refs/pull/${PR_NUMBER}/head:refs/remotes/pull/${PR_NUMBER}/head"; then
+              echo "build=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+
+          if [[ ! "$BASE_SHA" =~ ^0+$ ]] && git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null &&
+             git cat-file -e "$HEAD_SHA^{commit}" 2>/dev/null; then
+            if ! git diff --name-only -z "${BASE_SHA}...${HEAD_SHA}" > "$RUNNER_TEMP/changed-files"; then
+              echo "build=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          else
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          build=false
+          while IFS= read -r -d '' path; do
+            case "$path" in
+              .github/workflows/build.yml)
+                build=true
+                break
+                ;;
+              *.md|docs/*|.agents/*|.claude/*|.devin/*|vendor/yomiyasu|LICENSE|tests/check-*/*|.github/*)
+                ;;
+              *)
+                build=true
+                break
+                ;;
+            esac
+          done < "$RUNNER_TEMP/changed-files"
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+
+      - name: Summarize step timings
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_DISPLAY_NAME: Changes
+        run: |
+          step_lines="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}/jobs" --paginate --jq '
+            .jobs[] | select(.name == env.JOB_DISPLAY_NAME) | .steps[] |
+            select(.completed_at != null) |
+            [.number, .name, (if .started_at == null then "unknown" else ((.completed_at | fromdateiso8601) - (.started_at | fromdateiso8601)) end), .conclusion] |
+            @tsv
+          ' 2>/dev/null)" || step_lines=""
+          if [[ -n "$step_lines" ]]; then
+            {
+              printf '| # | Step | Seconds | Conclusion |\n|---:|---|---:|---|\n'
+              printf '%s\n' "$step_lines" | awk -F '\t' '{ printf "| %s | %s | %s | %s |\n", $1, $2, $3, $4 }'
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Step timings unavailable (unknown)." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  build:
+    name: Build
+    needs: changes
+    if: needs.changes.outputs.build == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
+          persist-credentials: false
+
+      - name: Autotools をインストール
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y autoconf automake libtool
+          autoconf --version | head -n 1
+          automake --version | head -n 1
+          libtoolize --version | head -n 1
+
+      - name: Node.js を設定
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: npm 依存を取得
+        run: npm ci
+
+      - id: emsdk-key
+        name: emsdk cache key を作成
+        run: echo "revision=$(git rev-parse HEAD:vendor/emsdk)" >> "$GITHUB_OUTPUT"
+
+      - id: emsdk-cache-restore
+        name: emsdk をキャッシュから復元
+        if: github.event_name != 'schedule' && (github.event_name != 'workflow_dispatch' || inputs.cache)
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/emsdk-*
+          key: emsdk-ubuntu-26.04-${{ steps.emsdk-key.outputs.revision }}-${{ hashFiles('scripts/build-wasm.sh') }}
+
+      - name: emsdk のタグを取得
+        run: git -C vendor/emsdk fetch --depth=1 --tags origin
+
+      - id: wasm-build
+        name: WASM をビルド
+        run: scripts/build-wasm.sh
+
+      - name: emsdk cache を保存
+        if: steps.emsdk-cache-restore.outputs.cache-hit != 'true' && steps.wasm-build.outcome == 'success' && github.event_name != 'schedule' && (github.event_name != 'workflow_dispatch' || inputs.cache)
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/emsdk-*
+          key: emsdk-ubuntu-26.04-${{ steps.emsdk-key.outputs.revision }}-${{ hashFiles('scripts/build-wasm.sh') }}
+
+      - name: Web アプリを組み立て
+        run: scripts/build-web.sh
+
+      - name: 成果物の SHA-256 を記録
+        run: sha256sum build/jspi-pthread/*.wasm build/jspi-pthread/*.mjs | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - id: fixture-key
+        name: fixture cache key を作成
+        run: echo "python-version=$(python3 --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+
+      - id: fixture-cache-restore
+        name: fixture をキャッシュから復元
+        if: github.event_name != 'schedule' && (github.event_name != 'workflow_dispatch' || inputs.cache)
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/fixtures/*.fs
+          key: fixtures-${{ steps.fixture-key.outputs.python-version }}-${{ hashFiles('tests/fixtures/**') }}
+
+      - name: テスト用ビットストリームを生成
+        id: fixture-build
+        if: steps.fixture-cache-restore.outputs.cache-hit != 'true'
+        run: tests/fixtures/build-fs.sh
+
+      - name: fixture cache を保存
+        if: steps.fixture-cache-restore.outputs.cache-hit != 'true' && steps.fixture-build.outcome == 'success' && github.event_name != 'schedule' && (github.event_name != 'workflow_dispatch' || inputs.cache)
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/fixtures/*.fs
+          key: fixtures-${{ steps.fixture-key.outputs.python-version }}-${{ hashFiles('tests/fixtures/**') }}
+
+      - name: fixture の SHA-256 を記録
+        run: sha256sum build/fixtures/*.fs | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Web 単体テスト
+        run: node --test tests/web/*.test.mjs
+
+      - name: CI ビルド成果物を保存
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ci-build-${{ github.run_id }}
+          path: |
+            build/jspi-pthread/
+            build/fixtures/*.fs
+          retention-days: 1
+
+      - name: Web 成果物を保存
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: toolchain-web-${{ github.sha }}
+          path: dist/
+          retention-days: 30
+
+      - name: Summarize step timings
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_DISPLAY_NAME: Build
+        run: |
+          step_lines="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}/jobs" --paginate --jq '
+            .jobs[] | select(.name == env.JOB_DISPLAY_NAME) | .steps[] |
+            select(.completed_at != null) |
+            [.number, .name, (if .started_at == null then "unknown" else ((.completed_at | fromdateiso8601) - (.started_at | fromdateiso8601)) end), .conclusion] |
+            @tsv
+          ' 2>/dev/null)" || step_lines=""
+          if [[ -n "$step_lines" ]]; then
+            {
+              printf '| # | Step | Seconds | Conclusion |\n|---:|---|---:|---|\n'
+              printf '%s\n' "$step_lines" | awk -F '\t' '{ printf "| %s | %s | %s | %s |\n", $1, $2, $3, $4 }'
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Step timings unavailable (unknown)." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  sim:
+    name: Simulation shard ${{ matrix.shard }}
+    needs: build
+    if: needs.build.result == 'success'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: false
+          persist-credentials: false
+
+      - name: Node.js を設定
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: CI ビルド成果物を取得
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ci-build-${{ github.run_id }}
+          path: build
+
+      - name: 仮想 USB シミュレーション
+        env:
+          SIM_SHARD: ${{ matrix.shard }}/3
+          WASM_BUILD_ROOT: build
+        run: node --test --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=tap --test-reporter-destination=sim-shard.tap tests/sim/*.test.mjs
+
+      - name: シミュレーション結果を保存
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sim-shard-${{ matrix.shard }}
+          path: sim-shard.tap
+          if-no-files-found: ignore
+          retention-days: 1
+
+      - name: Summarize step timings
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_DISPLAY_NAME: Simulation shard ${{ matrix.shard }}
+        run: |
+          step_lines="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}/jobs" --paginate --jq '
+            .jobs[] | select(.name == env.JOB_DISPLAY_NAME) | .steps[] |
+            select(.completed_at != null) |
+            [.number, .name, (if .started_at == null then "unknown" else ((.completed_at | fromdateiso8601) - (.started_at | fromdateiso8601)) end), .conclusion] |
+            @tsv
+          ' 2>/dev/null)" || step_lines=""
+          if [[ -n "$step_lines" ]]; then
+            {
+              printf '| # | Step | Seconds | Conclusion |\n|---:|---|---:|---|\n'
+              printf '%s\n' "$step_lines" | awk -F '\t' '{ printf "| %s | %s | %s | %s |\n", $1, $2, $3, $4 }'
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Step timings unavailable (unknown)." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  sim-coverage:
+    name: Simulation shard coverage
+    needs: [build, sim]
+    if: always() && needs.build.result == 'success'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: シミュレーション結果を取得
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: sim-shard-*
+          path: sim-results
+
+      - name: shard の網羅性を検査
+        run: python3 .github/scripts/check-sim-shards.py --reports-dir sim-results
+
+      - name: Summarize step timings
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_DISPLAY_NAME: Simulation shard coverage
+        run: |
+          step_lines="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}/jobs" --paginate --jq '
+            .jobs[] | select(.name == env.JOB_DISPLAY_NAME) | .steps[] |
+            select(.completed_at != null) |
+            [.number, .name, (if .started_at == null then "unknown" else ((.completed_at | fromdateiso8601) - (.started_at | fromdateiso8601)) end), .conclusion] |
+            @tsv
+          ' 2>/dev/null)" || step_lines=""
+          if [[ -n "$step_lines" ]]; then
+            {
+              printf '| # | Step | Seconds | Conclusion |\n|---:|---|---:|---|\n'
+              printf '%s\n' "$step_lines" | awk -F '\t' '{ printf "| %s | %s | %s | %s |\n", $1, $2, $3, $4 }'
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Step timings unavailable (unknown)." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  e2e:
+    name: Playwright E2E
+    needs: build
+    if: needs.build.result == 'success'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Node.js を設定
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+
+      - name: npm 依存を取得
+        run: npm ci
+
+      - name: Chromium をインストール
+        run: npx playwright install --with-deps chromium
+
+      - name: CI ビルド成果物を取得
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ci-build-${{ github.run_id }}
+          path: build
+
+      - name: Playwright E2E
+        env:
+          BUILD_ROOT: build
+          BUILD_INFO_CHECK: artifacts
+        run: npx playwright test
+
+      - name: E2E 失敗資料を保存
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: toolchain-web-test-failures-${{ github.sha }}
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Summarize step timings
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_DISPLAY_NAME: Playwright E2E
+        run: |
+          step_lines="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}/jobs" --paginate --jq '
+            .jobs[] | select(.name == env.JOB_DISPLAY_NAME) | .steps[] |
+            select(.completed_at != null) |
+            [.number, .name, (if .started_at == null then "unknown" else ((.completed_at | fromdateiso8601) - (.started_at | fromdateiso8601)) end), .conclusion] |
+            @tsv
+          ' 2>/dev/null)" || step_lines=""
+          if [[ -n "$step_lines" ]]; then
+            {
+              printf '| # | Step | Seconds | Conclusion |\n|---:|---|---:|---|\n'
+              printf '%s\n' "$step_lines" | awk -F '\t' '{ printf "| %s | %s | %s | %s |\n", $1, $2, $3, $4 }'
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Step timings unavailable (unknown)." >> "$GITHUB_STEP_SUMMARY"
+          fi

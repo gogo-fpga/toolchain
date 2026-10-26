@@ -1,0 +1,24 @@
+[submodule "vendor/openFPGALoader"]
+	path = vendor/openFPGALoader
+	url = https://github.com/trabucayre/openFPGALoader.git
+	shallow = true
+[submodule "vendor/libusb"]
+	path = vendor/libusb
+	url = https://github.com/libusb/libusb.git
+	shallow = true
+[submodule "vendor/libftdi"]
+	path = vendor/libftdi
+	url = git://developer.intra2net.com/libftdi
+	shallow = true
+[submodule "vendor/zlib"]
+	path = vendor/zlib
+	url = https://github.com/madler/zlib.git
+	shallow = true
+[submodule "vendor/emsdk"]
+	path = vendor/emsdk
+	url = https://github.com/emscripten-core/emsdk.git
+	shallow = true
+[submodule "vendor/yomiyasu"]
+	path = vendor/yomiyasu
+	url = https://github.com/nanaism/yomiyasu.git
+	shallow = true

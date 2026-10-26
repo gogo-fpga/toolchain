@@ -1,0 +1,42 @@
+---
+name: vendor-update
+description: 午後のFPGA Web Toolchain の依存（vendor/ と third_party/ の submodule、emsdk、GitHub Actions、npm、fixture 用の pip パッケージ）を追加・更新するときと、Dependabot の PR を確かめるときに使う。変更履歴をすべて読み、採否、ライセンス、ビルドの再現性、仮想 USB と E2E の回帰を更新前後で比べる。
+---
+
+# vendor-update（依存関係の更新）
+
+依存を追加・更新するときは、対象の変更履歴とライセンスを確認し、更新前後の結果を比べます。Dependabot が作成した PR も同じ手順で確認してから、人間がマージします。
+
+## 対象と変更履歴の参照先
+
+| 依存 | 現在値の確認方法 | 変更履歴の参照先 | 注意 |
+|---|---|---|---|
+| openFPGALoader | `git -C vendor/openFPGALoader describe --tags` | release と `git log <old>..<new> -- src/gowin.cpp src/gowin.hpp src/main.cpp src/board.hpp src/part.hpp src/ftdi*.cpp src/spiFlash.cpp CMakeLists.txt` | RESEARCH.md の行番号の引用と「高度な設定」の適用条件を照らし合わせ直す。ずれたら直す |
+| libusb | `git -C vendor/libusb describe --tags` | `ChangeLog` と `libusb/os/emscripten_webusb.cpp`、`libusb/os/events_posix.c` の差分 | WebUSB バックエンドと、共有メモリーの要否が変わっていないかを確かめる |
+| libftdi | `git -C vendor/libftdi rev-parse HEAD`（master を固定） | `git://developer.intra2net.com/libftdi` の log と `ChangeLog` | http の取得元は shallow clone ができない。`git://` の URL を維持する |
+| zlib | `git -C vendor/zlib describe --tags` | `ChangeLog` | タグのオブジェクトではなく、commit の SHA を記録する |
+| emsdk / Emscripten | `git -C vendor/emsdk describe --tags --exact-match` | Emscripten の `ChangeLog.md`（間にある版をすべて）。JSPI、例外、pthread、`settings.js` の廃止・既定値の変更 | タグは版の順（`--sort=-v:refname`）で比べる。廃止された設定は外す（例: `WASM_BIGINT`） |
+| yomiyasu | `git -C vendor/yomiyasu rev-parse HEAD` | https://github.com/nanaism/yomiyasu の commit と release | `.agents/skills/yomiyasu` のリンク先が残っていることを確かめる |
+| npm（`@playwright/test`） | `package.json` と `package-lock.json` | Playwright の release notes | Chromium の版が変わる。JSPI と WebUSB の動作を E2E で確かめる |
+| fixture 用 pip | `tests/fixtures/requirements.txt` | Apycula、yowasp-yosys、yowasp-nextpnr-himbaechel-gowin の release | nextpnr の wheel が指定する Apycula の版に合わせる。合わない版にすると 20K の `.fs` が作れない |
+| GitHub Actions | workflow の `uses:` にある commit SHA と `# vX.Y.Z` | 各 action の release。後続の major も確かめ、`runs.using` の Node.js がサポート対象か調べる | full commit SHA と `# vX.Y.Z` を併記する |
+
+タグで固定した submodule（openFPGALoader、libusb、zlib、emsdk）は Dependabot の対象外です。新しい版が出たことは、「固定版の更新確認」ワークフローが Issue で知らせます。
+
+## 更新手順
+
+1. 作業ブランチで、更新前の基準を記録します。`build-info.json` の WASM・`.mjs` の SHA-256 と大きさ（gzip 後も）、単体・仮想 USB・Playwright の件数と結果、仮想 USB での書き込み時間を残します。
+2. 更新する版の間にある変更履歴をすべて読みます。履歴が shallow clone に含まれない場合は必要な範囲を fetch するか、upstream の compare や release のページで補います。`.gitmodules` の `shallow = true` は維持します。
+3. 変更点を次の四つに分けて記録します。新機能は安定性、セキュリティ、速度の順に採否と理由を判断します。
+   - 破壊的な変更と、こちらで必要な対応
+   - セキュリティ修正と対象範囲
+   - 使える新機能と採否の理由（Emscripten の新しいオプションは「experiment-record」で比べる）
+   - ライセンスまたはライセンス条件の変更
+4. 更新します。submodule は `git -C vendor/<name> fetch --depth 1 origin <tag-or-commit>` の後に `git -C vendor/<name> checkout FETCH_HEAD` を使います。vendor のファイルは編集しません。
+5. 更新後に回帰テストを行い、更新前の基準と比べます。
+   - `scripts/build-wasm.sh` と `scripts/build-web.sh`。別の `BUILD_ROOT` で 2 回ビルドし、成果物の SHA-256 が一致すること
+   - `node --test tests/web/*.test.mjs`
+   - `WASM_BUILD_ROOT=build node --test --test-concurrency=1 tests/sim/*.test.mjs`（負の対照を含む）
+   - `npx playwright test`
+   - WASM の大きさと、仮想 USB での書き込み時間
+6. `RESEARCH.md` の依存関係の表を更新します。PR 本文に、依存ごとの旧版 → 新版、変更履歴のリンク、四分類の記録、回帰テストの比較結果を書きます。実機では試していないことも書きます。
