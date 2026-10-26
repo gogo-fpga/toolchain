@@ -24,9 +24,10 @@ RUNS_ON = re.compile(r"^\s*runs-on:\s*['\"]?([A-Za-z0-9._-]+)", re.MULTILINE)
 NODE_VERSION = re.compile(r"^\s*node-version:\s*['\"]?([^'\"#\s]+)", re.MULTILINE)
 ACTIONLINT_ENV = re.compile(r"^\s*ACTIONLINT_(VERSION|SHA256):\s*['\"]?([^'\"#\s]+)", re.MULTILINE)
 GITMODULE_SECTION = re.compile(r"^\s*\[submodule\s+['\"]([^'\"]+)['\"]\]\s*$")
-GITMODULE_KEY = re.compile(r"^\s*(path|url|shallow)\s*=\s*(.*?)\s*$")
+GITMODULE_KEY = re.compile(r"^\s*(path|url|shallow|branch)\s*=\s*(.*?)\s*$")
 
 TAGGED_SUBMODULES = ("openFPGALoader", "libusb", "zlib", "emsdk")
+BRANCH_SUBMODULES = ("libftdi",)
 NODE_INDEX = "https://nodejs.org/dist/index.json"
 ACTIONLINT_RELEASE = "https://api.github.com/repos/rhysd/actionlint/releases/latest"
 RUNNER_IMAGES_README = "https://raw.githubusercontent.com/actions/runner-images/main/README.md"
@@ -92,19 +93,73 @@ def parse_version(value: str) -> tuple[int, ...] | None:
     return tuple(int(part) for part in match.group(1).split("."))
 
 
-def latest_stable_tag(output: str) -> str | None:
-    stable: list[tuple[tuple[int, ...], str]] = []
+def is_stable_tag(tag: str) -> bool:
+    return not re.search(r"(?i)(?:rc|alpha|beta|pre)", tag)
+
+
+def remote_tag_targets(output: str) -> dict[str, str]:
+    targets: dict[str, str] = {}
+    peeled: dict[str, str] = {}
     for line in output.splitlines():
         fields = line.split()
-        if len(fields) < 2:
+        if len(fields) != 2 or not FULL_SHA.fullmatch(fields[0]):
             continue
-        tag = fields[-1].removeprefix("refs/tags/")
-        if re.search(r"(?i)(?:rc|alpha|beta|pre)", tag):
+        ref = fields[1]
+        if not ref.startswith("refs/tags/"):
+            continue
+        tag = ref.removeprefix("refs/tags/")
+        if tag.endswith("^{}"):
+            peeled[tag[:-3]] = fields[0].lower()
+        else:
+            targets[tag] = fields[0].lower()
+    for tag, commit in peeled.items():
+        if tag in targets:
+            targets[tag] = commit
+    return targets
+
+
+def latest_stable_tag(output: str) -> str | None:
+    stable: list[tuple[tuple[int, ...], str]] = []
+    for tag in remote_tag_targets(output):
+        if not is_stable_tag(tag):
             continue
         version = parse_version(tag)
         if version is not None:
             stable.append((version, tag))
     return max(stable, default=((), None), key=lambda entry: entry[0])[1]
+
+
+def fixed_stable_tag(commit: str, output: str) -> str | None:
+    matches = [
+        (version, tag)
+        for tag, target in remote_tag_targets(output).items()
+        if target == commit.lower()
+        and is_stable_tag(tag)
+        and (version := parse_version(tag)) is not None
+    ]
+    return max(matches, default=((), None), key=lambda entry: entry[0])[1]
+
+
+def gitlink_sha(name: str, root: Path) -> str:
+    path = f"vendor/{name}"
+    tree_line = run("git", "ls-tree", "HEAD", path, cwd=root).strip()
+    if not tree_line:
+        raise RuntimeError(f"{path}: HEAD に gitlink がありません")
+    metadata, separator, _ = tree_line.partition("\t")
+    fields = metadata.split()
+    if not separator or len(fields) != 3 or fields[0] != "160000" or fields[1] != "commit":
+        raise RuntimeError(f"{path}: HEAD の entry が gitlink ではありません")
+    if not FULL_SHA.fullmatch(fields[2]):
+        raise RuntimeError(f"{path}: gitlink SHA が不正です")
+    return fields[2].lower()
+
+
+def remote_ref_sha(output: str, ref: str) -> str:
+    for line in output.splitlines():
+        fields = line.split()
+        if len(fields) == 2 and fields[1] == ref and FULL_SHA.fullmatch(fields[0]):
+            return fields[0].lower()
+    raise RuntimeError(f"upstream ref がありません: {ref}")
 
 
 def parse_node_lts(index_text: str) -> tuple[str, str] | None:
@@ -309,15 +364,35 @@ def upstream_report(root: Path = ROOT) -> str:
             add_row(name, "未設定", "取得できません", "要確認")
             continue
         try:
-            fixed = run("git", "-C", f"vendor/{name}", "describe", "--tags", "--exact-match", cwd=root).strip()
-            remote = run("git", "ls-remote", "--tags", "--refs", module["url"], cwd=root)
+            pinned = gitlink_sha(name, root)
+            remote = run("git", "ls-remote", "--tags", module["url"], cwd=root)
+            fixed = fixed_stable_tag(pinned, remote)
             latest = latest_stable_tag(remote)
+            if not fixed:
+                raise RuntimeError("gitlink に一致する安定版タグがありません")
             if not latest:
                 raise RuntimeError("安定版タグがありません")
             add_row(name, fixed, latest, compare_status(fixed, latest))
         except (KeyError, OSError, RuntimeError, subprocess.CalledProcessError) as error:
             print(f"{name}: upstream を取得できません: {error}", file=sys.stderr)
             add_row(name, "取得できません", "取得できません", "要確認")
+
+    for name in BRANCH_SUBMODULES:
+        module = modules.get(name)
+        if module is None:
+            add_row(f"{name} (branch)", "未設定", "取得できません", "要確認")
+            continue
+        try:
+            pinned = gitlink_sha(name, root)
+            branch = module.get("branch", "").strip() or "HEAD"
+            ref = "HEAD" if branch == "HEAD" else f"refs/heads/{branch}"
+            remote = run("git", "ls-remote", module["url"], ref, cwd=root)
+            latest = remote_ref_sha(remote, ref)
+            status = "最新" if pinned == latest else "更新あり"
+            add_row(f"{name} (branch)", pinned[:12], latest[:12], status)
+        except (KeyError, OSError, RuntimeError, subprocess.CalledProcessError) as error:
+            print(f"{name}: upstream を取得できません: {error}", file=sys.stderr)
+            add_row(f"{name} (branch)", "取得できません", "取得できません", "要確認")
 
     try:
         node = parse_node_lts(fetch(NODE_INDEX))

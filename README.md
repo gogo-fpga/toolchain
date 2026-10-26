@@ -26,8 +26,10 @@ Web ブラウザーだけで VHDL と Verilog の編集、論理合成、配置�
 ## ビルドとテスト
 
 ```sh
-git clone --recurse-submodules --shallow-submodules https://github.com/gogo-fpga/toolchain.git
+git clone https://github.com/gogo-fpga/toolchain.git
 cd toolchain
+git submodule update --init --depth 1
+git -C vendor/emsdk fetch --depth=1 --tags origin  # build-wasm.sh に必要な emsdk のタグを取得。CI の build.yml と同じ
 npm ci
 scripts/build-wasm.sh
 scripts/build-web.sh

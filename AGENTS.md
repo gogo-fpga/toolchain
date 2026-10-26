@@ -46,7 +46,7 @@
 
 ## 6. 依存関係の管理
 
-`.github/dependabot.yml` で、branch を追う submodule（libftdi、yomiyasu）、GitHub Actions、npm、pip を週次で監視しています。タグで固定した submodule（openFPGALoader、libusb、zlib、emsdk）、Node.js、actionlint、runner は「固定版の更新確認」ワークフローが週次で調べ、Issue で知らせます。依存を追加する場合は、同じ変更で監視対象にも加えてください。
+`.github/dependabot.yml` では、branch を追う submodule（yomiyasu）、GitHub Actions、npm、pip を週次で更新対象にします。`libftdi` は Dependabot から取得元 `developer.intra2net.com` に接続できません。そのため、「固定版の更新確認」ワークフローが `vendor/libftdi` の branch 先端を調べ、差があれば Issue で知らせます。タグで固定した submodule（openFPGALoader、libusb、zlib、emsdk）、Node.js、actionlint、runner も同じワークフローの対象です。依存を追加する際は、同じ変更で監視対象にも加えてください。
 
 Dependabot の PR を含むすべての更新で「vendor-update」スキルの変更履歴の確認と回帰テストを行います。マージは人間が行います。
 
@@ -87,6 +87,7 @@ Dependabot の PR を含むすべての更新で「vendor-update」スキルの�
 
 ```sh
 git submodule update --init --depth 1    # submodule の取得
+git -C vendor/emsdk fetch --depth=1 --tags origin  # build-wasm.sh に必要な emsdk のタグを取得。CI の build.yml と同じ
 npm ci                                   # Playwright などの取得
 npx playwright install --with-deps chromium
 scripts/build-wasm.sh                    # openFPGALoader を WASM にする（build/jspi-pthread/）
@@ -94,7 +95,7 @@ scripts/build-web.sh                     # 画面と WASM を dist/ にまとめ
 tests/fixtures/build-fs.sh               # 4 ボード用の .fs を作る（build/fixtures/）
 node --test tests/web/*.test.mjs         # 画面の部品の単体テスト
 WASM_BUILD_ROOT=build node --test --test-concurrency=1 tests/sim/*.test.mjs  # 仮想 USB での検出・書き込み
-npx playwright test                      # 画面の E2E（dist/ を作り直してから動く）
+npx playwright test                      # 画面の E2E（既定は 8000。使用中なら PLAYWRIGHT_PORT=8123 を指定）
 python3 dist/serve.py --port 8000        # COOP/COEP 付きでローカル配信
 shellcheck scripts/*.sh tests/fixtures/*.sh tests/check-*/run.sh
 python3 .github/scripts/check-jisx0213.py

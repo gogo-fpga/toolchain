@@ -1,5 +1,11 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const playwrightPort = Number(process.env.PLAYWRIGHT_PORT ?? "8000");
+if (!Number.isInteger(playwrightPort) || playwrightPort < 1 || playwrightPort > 65535) {
+  throw new Error("PLAYWRIGHT_PORT must be an integer between 1 and 65535.");
+}
+const baseURL = `http://127.0.0.1:${playwrightPort}`;
+
 export default defineConfig({
   testDir: "./tests/e2e",
   timeout: 150_000,
@@ -11,14 +17,14 @@ export default defineConfig({
   reporter: "list",
   use: {
     ...devices["Desktop Chrome"],
-    baseURL: "http://127.0.0.1:8000",
+    baseURL,
     browserName: "chromium",
     headless: true,
     trace: "retain-on-failure",
   },
   webServer: {
-    command: "scripts/build-web.sh && python3 dist/serve.py --port 8000",
-    url: "http://127.0.0.1:8000",
+    command: `scripts/build-web.sh && python3 dist/serve.py --port ${playwrightPort}`,
+    url: baseURL,
     reuseExistingServer: false,
     stdout: "pipe",
     timeout: 30_000,
