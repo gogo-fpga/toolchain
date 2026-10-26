@@ -1,1 +1,3 @@
 # kind	path	chars	reason
+file	.github/jisx0213-allowlist.tsv	*	検査器の許可文字を含む設定
+quote	.agents/skills/jisx0213-text/SKILL.md	µ≥≤🥈✅⚠️这说载动	置き換え例として示す文字
