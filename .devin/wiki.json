@@ -52,7 +52,7 @@
       "purpose": "T0 の書き込み画面の流れと、将来追加する IDE 画面の設計を区別して説明する",
       "parent": "概要とプロジェクトの目的",
       "page_notes": [
-        { "content": "現在の書き込み部は web/index.html、web/app.js、web/worker.js、web/lib/、web/serve.py を根拠にしてください。IDE の画面設計は RESEARCH.md を参照してください。" }
+        { "content": "現在の書き込み部は web/index.html、web/app.js、web/worker.js、web/lib/、web/serve.py を根拠にしてください。IDE の画面設計は docs/research/editor-and-ai.md を参照してください。" }
       ]
     },
     {
@@ -73,10 +73,10 @@
     },
     {
       "title": "調査記録の読み方",
-      "purpose": "RESEARCH.md と docs/experiments/ の構成、実験記録の方法、未確認事項を説明する",
+      "purpose": "RESEARCH.md、docs/research/、docs/experiments/ の構成、実験記録の方法、未確認事項を説明する",
       "parent": "概要とプロジェクトの目的",
       "page_notes": [
-        { "content": "RESEARCH.md、docs/experiments/README.md、.agents/skills/experiment-record/ を根拠にしてください。実施していない実験を結果として記載しないでください。" }
+        { "content": "RESEARCH.md の 7 章の一覧と docs/research/、docs/experiments/README.md、.agents/skills/experiment-record/ を根拠にしてください。実施していない実験を結果として記載しないでください。" }
       ]
     },
     {

@@ -77,7 +77,8 @@ Dependabot の PR を含むすべての更新で「vendor-update」スキルの�
 ## 9. 作業の進め方
 
 - 自明でない作業は、調査して深い計画を立ててから着手します。計画はリポジトリにコミットせず、チャットで共有します。
-- 調査の結果は `RESEARCH.md` に、実験・測定・比較は「experiment-record」スキルに従って `docs/experiments/` に残します。結果を PR 本文だけに書きません。
+- 調査の結果は `RESEARCH.md` にまとめ、大きな主題は `docs/research/<topic>.md` に分けて置き、`RESEARCH.md` の 7 章からリンクします。実験・測定・比較は「experiment-record」スキルに従って `docs/experiments/` に残します。結果を PR 本文だけに書きません。
+- `RESEARCH.md` が 40 KB を超えそうなときは、主題ごとに `docs/research/` へ分け、`RESEARCH.md` の 7 章の表に加えます。
 - 文書の根拠に、VM や個人環境のパスを書きません。リポジトリ内のファイル、upstream のファイルと行番号、CI の成果物、公開 URL を示します。
 - 画面を変えたら、4 ボードのスクリーンショットを撮って目で確かめ、PR 本文に確かめた範囲を書きます。
 - 変更は小さく、主題ごとにまとめます。
