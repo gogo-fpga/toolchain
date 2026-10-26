@@ -1,0 +1,13 @@
+{
+  "name": "toolchain",
+  "license": "BSD-3-Clause",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:web": "node --test tests/web/*.test.mjs",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1"
+  }
+}

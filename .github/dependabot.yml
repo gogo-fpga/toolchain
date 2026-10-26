@@ -1,0 +1,49 @@
+# branch を追う依存と、パッケージ・アクションの更新を週次で確認します。
+version: 2
+updates:
+  # branch を追う submodule だけを更新します。
+  - package-ecosystem: "gitsubmodule"
+    directory: "/"
+    allow:
+      # dependency-name は .gitmodules の path と一致させます。
+      - dependency-name: "vendor/libftdi"
+      - dependency-name: "vendor/yomiyasu"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+
+  # タグで固定した submodule は Dependabot が branch HEAD に進めないよう対象外です。
+  # openFPGALoader、libusb、zlib、emsdk は固定版確認ワークフローで監視します。
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: "pip"
+    directory: "/.github"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: "pip"
+    directory: "/tests/fixtures"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5

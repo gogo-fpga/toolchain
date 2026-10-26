@@ -1,0 +1,447 @@
+#!/usr/bin/env python3
+"""Check repository pin consistency and report upstream pin updates."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+from typing import Iterable
+
+
+ROOT = Path(__file__).resolve().parents[2]
+ACTION_PIN = re.compile(r"^[ \t]*(?:-[ \t]*)?uses:[ \t]*(\S+)(?:[ \t]+#[ \t]*(.*))?$", re.MULTILINE)
+FULL_SHA = re.compile(r"^[0-9a-fA-F]{40}$")
+VERSION_COMMENT = re.compile(r"^v[0-9][A-Za-z0-9.+-]*$")
+VERSION_RE = re.compile(r"(?<![A-Za-z0-9])v?(\d+(?:\.\d+)*)(?:[-+][A-Za-z0-9.-]+)?")
+RUNS_ON = re.compile(r"^\s*runs-on:\s*['\"]?([A-Za-z0-9._-]+)", re.MULTILINE)
+NODE_VERSION = re.compile(r"^\s*node-version:\s*['\"]?([^'\"#\s]+)", re.MULTILINE)
+ACTIONLINT_ENV = re.compile(r"^\s*ACTIONLINT_(VERSION|SHA256):\s*['\"]?([^'\"#\s]+)", re.MULTILINE)
+GITMODULE_SECTION = re.compile(r"^\s*\[submodule\s+['\"]([^'\"]+)['\"]\]\s*$")
+GITMODULE_KEY = re.compile(r"^\s*(path|url|shallow)\s*=\s*(.*?)\s*$")
+
+TAGGED_SUBMODULES = ("openFPGALoader", "libusb", "zlib", "emsdk")
+NODE_INDEX = "https://nodejs.org/dist/index.json"
+ACTIONLINT_RELEASE = "https://api.github.com/repos/rhysd/actionlint/releases/latest"
+RUNNER_IMAGES_README = "https://raw.githubusercontent.com/actions/runner-images/main/README.md"
+
+
+def read_text(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+def parse_gitmodules(text: str) -> list[dict[str, str]]:
+    entries: list[dict[str, str]] = []
+    current: dict[str, str] | None = None
+    for line in text.splitlines():
+        section = GITMODULE_SECTION.match(line)
+        if section:
+            if current is not None:
+                entries.append(current)
+            current = {"name": section.group(1)}
+            continue
+        match = GITMODULE_KEY.match(line)
+        if current is not None and match:
+            current[match.group(1)] = match.group(2).strip('"')
+    if current is not None:
+        entries.append(current)
+    return entries
+
+
+def parse_research_commits(text: str) -> dict[str, str]:
+    lines = text.splitlines()
+    header_index = None
+    for index, line in enumerate(lines):
+        if not line.lstrip().startswith("|"):
+            continue
+        cells = [cell.strip().strip("`") for cell in line.strip().strip("|").split("|")]
+        if cells[:4] == ["依存", "版", "commit", "取得元"]:
+            header_index = index
+            break
+
+    commits: dict[str, str] = {}
+    if header_index is None:
+        return commits
+    for line in lines[header_index + 2:]:
+        if not line.lstrip().startswith("|"):
+            break
+        cells = [cell.strip().strip("`") for cell in line.strip().strip("|").split("|")]
+        if len(cells) >= 4 and cells[0] and cells[2]:
+            commits[cells[0]] = cells[2]
+    return commits
+
+
+def parse_node_major(value: str) -> int | None:
+    match = re.search(r"(?<![A-Za-z0-9])v?(\d+)(?:\.\d+)*", value.strip())
+    return int(match.group(1)) if match else None
+
+
+def parse_version(value: str) -> tuple[int, ...] | None:
+    match = VERSION_RE.search(value)
+    if not match:
+        return None
+    return tuple(int(part) for part in match.group(1).split("."))
+
+
+def latest_stable_tag(output: str) -> str | None:
+    stable: list[tuple[tuple[int, ...], str]] = []
+    for line in output.splitlines():
+        fields = line.split()
+        if len(fields) < 2:
+            continue
+        tag = fields[-1].removeprefix("refs/tags/")
+        if re.search(r"(?i)(?:rc|alpha|beta|pre)", tag):
+            continue
+        version = parse_version(tag)
+        if version is not None:
+            stable.append((version, tag))
+    return max(stable, default=((), None), key=lambda entry: entry[0])[1]
+
+
+def parse_node_lts(index_text: str) -> tuple[str, str] | None:
+    try:
+        releases = json.loads(index_text)
+    except json.JSONDecodeError:
+        return None
+    for release in releases:
+        lts = release.get("lts")
+        if lts:
+            return release.get("version", ""), str(lts)
+    return None
+
+
+def parse_runner_labels(readme: str) -> dict[str, str]:
+    labels: dict[str, str] = {}
+    section = "listed"
+    for line in readme.splitlines():
+        heading = re.match(r"^\s*#{1,4}\s+(.+?)\s*#*\s*$", line)
+        if heading:
+            title = heading.group(1).lower()
+            if "beta" in title:
+                section = "beta"
+            elif "preview" in title:
+                section = "preview"
+            elif "ga" in title or "available images" in title:
+                section = "listed"
+        for label in re.findall(r"`([A-Za-z0-9][A-Za-z0-9.-]*-[A-Za-z0-9][A-Za-z0-9.-]*)`", line):
+            previous = labels.get(label)
+            rank = {"listed": 0, "beta": 1, "preview": 2}
+            if previous is None or rank[section] > rank[previous]:
+                labels[label] = section
+    return labels
+
+
+def parse_action_pins(workflow_text: str) -> list[tuple[str, str | None, str | None]]:
+    pins = []
+    for match in ACTION_PIN.finditer(workflow_text):
+        reference, comment = match.groups()
+        if "@" not in reference:
+            pins.append((reference, None, comment))
+            continue
+        action, sha = reference.rsplit("@", 1)
+        pins.append((action, sha, comment))
+    return pins
+
+
+def run(*args: str, cwd: Path = ROOT) -> str:
+    result = subprocess.run(
+        args,
+        cwd=cwd,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout
+
+
+def consistency(root: Path = ROOT) -> list[str]:
+    errors: list[str] = []
+    gitmodules_path = root / ".gitmodules"
+    modules = parse_gitmodules(read_text(gitmodules_path))
+    if not modules:
+        errors.append(".gitmodules に submodule がありません")
+    for module in modules:
+        path = module.get("path", "")
+        if module.get("shallow", "").lower() != "true":
+            errors.append(f"{path}: shallow = true が必要です")
+
+    research = parse_research_commits(read_text(root / "RESEARCH.md"))
+    for module in modules:
+        path = module.get("path", "")
+        if not path.startswith("vendor/"):
+            continue
+        dependency = path.removeprefix("vendor/")
+        documented = research.get(dependency)
+        if not documented:
+            errors.append(f"RESEARCH.md: {dependency} の commit がありません")
+            continue
+        try:
+            tree_line = run("git", "ls-tree", "HEAD", path, cwd=root).strip()
+        except (OSError, subprocess.CalledProcessError) as error:
+            errors.append(f"{path}: gitlink を取得できません: {error}")
+            continue
+        if not tree_line:
+            errors.append(f"{path}: HEAD に gitlink がありません")
+            continue
+        fields = tree_line.split("\t", 1)[0].split()
+        if len(fields) < 3 or fields[1] != "commit":
+            errors.append(f"{path}: HEAD の entry が gitlink ではありません")
+            continue
+        gitlink = fields[2]
+        if not gitlink.startswith(documented):
+            errors.append(
+                f"RESEARCH.md: {dependency} commit {documented} が gitlink {gitlink} と一致しません"
+            )
+
+    workflows = sorted((root / ".github/workflows").glob("*.yml"))
+    if not workflows:
+        errors.append(".github/workflows/*.yml がありません")
+    action_shas: dict[str, str] = {}
+    runner_labels: set[str] = set()
+    node_declarations: list[tuple[str, int]] = []
+    for workflow in workflows:
+        text = read_text(workflow)
+        for action, sha, comment in parse_action_pins(text):
+            if sha is None or not FULL_SHA.fullmatch(sha):
+                errors.append(f"{workflow.name}: uses: {action} は 40 桁の SHA で固定してください")
+                continue
+            if comment is None or not VERSION_COMMENT.fullmatch(comment.strip()):
+                errors.append(f"{workflow.name}: uses: {action} に # vX.Y.Z が必要です")
+            previous = action_shas.setdefault(action.lower(), sha.lower())
+            if previous != sha.lower():
+                errors.append(f"{workflow.name}: {action} の SHA が workflow 間で一致しません")
+        runner_labels.update(RUNS_ON.findall(text))
+        for value in NODE_VERSION.findall(text):
+            major = parse_node_major(value)
+            if major is None:
+                errors.append(f"{workflow.name}: node-version を解釈できません: {value}")
+            else:
+                node_declarations.append((workflow.name, major))
+
+    if len(runner_labels) != 1:
+        errors.append(
+            "全 workflow の runs-on は同じ label が必要です: "
+            + (", ".join(sorted(runner_labels)) if runner_labels else "未設定")
+        )
+
+    build_text = read_text(root / ".github/workflows/build.yml")
+    build_values = NODE_VERSION.findall(build_text)
+    build_major = parse_node_major(build_values[0]) if len(build_values) == 1 else None
+    if build_major is None:
+        errors.append("build.yml に node-version を一つだけ設定してください")
+    else:
+        for source, major in node_declarations:
+            if major != build_major:
+                errors.append(
+                    f"{source}: Node.js major {major} が build.yml の {build_major} と一致しません"
+                )
+
+    for filename in (".nvmrc", ".node-version"):
+        path = root / filename
+        if path.exists():
+            major = parse_node_major(read_text(path))
+            if major is None:
+                errors.append(f"{filename}: Node.js major を解釈できません")
+            elif build_major is not None and major != build_major:
+                errors.append(f"{filename}: Node.js major {major} が build.yml の {build_major} と一致しません")
+    package_path = root / "package.json"
+    if package_path.exists():
+        try:
+            engines = json.loads(read_text(package_path)).get("engines", {}).get("node")
+        except (json.JSONDecodeError, AttributeError):
+            engines = None
+        if engines:
+            major = parse_node_major(str(engines))
+            if major is None:
+                errors.append("package.json engines.node を解釈できません")
+            elif build_major is not None and major != build_major:
+                errors.append(f"package.json engines.node major {major} が build.yml の {build_major} と一致しません")
+
+    lint_text = read_text(root / ".github/workflows/lint.yml")
+    lint_values = dict(ACTIONLINT_ENV.findall(lint_text))
+    if not re.fullmatch(r"\d+\.\d+\.\d+", lint_values.get("VERSION", "")):
+        errors.append("lint.yml に有効な ACTIONLINT_VERSION が必要です")
+    if not re.fullmatch(r"[0-9a-fA-F]{64}", lint_values.get("SHA256", "")):
+        errors.append("lint.yml に有効な ACTIONLINT_SHA256 が必要です")
+    return errors
+
+
+def fetch(url: str) -> str:
+    headers = {"User-Agent": "toolchain-check-pins"}
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if token and url.startswith("https://api.github.com/"):
+        headers["Authorization"] = f"Bearer {token}"
+    request = urllib.request.Request(
+        url,
+        headers=headers,
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return response.read().decode("utf-8")
+
+
+def compare_status(fixed: str, latest: str) -> str:
+    fixed_version = parse_version(fixed)
+    latest_version = parse_version(latest)
+    if fixed_version is None or latest_version is None:
+        return "最新" if fixed == latest else "更新あり"
+    return "最新" if fixed_version == latest_version else "更新あり"
+
+
+def upstream_report(root: Path = ROOT) -> str:
+    rows: list[tuple[str, str, str, str]] = []
+
+    def add_row(name: str, fixed: str, latest: str, status: str) -> None:
+        rows.append((name, fixed, latest, status))
+
+    modules = {item.get("path", "").removeprefix("vendor/"): item for item in parse_gitmodules(read_text(root / ".gitmodules"))}
+    for name in TAGGED_SUBMODULES:
+        module = modules.get(name)
+        if module is None:
+            add_row(name, "未設定", "取得できません", "要確認")
+            continue
+        try:
+            fixed = run("git", "-C", f"vendor/{name}", "describe", "--tags", "--exact-match", cwd=root).strip()
+            remote = run("git", "ls-remote", "--tags", "--refs", module["url"], cwd=root)
+            latest = latest_stable_tag(remote)
+            if not latest:
+                raise RuntimeError("安定版タグがありません")
+            add_row(name, fixed, latest, compare_status(fixed, latest))
+        except (KeyError, OSError, RuntimeError, subprocess.CalledProcessError) as error:
+            print(f"{name}: upstream を取得できません: {error}", file=sys.stderr)
+            add_row(name, "取得できません", "取得できません", "要確認")
+
+    try:
+        node = parse_node_lts(fetch(NODE_INDEX))
+        if node is None:
+            raise RuntimeError("Active LTS が見つかりません")
+        node_version, lts_name = node
+        node_pin_values = NODE_VERSION.findall(read_text(root / ".github/workflows/build.yml"))
+        pinned_major = parse_node_major(node_pin_values[0]) if node_pin_values else None
+        if pinned_major is None:
+            raise RuntimeError("build.yml の node-version が読めません")
+        latest_major = parse_node_major(node_version)
+        state = "最新" if pinned_major == latest_major else "更新あり"
+        add_row("Node.js Active LTS", str(pinned_major), f"{node_version} {lts_name} (major {latest_major})", state)
+    except (OSError, urllib.error.URLError, RuntimeError) as error:
+        print(f"Node.js: upstream を取得できません: {error}", file=sys.stderr)
+        add_row("Node.js Active LTS", "取得できません", "取得できません", "要確認")
+
+    lint_values = dict(ACTIONLINT_ENV.findall(read_text(root / ".github/workflows/lint.yml")))
+    try:
+        release = json.loads(fetch(ACTIONLINT_RELEASE))
+        latest = str(release.get("tag_name", "")).removeprefix("v")
+        fixed = lint_values.get("VERSION", "")
+        if not latest:
+            raise RuntimeError("latest release tag がありません")
+        add_row("actionlint", fixed, latest, compare_status(fixed, latest))
+    except (OSError, urllib.error.URLError, json.JSONDecodeError, RuntimeError) as error:
+        print(f"actionlint: upstream を取得できません: {error}", file=sys.stderr)
+        add_row("actionlint", lint_values.get("VERSION", "未設定"), "取得できません", "要確認")
+
+    try:
+        runner_text = fetch(RUNNER_IMAGES_README)
+        runner_labels = parse_runner_labels(runner_text)
+        workflow_text = "\n".join(read_text(path) for path in (root / ".github/workflows").glob("*.yml"))
+        labels = sorted(set(RUNS_ON.findall(workflow_text)))
+        if len(labels) != 1:
+            raise RuntimeError(f"workflow runner label が一意ではありません: {labels}")
+        label = labels[0]
+        runner_status = runner_labels.get(label)
+        if runner_status is None:
+            add_row("GitHub-hosted runner", label, "README に未掲載", "更新あり")
+        else:
+            status = "最新" if runner_status == "listed" else "更新あり"
+            add_row("GitHub-hosted runner", label, runner_status, status)
+    except (OSError, urllib.error.URLError, RuntimeError) as error:
+        print(f"runner-images: upstream を取得できません: {error}", file=sys.stderr)
+        add_row("GitHub-hosted runner", "取得できません", "取得できません", "要確認")
+
+    lines = [
+        "| 依存 | 固定値 | 最新 | 状態 |",
+        "|---|---|---|---|",
+    ]
+    lines.extend(f"| {name} | {fixed} | {latest} | {status} |" for name, fixed, latest, status in rows)
+    return "\n".join(lines) + "\n"
+
+
+def parse_report_rows(report: str) -> list[tuple[str, str, str, str]]:
+    lines = report.splitlines()
+    header = ["依存", "固定値", "最新", "状態"]
+    header_index = None
+    for index, line in enumerate(lines):
+        if not line.lstrip().startswith("|"):
+            continue
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if cells == header:
+            header_index = index
+            break
+    if header_index is None or header_index + 1 >= len(lines):
+        raise ValueError("固定版レポートの表ヘッダーがありません")
+
+    separator = [
+        cell.strip()
+        for cell in lines[header_index + 1].strip().strip("|").split("|")
+    ]
+    if len(separator) != len(header) or not all(
+        re.fullmatch(r":?-{3,}:?", cell) for cell in separator
+    ):
+        raise ValueError("固定版レポートの表区切りが不正です")
+
+    rows = []
+    for line in lines[header_index + 2:]:
+        if not line.lstrip().startswith("|"):
+            break
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(cells) != len(header):
+            raise ValueError("固定版レポートの列数が不正です")
+        rows.append(tuple(cells))
+    if not rows:
+        raise ValueError("固定版レポートに依存行がありません")
+    return rows
+
+
+def needs_update(rows: Iterable[tuple[str, str, str, str]]) -> bool:
+    return any(row[3] != "最新" for row in rows)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers.add_parser("consistency", help="offline repository consistency checks")
+    upstream = subparsers.add_parser("upstream", help="report upstream pin updates")
+    upstream.add_argument("--report", required=True, type=Path)
+    upstream.add_argument("--github-output", type=Path)
+    args = parser.parse_args()
+
+    if args.command == "consistency":
+        errors = consistency()
+        if errors:
+            for error in errors:
+                print(f"error: {error}", file=sys.stderr)
+            return 1
+        print("pin consistency: OK")
+        return 0
+
+    report = upstream_report()
+    args.report.parent.mkdir(parents=True, exist_ok=True)
+    args.report.write_text(report, encoding="utf-8")
+    if args.github_output is not None:
+        rows = parse_report_rows(report)
+        output_value = str(needs_update(rows)).lower()
+        args.github_output.parent.mkdir(parents=True, exist_ok=True)
+        args.github_output.write_text(f"needs_update={output_value}\n", encoding="utf-8")
+    print(report, end="")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
