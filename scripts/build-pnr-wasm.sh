@@ -58,6 +58,7 @@ if [ "$families" != "$expected_families" ]; then
   printf 'Unexpected Gowin families in web/lib/boards.mjs: %s\n' "$families" >&2
   exit 1
 fi
+gowin_devices=$(printf '%s' "$families" | tr ' ' ';')
 
 cache_dir=build/cache
 deps_dir=build/deps
@@ -260,7 +261,7 @@ cmake -S vendor/nextpnr -B "$native_build" \
   -DARCH=himbaechel \
   -DHIMBAECHEL_UARCH=gowin \
   -DHIMBAECHEL_SPLIT=ON \
-  -DHIMBAECHEL_GOWIN_DEVICES="$families" \
+  -DHIMBAECHEL_GOWIN_DEVICES="$gowin_devices" \
   -DBoost_NO_BOOST_CMAKE=ON \
   -DBoost_USE_STATIC_LIBS=ON \
   -DBOOST_ROOT="$root/$boost_source" \
@@ -318,7 +319,7 @@ cmake -S vendor/nextpnr -B "$wasi_build" \
   -DARCH=himbaechel \
   -DHIMBAECHEL_UARCH=gowin \
   -DHIMBAECHEL_SPLIT=ON \
-  -DHIMBAECHEL_GOWIN_DEVICES="$families" \
+  -DHIMBAECHEL_GOWIN_DEVICES="$gowin_devices" \
   -DBoost_NO_BOOST_CMAKE=ON \
   -DBoost_USE_STATIC_LIBS=ON \
   -DBOOST_ROOT="$root/$boost_source" \
