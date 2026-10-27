@@ -123,13 +123,26 @@ eigen_url=$pin_url
 eigen_archive="$cache_dir/$eigen_asset"
 eigen_source="$deps_dir/eigen-$eigen_version"
 download_verified "$eigen_archive" "$eigen_url" "$eigen_sha"
-if [ ! -f "$eigen_source/Eigen/Core" ] || [ ! -f "$eigen_source/cmake/Eigen3Config.cmake" ]; then
+if [ ! -f "$eigen_source/Eigen/Core" ] || [ ! -f "$eigen_source/cmake/Eigen3Config.cmake.in" ]; then
   if [ -e "$eigen_source" ]; then
     printf 'Incomplete Eigen source tree: %s\n' "$eigen_source" >&2
     exit 1
   fi
   mkdir "$eigen_source"
   tar -xzf "$eigen_archive" --strip-components=1 -C "$eigen_source"
+fi
+
+eigen_build="$deps_dir/eigen-build"
+if [ ! -f "$eigen_build/Eigen3Config.cmake" ]; then
+  cmake -S "$eigen_source" -B "$eigen_build" \
+    -DBUILD_TESTING=OFF \
+    -DEIGEN_BUILD_TESTING=OFF \
+    -DEIGEN_BUILD_BLAS=OFF \
+    -DEIGEN_BUILD_LAPACK=OFF \
+    -DEIGEN_BUILD_BTL=OFF \
+    -DEIGEN_BUILD_DOC=OFF \
+    -DEIGEN_BUILD_DEMOS=OFF \
+    -DEIGEN_BUILD_CMAKE_PACKAGE=ON
 fi
 
 boost_b2="$boost_source/b2"
@@ -255,7 +268,7 @@ cmake -S vendor/nextpnr -B "$native_build" \
   -DBoost_USE_STATIC_LIBS=ON \
   -DBOOST_ROOT="$root/$boost_source" \
   -DBOOST_LIBRARYDIR="$root/$deps_dir/boost-stage-native/lib" \
-  -DEigen3_DIR="$root/$eigen_source/cmake" \
+  -DEigen3_DIR="$root/$eigen_build" \
   -DAPYCULA_INSTALL_PREFIX="$root/$apycula_venv"
 cmake --build "$native_build" --target bbasm --parallel "$jobs"
 
@@ -313,7 +326,7 @@ cmake -S vendor/nextpnr -B "$wasi_build" \
   -DBoost_USE_STATIC_LIBS=ON \
   -DBOOST_ROOT="$root/$boost_source" \
   -DBOOST_LIBRARYDIR="$root/$deps_dir/boost-stage-wasi/lib" \
-  -DEigen3_DIR="$root/$eigen_source/cmake" \
+  -DEigen3_DIR="$root/$eigen_build" \
   -DAPYCULA_INSTALL_PREFIX="$root/$apycula_venv"
 cmake --build "$wasi_build" --target nextpnr-himbaechel-gowin --parallel "$jobs"
 binary="$wasi_build/nextpnr-himbaechel-gowin"
