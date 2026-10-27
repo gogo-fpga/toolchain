@@ -37,8 +37,10 @@ function sha256(contents) {
 function assertDistributionMatchesSources() {
   const webRoot = resolve(repoRoot, "web");
   const distRoot = resolve(repoRoot, "dist");
+  const sourcePaths = new Set();
   for (const sourcePath of listFiles(webRoot)) {
     const path = relative(webRoot, sourcePath);
+    sourcePaths.add(path);
     const distPath = resolve(distRoot, path);
     let distContents;
     try {
@@ -50,6 +52,32 @@ function assertDistributionMatchesSources() {
     }
     if (!readFileSync(sourcePath).equals(distContents)) {
       throw new Error(`Playwright preflight: dist/${path} differs from web/${path}`);
+    }
+  }
+
+  const generatedFileAllowlist = new Set(["editor/editor.bundle.mjs"]);
+  const runtimeFiles = new Set([
+    "build-info.json",
+    "openFPGALoader.mjs",
+    "openFPGALoader.wasm",
+  ]);
+  const distPaths = new Set(
+    listFiles(distRoot).map((path) => relative(distRoot, path)),
+  );
+  for (const path of distPaths) {
+    if (sourcePaths.has(path) || runtimeFiles.has(path)) continue;
+    if (generatedFileAllowlist.delete(path)) continue;
+    throw new Error(`Playwright preflight: unexpected dist/${path}`);
+  }
+  if (generatedFileAllowlist.size > 0) {
+    throw new Error(
+      `Playwright preflight: generated-file allowlist was unused: ` +
+        [...generatedFileAllowlist].join(", "),
+    );
+  }
+  for (const path of runtimeFiles) {
+    if (!distPaths.has(path)) {
+      throw new Error(`Playwright preflight: dist/${path} is missing`);
     }
   }
 
@@ -74,8 +102,7 @@ async function stubPageUsb(page, unsupported = false) {
       window.__workerMessages.push({ args: message.args, outputs: message.outputs });
       return originalPostMessage.call(this, message, ...transfer);
     };
-    const stubNavigator = Object.create(globalThis.navigator);
-    Object.defineProperty(stubNavigator, "usb", {
+    Object.defineProperty(globalThis.navigator, "usb", {
       configurable: true,
       value: isUnsupported
         ? undefined
@@ -86,10 +113,6 @@ async function stubPageUsb(page, unsupported = false) {
               return { productName: "Tang Nano (test fake)" };
             },
           },
-    });
-    Object.defineProperty(globalThis, "navigator", {
-      configurable: true,
-      value: stubNavigator,
     });
   }, unsupported);
 }
@@ -181,6 +204,7 @@ async function openSupportedPage(page) {
   await expect(page.locator("#support-status")).toHaveText(
     "このブラウザーを利用できます。",
   );
+  await expect(page.locator("#project-status")).toHaveText("保存しました。");
 }
 
 test("built distribution matches sources and the build-root WASM", () => {

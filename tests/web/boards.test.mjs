@@ -11,6 +11,7 @@ test("BOARDS contains the supported Tang Nano devices", () => {
       part: "GW1NZ-1",
       idcode: 0x0100681b,
       flashBytes: null,
+      writeTargets: ["SRAM", "内蔵フラッシュ"],
     },
     {
       id: "tangnano4k",
@@ -18,6 +19,7 @@ test("BOARDS contains the supported Tang Nano devices", () => {
       part: "GW1NSR-4C",
       idcode: 0x0100981b,
       flashBytes: 4 * 1024 * 1024,
+      writeTargets: ["SRAM", "内蔵フラッシュ"],
     },
     {
       id: "tangnano9k",
@@ -25,6 +27,7 @@ test("BOARDS contains the supported Tang Nano devices", () => {
       part: "GW1N(R)-9C",
       idcode: 0x0100481b,
       flashBytes: 4 * 1024 * 1024,
+      writeTargets: ["SRAM", "内蔵フラッシュ"],
     },
     {
       id: "tangnano20k",
@@ -32,6 +35,7 @@ test("BOARDS contains the supported Tang Nano devices", () => {
       part: "GW2A(R)-18(C)",
       idcode: 0x0000081b,
       flashBytes: 8 * 1024 * 1024,
+      writeTargets: ["SRAM", "外付け SPI フラッシュ"],
     },
   ]);
   assert.equal(Object.isFrozen(BOARDS), true);
