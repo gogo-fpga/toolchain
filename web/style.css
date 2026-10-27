@@ -679,7 +679,13 @@ dialog::backdrop {
   padding: 0.6rem 0.8rem 0;
 }
 
+.editor-heading h2 {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 .editor-heading span {
+  min-width: 0;
   color: #475467;
   font-size: 0.78rem;
 }
