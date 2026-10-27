@@ -250,7 +250,7 @@ test("built distribution matches sources and the build-root WASM", () => {
     writeFileSync(manifestPath, alteredManifest);
     assert.throws(
       () => assertDistributionMatchesSources(),
-      /dist\/synth\/manifest\.json differs from build\/.*\/synth\/manifest\.json/,
+      /dist\/synth\/manifest\.json differs from build\/(?:.*\/)?synth\/manifest\.json/,
     );
   } finally {
     writeFileSync(manifestPath, originalManifest);
