@@ -248,7 +248,7 @@ chmod 644 "$source_root/RELEASE-SOURCE.json"
 TZ=UTC gzip -n -9 -c "$work/$source_name.tar" > "$release_dir/$source_archive"
 
 python3 - "$root" "$root/dist/build-info.json" "$release_dir/notes.md" "$version" \
-  "$commit" "$emsdk_version" "${submodules[@]}" <<'PY'
+  "$commit" "$emsdk_version" "$yosys_version" "${submodules[@]}" <<'PY'
 import json
 import re
 import subprocess
@@ -258,9 +258,9 @@ from pathlib import Path
 root = Path(sys.argv[1])
 build_info_path = Path(sys.argv[2])
 notes_path = Path(sys.argv[3])
-version, commit, emsdk_version = sys.argv[4:7]
+version, commit, emsdk_version, yosys_version = sys.argv[4:8]
 source_name = f"toolchain-source-{version}"
-submodules = sys.argv[7:]
+submodules = sys.argv[8:]
 build_info = json.loads(build_info_path.read_text(encoding="utf-8"))
 labels = {
     "vendor/openFPGALoader": "openFPGALoader",
