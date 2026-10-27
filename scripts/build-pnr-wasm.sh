@@ -182,7 +182,6 @@ EOF
     wasi_sdk="$root/$sdk_dir"
     wasi_jam="$root/$deps_dir/boost-wasi-config.jam"
     {
-      printf 'has_zlib = 0 ;\nhas_bzip2 = 0 ;\n'
       printf 'using clang : wasi : %s/bin/clang++ :\n' "$wasi_sdk"
       printf '  <archiver>%s/bin/llvm-ar\n' "$wasi_sdk"
       printf '  <ranlib>%s/bin/llvm-ranlib\n' "$wasi_sdk"
@@ -197,7 +196,7 @@ EOF
       cd "$boost_source"
       "$boost_b2" --user-config="$wasi_jam" toolset=clang-wasi \
         variant=release link=static threading=single runtime-link=static \
-        NO_COMPRESSION=1 NO_LZMA=1 NO_ZSTD=1 \
+        -sNO_COMPRESSION=1 -sNO_ZLIB=1 -sNO_BZIP2=1 \
         --with-program_options --with-iostreams \
         --stagedir="$root/$stage_dir" -j "${JOBS:-2}" stage
     )
@@ -205,7 +204,7 @@ EOF
     (
       cd "$boost_source"
       "$boost_b2" toolset=gcc variant=release link=static threading=single \
-        NO_COMPRESSION=1 NO_LZMA=1 NO_ZSTD=1 \
+        -sNO_COMPRESSION=1 -sNO_ZLIB=1 -sNO_BZIP2=1 \
         --with-program_options --with-iostreams \
         --stagedir="$root/$stage_dir" -j "${JOBS:-2}" stage
     )
