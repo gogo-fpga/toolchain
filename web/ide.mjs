@@ -104,11 +104,13 @@ export function initializeIde({ form, boardSelect, programLog, BOARDS }) {
       : null;
     if (!boardData) return;
     boardFpga.textContent = boardData.part;
-    boardIdcode.textContent = `0x${boardData.idcode
-      .toString(16)
-      .padStart(8, "0")}`;
-    boardTarget.textContent =
-      form.elements.target.value === "flash" ? "フラッシュ" : "SRAM";
+    const idcodes = Array.isArray(boardData.idcodes)
+      ? boardData.idcodes
+      : [boardData.idcode];
+    boardIdcode.textContent = idcodes
+      .map((idcode) => `0x${idcode.toString(16).toUpperCase().padStart(8, "0")}`)
+      .join("、");
+    boardTarget.textContent = boardData.writeTargets.join("、");
   }
 
   function setProjectStatus(message) {
@@ -158,7 +160,7 @@ export function initializeIde({ form, boardSelect, programLog, BOARDS }) {
     project.board = boardSelect.value;
     try {
       await store.save(project, fileContents);
-      setProjectStatus("ローカルに保存しました。");
+      setProjectStatus("保存しました。");
     } catch (error) {
       setProjectStatus("プロジェクトを保存できません。");
       appendProjectLog(`プロジェクト保存エラー: ${error.message}`);
@@ -200,6 +202,7 @@ export function initializeIde({ form, boardSelect, programLog, BOARDS }) {
       tab.setAttribute("aria-selected", String(path === activeTab));
       tab.setAttribute("aria-controls", "editor-mount");
       tab.setAttribute("aria-label", `${path} を編集`);
+      tab.title = path;
       tab.textContent = path.split("/").at(-1);
       tab.addEventListener("click", () => {
         activeTab = path;
@@ -274,10 +277,8 @@ export function initializeIde({ form, boardSelect, programLog, BOARDS }) {
   function setPaneOpen(pane, button, open) {
     pane.dataset.open = String(open);
     button.setAttribute("aria-expanded", String(open));
-    button.setAttribute(
-      "aria-label",
-      open ? "ペインを閉じる" : `${pane === filesPane ? "ファイル" : "書き込み"}ペインを開く`,
-    );
+    const paneName = pane === filesPane ? "ファイル一覧" : "ボードと書き込み";
+    button.setAttribute("aria-label", `${paneName}を${open ? "閉じる" : "開く"}`);
   }
 
   function updateTabs(selectedTab) {

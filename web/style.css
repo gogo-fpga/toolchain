@@ -299,6 +299,11 @@ progress {
   margin-bottom: 0;
 }
 
+.program-log:empty::before {
+  color: #98a2b3;
+  content: "ログはまだありません。";
+}
+
 #result-status[data-result="success"] {
   color: #067647;
   font-weight: 800;
@@ -430,6 +435,19 @@ dialog::backdrop {
   gap: 0.6rem;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.synthesis-control {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
 .board-picker {
   display: grid;
   min-width: 13rem;
@@ -443,6 +461,10 @@ dialog::backdrop {
   margin: 0;
   color: #475467;
   font-size: 0.8rem;
+}
+
+.mobile-pane-toggle {
+  display: none;
 }
 
 #synthesis-button {
@@ -560,9 +582,25 @@ dialog::backdrop {
 
 .file-actions button,
 #use-bitstream-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 2.3rem;
   min-height: 2.3rem;
   padding: 0.35rem;
   font-size: 0.78rem;
+}
+
+.file-actions button.danger.secondary {
+  border-color: #b42318;
+  color: #b42318;
+  background: transparent;
+}
+
+.file-actions button.danger.secondary:hover:not(:disabled) {
+  border-color: #912018;
+  color: #912018;
+  background: #fef3f2;
 }
 
 .editor-pane {
@@ -737,10 +775,6 @@ dialog::backdrop {
   display: block;
 }
 
-.mobile-pane-controls {
-  display: none;
-}
-
 .ide-header button,
 .file-actions button,
 #use-bitstream-button,
@@ -777,12 +811,29 @@ dialog .field input {
   }
 
   .header-controls {
-    flex-wrap: wrap;
-    align-items: end;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.6rem;
   }
 
   .board-picker {
-    min-width: min(12rem, 45vw);
+    width: min(100%, 22rem);
+    min-width: 0;
+  }
+
+  .header-actions {
+    align-items: center;
+    gap: 0.6rem;
+  }
+
+  .synthesis-control {
+    flex-wrap: wrap;
+  }
+
+  .mobile-pane-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .synthesis-reason {
@@ -795,11 +846,6 @@ dialog .field input {
 
   .support-status p {
     font-size: 0.78rem;
-  }
-
-  .mobile-pane-controls {
-    display: flex;
-    gap: 0.5rem;
   }
 
   .ide-layout {
@@ -899,5 +945,10 @@ dialog .field input {
 
   .bottom-tabs button[aria-selected="true"] {
     background: #194185;
+  }
+
+  .file-actions button.danger.secondary {
+    border-color: #f97066;
+    color: #fda29b;
   }
 }

@@ -20,6 +20,8 @@ export default defineConfig({
     baseURL,
     browserName: "chromium",
     headless: true,
+    locale: "ja-JP",
+    launchOptions: { args: ["--lang=ja-JP"] },
     trace: "retain-on-failure",
   },
   webServer: {

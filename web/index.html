@@ -22,27 +22,31 @@
               <span>ボード</span>
               <select id="board-select" name="board" required></select>
             </label>
-            <button id="synthesis-button" type="button" disabled>
-              合成・配置配線
-            </button>
-            <p class="synthesis-reason">T2 で対応予定です</p>
-            <button id="program-button" type="submit" disabled>書き込む</button>
-          </div>
-          <div class="mobile-pane-controls">
-            <button
-              id="toggle-files-pane"
-              type="button"
-              aria-label="ファイルペインを開く"
-              aria-controls="files-pane"
-              aria-expanded="false"
-            >ファイル</button>
-            <button
-              id="toggle-board-pane"
-              type="button"
-              aria-label="書き込みペインを開く"
-              aria-controls="board-pane"
-              aria-expanded="false"
-            >書き込み</button>
+            <div class="header-actions">
+              <div class="synthesis-control">
+                <button id="synthesis-button" type="button" disabled>
+                  合成・配置配線
+                </button>
+                <p class="synthesis-reason">T2 で対応予定です</p>
+              </div>
+              <button id="program-button" type="submit" disabled>書き込む</button>
+              <button
+                id="toggle-files-pane"
+                class="mobile-pane-toggle"
+                type="button"
+                aria-label="ファイル一覧を開く"
+                aria-controls="files-pane"
+                aria-expanded="false"
+              >ファイル一覧</button>
+              <button
+                id="toggle-board-pane"
+                class="mobile-pane-toggle"
+                type="button"
+                aria-label="ボードと書き込みを開く"
+                aria-controls="board-pane"
+                aria-expanded="false"
+              >ボードと書き込み</button>
+            </div>
           </div>
           <section class="support-status" aria-labelledby="support-heading">
             <h2 id="support-heading">ブラウザーの確認</h2>
@@ -67,8 +71,8 @@
             <ul id="file-list" class="file-list" aria-label="プロジェクトのファイル"></ul>
             <div class="file-actions">
               <button id="add-file-button" type="button">ファイル追加</button>
-              <button id="rename-file-button" type="button" disabled>名前変更</button>
-              <button id="delete-file-button" type="button" class="secondary" disabled>削除</button>
+              <button id="rename-file-button" type="button" class="secondary" disabled>名前変更</button>
+              <button id="delete-file-button" type="button" class="secondary danger" disabled>削除</button>
             </div>
             <button id="use-bitstream-button" type="button" class="secondary" disabled>
               選択した .fs を使う
