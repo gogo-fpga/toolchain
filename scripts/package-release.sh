@@ -47,6 +47,14 @@ required_files=(
   "$root/dist/openFPGALoader.mjs"
   "$root/dist/openFPGALoader.wasm"
   "$root/dist/serve.py"
+  "$root/dist/synth/manifest.json"
+  "$root/dist/synth/yosys.wasm"
+  "$root/dist/synth/nextpnr-himbaechel-gowin.wasm"
+  "$root/dist/synth/yosys-share.tar"
+  "$root/dist/synth/chipdb/chipdb-GW1NZ-1.bin"
+  "$root/dist/synth/chipdb/chipdb-GW1NS-4.bin"
+  "$root/dist/synth/chipdb/chipdb-GW1N-9C.bin"
+  "$root/dist/synth/chipdb/chipdb-GW2A-18C.bin"
   "$root/dist/pack/pyodide/pyodide.mjs"
   "$root/dist/pack/pyodide/pyodide.asm.mjs"
   "$root/dist/pack/pyodide/pyodide.asm.wasm"
@@ -58,11 +66,15 @@ required_files=(
   "$root/THIRD_PARTY_NOTICES.md"
 )
 for required_file in "${required_files[@]}"; do
-  if [[ ! -f "$required_file" ]]; then
+  if [[ ! -s "$required_file" ]]; then
     printf 'Required release file is missing: %s\n' "$required_file" >&2
     exit 1
   fi
 done
+if [[ ! -d "$root/dist/synth" ]] || [[ -z "$(find "$root/dist/synth" -type f -print -quit)" ]]; then
+  printf 'Required synthesis assets are missing or empty.\n' >&2
+  exit 1
+fi
 asset_wheels=(
   "$root"/dist/pack/wheels/apycula-*.whl
   "$root"/dist/pack/wheels/micropip-*.whl

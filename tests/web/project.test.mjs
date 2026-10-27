@@ -70,6 +70,7 @@ test("validatePath accepts relative supported files", () => {
     ok: true,
     errors: [],
   });
+  assert.deepEqual(validatePath("build/top.json"), { ok: true, errors: [] });
 });
 
 test("validatePath rejects traversal, empty segments, drive paths, and extensions", () => {

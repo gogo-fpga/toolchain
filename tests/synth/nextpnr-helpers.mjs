@@ -51,7 +51,7 @@ function closeDescriptor(descriptor) {
   }
 }
 
-export function runWasi(workdir, args, sharePath = wasiSharePath, executable = wasmModule) {
+export function runWasi(workdir, args, sharePath = wasiSharePath, executable = wasmModule, clockTimeGet = null) {
   const stdoutPath = path.join(workdir, "wasi.stdout");
   const stderrPath = path.join(workdir, "wasi.stderr");
   const stdout = openSync(stdoutPath, "w");
@@ -73,7 +73,14 @@ export function runWasi(workdir, args, sharePath = wasiSharePath, executable = w
   let status = 1;
   let error;
   try {
-    status = wasi.start(new WebAssembly.Instance(executable, wasi.getImportObject()));
+    const importObject = wasi.getImportObject();
+    let instance;
+    if (clockTimeGet) {
+      importObject.wasi_snapshot_preview1.clock_time_get = (clockId, precision, timePointer) =>
+        clockTimeGet(instance.exports.memory, clockId, precision, timePointer);
+    }
+    instance = new WebAssembly.Instance(executable, importObject);
+    status = wasi.start(instance);
   } catch (caught) {
     error = caught;
   } finally {

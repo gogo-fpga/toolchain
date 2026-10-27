@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 
 const repoRoot = resolve(import.meta.dirname, "../..");
-const screenshots = resolve(repoRoot, "build/screenshots");
+const screenshots = resolve(repoRoot, "build/screenshots/s4");
 mkdirSync(screenshots, { recursive: true });
 
 async function openIde(page) {
@@ -40,14 +40,50 @@ test("IDE loads without console errors and highlights Verilog keywords", async (
     .first();
   await expect(moduleToken).toBeVisible();
   expect(await moduleToken.getAttribute("class")).toBeTruthy();
-  await expect(page.locator("#synthesis-button")).toBeDisabled();
-  await expect(page.locator(".synthesis-reason")).toHaveText("T2 で対応予定です");
+  await expect(page.locator("#synthesis-button")).toBeEnabled();
+  await expect(page.locator(".synthesis-reason")).toHaveText("");
   expect(
     await page
       .locator("#program-log")
       .evaluate((log) => getComputedStyle(log, "::before").content),
   ).toBe('"ログはまだありません。"');
   expect(errors).toEqual([]);
+});
+
+test("VHDL projects explain why browser synthesis is disabled", async ({ page }) => {
+  await openIde(page);
+  await page.locator("#new-project-button").click();
+  await page.locator("#new-project-name").fill("zz-vhdl-disabled");
+  await page.locator("#new-project-board").selectOption("tangnano1k");
+  await page.locator("#new-project-language").selectOption("vhdl");
+  await page.locator("#new-project-create").click();
+  await expect(page.locator("#project-name")).toHaveText("zz-vhdl-disabled");
+  await expect(page.locator("#synthesis-button")).toBeDisabled();
+  await expect(page.locator("#synthesis-reason")).toHaveText(
+    "VHDL の合成は T3 で対応予定です",
+  );
+  await page.screenshot({ path: resolve(screenshots, "s4-vhdl-disabled.png") });
+});
+
+test("syntax errors fail the build and appear in the problems panel", async ({
+  page,
+}) => {
+  await openIde(page);
+  const editor = page.locator(".cm-content");
+  await editor.click();
+  await page.keyboard.press("Control+A");
+  await page.keyboard.type("module top(\nendmodule\n");
+  await expect(page.locator("#synthesis-button")).toBeEnabled();
+  await page.locator("#synthesis-button").click();
+  await expect(page.locator("#synthesis-stage")).toHaveText("ビルド失敗", {
+    timeout: 120_000,
+  });
+  await page.locator("#bottom-tab-problems").click();
+  await expect(page.locator("#problem-list")).toContainText("top.v");
+  await expect(page.locator("#problem-list")).toContainText("syntax");
+  await page.screenshot({
+    path: resolve(screenshots, "s4-syntax-error.png"),
+  });
 });
 
 test("new project dialog shows board and HDL choices", async ({ page }) => {

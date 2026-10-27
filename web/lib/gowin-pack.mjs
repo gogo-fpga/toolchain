@@ -258,5 +258,10 @@ export async function runGowinPack({
   if (fs.byteLength === 0) {
     throw packError(`Apicula gowin_pack created an empty ${outputPath}`, result);
   }
-  return { fs: new Uint8Array(fs), stdout: result.stdout, stderr: result.stderr };
+  return {
+    fs: new Uint8Array(fs),
+    stdout: result.stdout,
+    stderr: result.stderr,
+      memoryBytes: pyodide._module?.HEAPU8?.buffer?.byteLength ?? null,
+  };
 }

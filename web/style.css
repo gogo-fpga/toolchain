@@ -14,6 +14,17 @@
   box-sizing: border-box;
 }
 
+#synthesis-stage,
+#synthesis-reason,
+#synthesis-asset-size {
+  margin: 0;
+  font-size: 0.8rem;
+}
+
+#synthesis-stage {
+  font-weight: 600;
+}
+
 body {
   margin: 0;
 }

@@ -9,26 +9,13 @@ import {
   writeFileSync,
 } from "node:fs";
 import { relative, resolve } from "node:path";
+import { routeWorkerWithFakeUsb, stubPageUsb } from "./fake-usb-helpers.mjs";
 
 const repoRoot = resolve(import.meta.dirname, "../..");
 const fixture = resolve(repoRoot, "build/fixtures/tangnano9k.fs");
 const fixture20k = resolve(repoRoot, "build/fixtures/tangnano20k.fs");
-const workerSource = readFileSync(resolve(repoRoot, "web/worker.js"), "utf8");
-const fakeWebUsbSource = readFileSync(
-  resolve(repoRoot, "tests/sim/fake-webusb.mjs"),
-  "utf8",
-);
-const fsChecksumSource = readFileSync(
-  resolve(repoRoot, "tests/sim/fs-checksum.mjs"),
-  "utf8",
-);
 const screenshots = resolve(repoRoot, "build/screenshots");
 mkdirSync(screenshots, { recursive: true });
-const isolatedResponseHeaders = {
-  "Cross-Origin-Opener-Policy": "same-origin",
-  "Cross-Origin-Embedder-Policy": "require-corp",
-  "Cross-Origin-Resource-Policy": "same-origin",
-};
 
 function listFiles(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -80,6 +67,51 @@ function assertPackMatchesBuild() {
   );
 }
 
+function assertSynthMatchesBuild() {
+  const buildRoot = resolve(repoRoot, process.env.BUILD_ROOT ?? "build");
+  const buildSynthRoot = resolve(buildRoot, "synth");
+  const distRoot = resolve(repoRoot, "dist");
+  const distSynthRoot = resolve(distRoot, "synth");
+  const buildSynthPaths = new Set(
+    listFiles(buildSynthRoot).map((path) =>
+      relative(buildSynthRoot, path),
+    ),
+  );
+  const distSynthPaths = new Set(
+    listFiles(distSynthRoot).map((path) =>
+      relative(distSynthRoot, path),
+    ),
+  );
+
+  for (const path of distSynthPaths) {
+    if (!buildSynthPaths.has(path)) {
+      throw new Error(`Playwright preflight: unexpected dist/synth/${path}`);
+    }
+  }
+
+  for (const path of buildSynthPaths) {
+    if (!distSynthPaths.has(path)) {
+      throw new Error(`Playwright preflight: dist/synth/${path} is missing`);
+    }
+    if (
+      !readFileSync(resolve(buildSynthRoot, path)).equals(
+        readFileSync(resolve(distSynthRoot, path)),
+      )
+    ) {
+      throw new Error(
+        `Playwright preflight: dist/synth/${path} differs from ` +
+          `${relative(repoRoot, buildSynthRoot)}/${path}`,
+      );
+    }
+  }
+
+  return new Set(
+    [...distSynthPaths].map((path) =>
+      relative(distRoot, resolve(distSynthRoot, path)),
+    ),
+  );
+}
+
 function assertDistributionMatchesSources() {
   const webRoot = resolve(repoRoot, "web");
   const distRoot = resolve(repoRoot, "dist");
@@ -111,6 +143,7 @@ function assertDistributionMatchesSources() {
     "openFPGALoader.wasm",
   ]);
   const packPaths = assertPackMatchesBuild();
+  const synthPaths = assertSynthMatchesBuild();
   const distPaths = new Set(
     listFiles(distRoot).map((path) => relative(distRoot, path)),
   );
@@ -118,6 +151,7 @@ function assertDistributionMatchesSources() {
     if (sourcePaths.has(path) || runtimeFiles.has(path)) continue;
     if (generatedFileAllowlist.delete(path)) continue;
     if (packPaths.delete(path)) continue;
+    if (synthPaths.delete(path)) continue;
     throw new Error(`Playwright preflight: unexpected dist/${path}`);
   }
   if (generatedFileAllowlist.size > 0) {
@@ -129,6 +163,11 @@ function assertDistributionMatchesSources() {
   if (packPaths.size > 0) {
     throw new Error(
       `Playwright preflight: dist/${packPaths.values().next().value} is missing`,
+    );
+  }
+  if (synthPaths.size > 0) {
+    throw new Error(
+      `Playwright preflight: dist/${synthPaths.values().next().value} is missing`,
     );
   }
   for (const path of runtimeFiles) {
@@ -148,110 +187,6 @@ function assertDistributionMatchesSources() {
         `does not match ${relative(repoRoot, buildWasm)} SHA-256 ${buildHash}`,
     );
   }
-}
-
-async function stubPageUsb(page, unsupported = false) {
-  await page.addInitScript((isUnsupported) => {
-    const originalPostMessage = Worker.prototype.postMessage;
-    Worker.prototype.postMessage = function (message, ...transfer) {
-      window.__workerMessages ??= [];
-      window.__workerMessages.push({ args: message.args, outputs: message.outputs });
-      return originalPostMessage.call(this, message, ...transfer);
-    };
-    Object.defineProperty(globalThis.navigator, "usb", {
-      configurable: true,
-      value: isUnsupported
-        ? undefined
-        : {
-            async requestDevice(options) {
-              window.__usbRequestCount = (window.__usbRequestCount ?? 0) + 1;
-              window.__usbRequestOptions = options;
-              return { productName: "Tang Nano (test fake)" };
-            },
-          },
-    });
-  }, unsupported);
-}
-
-async function routeWorkerWithFakeUsb(
-  page,
-  { faults = {}, idcode = 0x1100481b, onWorkerRequest = () => {} } = {},
-) {
-  await page.route("**/__e2e/fake-webusb.mjs", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "text/javascript",
-      headers: isolatedResponseHeaders,
-      body: fakeWebUsbSource,
-    }),
-  );
-  await page.route("**/__e2e/fs-checksum.mjs", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "text/javascript",
-      headers: isolatedResponseHeaders,
-      body: fsChecksumSource,
-    }),
-  );
-  await page.route("**/worker-real.js", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "text/javascript",
-      headers: isolatedResponseHeaders,
-      body: workerSource,
-    }),
-  );
-  await page.route("**/worker.js", async (route) => {
-    onWorkerRequest();
-    const wrapper = `
-      import { createFakeUsb } from "/__e2e/fake-webusb.mjs";
-      const fake = createFakeUsb(${idcode}, { faults: ${JSON.stringify(faults)} });
-      const originalNavigator = globalThis.navigator;
-      const fakeNavigator = Object.create(originalNavigator);
-      Object.defineProperties(fakeNavigator, {
-        userAgent: {
-          configurable: true,
-          value: originalNavigator.userAgent,
-        },
-        language: {
-          configurable: true,
-          value: originalNavigator.language,
-        },
-        usb: {
-          configurable: true,
-          value: fake.usb,
-        },
-      });
-      Object.defineProperty(globalThis, "navigator", {
-        configurable: true,
-        value: fakeNavigator,
-      });
-      const originalAddEventListener = self.addEventListener.bind(self);
-      const pendingMessages = [];
-      let realMessageHandlerReady = false;
-      originalAddEventListener("message", (event) => {
-        if (!realMessageHandlerReady) {
-          pendingMessages.push(event);
-        }
-      });
-      self.addEventListener = (type, listener, options) => {
-        if (type === "message") {
-          realMessageHandlerReady = true;
-          for (const event of pendingMessages.splice(0)) {
-            queueMicrotask(() => listener.call(self, event));
-          }
-        }
-        return originalAddEventListener(type, listener, options);
-      };
-      await import("/worker-real.js");
-    `;
-    await route.fulfill({
-      status: 200,
-      contentType: "text/javascript",
-      headers: isolatedResponseHeaders,
-      body: wrapper,
-    });
-  });
 }
 
 async function openSupportedPage(page) {
@@ -290,6 +225,35 @@ test("built distribution matches sources and the build-root WASM", () => {
     );
   } finally {
     writeFileSync(lockPath, originalLock);
+  }
+
+  const synthRoot = resolve(repoRoot, "dist/synth");
+  const extraSynthPath = resolve(
+    synthRoot,
+    `.preflight-extra-${randomUUID()}`,
+  );
+  try {
+    writeFileSync(extraSynthPath, "unexpected");
+    assert.throws(
+      () => assertDistributionMatchesSources(),
+      /unexpected dist\/synth\/\.preflight-extra-/,
+    );
+  } finally {
+    rmSync(extraSynthPath, { force: true });
+  }
+
+  const manifestPath = resolve(synthRoot, "manifest.json");
+  const originalManifest = readFileSync(manifestPath);
+  const alteredManifest = Buffer.from(originalManifest);
+  alteredManifest[0] ^= 1;
+  try {
+    writeFileSync(manifestPath, alteredManifest);
+    assert.throws(
+      () => assertDistributionMatchesSources(),
+      /dist\/synth\/manifest\.json differs from build\/.*\/synth\/manifest\.json/,
+    );
+  } finally {
+    writeFileSync(manifestPath, originalManifest);
   }
 });
 

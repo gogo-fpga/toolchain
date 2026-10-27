@@ -37,7 +37,11 @@
                 <button id="synthesis-button" type="button" disabled>
                   合成・配置配線
                 </button>
-                <p class="synthesis-reason">T2 で対応予定です</p>
+                <p id="synthesis-stage" role="status" aria-live="polite"></p>
+                <p id="synthesis-reason" class="synthesis-reason">
+                  VHDL の合成は T3 で対応予定です
+                </p>
+                <p id="synthesis-asset-size"></p>
               </div>
               <button id="program-button" type="submit" disabled>書き込む</button>
               <button
