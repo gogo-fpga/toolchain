@@ -41,4 +41,6 @@ Yosys と nextpnr の `COPYING` は ISC License の本文です。ABC の `copyr
 
 ## LGPL ライブラリの再リンク
 
+Pyodide（MPL-2.0）は npm の `pyodide` 314.0.7 を改変せずに同梱します。対応するソースは https://github.com/pyodide/pyodide/tree/314.0.7 で公開されています。
+
 ソース tarball には、使用した固定版の libusb と libftdi の完全なソースを含めます。改変した LGPL ライブラリを使う場合は、tarball 内の `vendor/libusb` または `vendor/libftdi` のソースを置き換え、`scripts/build-wasm.sh` と `scripts/build-web.sh` を実行して再ビルドしてください。生成した WASM を含むアプリを配布する際は、ライブラリの改変に応じて LGPL の条件を満たしてください。
