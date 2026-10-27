@@ -26,11 +26,12 @@ ACTIONLINT_ENV = re.compile(r"^\s*ACTIONLINT_(VERSION|SHA256):\s*['\"]?([^'\"#\s
 GITMODULE_SECTION = re.compile(r"^\s*\[submodule\s+['\"]([^'\"]+)['\"]\]\s*$")
 GITMODULE_KEY = re.compile(r"^\s*(path|url|shallow|branch)\s*=\s*(.*?)\s*$")
 
-TAGGED_SUBMODULES = ("openFPGALoader", "libusb", "zlib", "emsdk")
+TAGGED_SUBMODULES = ("openFPGALoader", "libusb", "zlib", "emsdk", "yosys")
 BRANCH_SUBMODULES = ("libftdi",)
 NODE_INDEX = "https://nodejs.org/dist/index.json"
 ACTIONLINT_RELEASE = "https://api.github.com/repos/rhysd/actionlint/releases/latest"
 RUNNER_IMAGES_README = "https://raw.githubusercontent.com/actions/runner-images/main/README.md"
+WASI_SDK_RELEASE = "https://api.github.com/repos/WebAssembly/wasi-sdk/releases/latest"
 
 
 def read_text(path: Path) -> str:
@@ -79,6 +80,80 @@ def parse_research_commits(text: str) -> dict[str, str]:
         if len(cells) >= 4 and cells[0] and cells[2]:
             commits[cells[0]] = cells[2]
     return commits
+
+
+def parse_research_dependency(text: str, dependency: str) -> dict[str, str]:
+    lines = text.splitlines()
+    header_index = None
+    for index, line in enumerate(lines):
+        if not line.lstrip().startswith("|"):
+            continue
+        cells = [cell.strip().strip("`") for cell in line.strip().strip("|").split("|")]
+        if cells[:4] == ["依存", "版", "commit", "取得元"]:
+            header_index = index
+            break
+    if header_index is None:
+        raise RuntimeError("RESEARCH.md に submodule pin 表がありません")
+    for line in lines[header_index + 2:]:
+        if not line.lstrip().startswith("|"):
+            break
+        cells = [cell.strip().strip("`") for cell in line.strip().strip("|").split("|")]
+        if len(cells) >= 4 and cells[0] == dependency:
+            return {"version": cells[1], "commit": cells[2], "url": cells[3]}
+    raise RuntimeError(f"RESEARCH.md に {dependency} の pin がありません")
+
+
+def parse_wasi_sdk_pin(text: str) -> dict[str, str]:
+    lines = text.splitlines()
+    header_index = None
+    for index, line in enumerate(lines):
+        if not line.lstrip().startswith("|"):
+            continue
+        cells = [cell.strip().strip("`") for cell in line.strip().strip("|").split("|")]
+        if cells[:4] == ["依存", "版", "SHA-256", "取得元"]:
+            header_index = index
+            break
+    if header_index is None:
+        raise RuntimeError("RESEARCH.md に WASI SDK 固定値表がありません")
+
+    matches = []
+    for line in lines[header_index + 2:]:
+        if not line.lstrip().startswith("|"):
+            break
+        cells = [cell.strip().strip("`") for cell in line.strip().strip("|").split("|")]
+        if len(cells) >= 4 and cells[0] == "wasi-sdk":
+            matches.append((cells[1], cells[2], cells[3]))
+    if len(matches) != 1:
+        raise RuntimeError("RESEARCH.md の WASI SDK 固定値は一件必要です")
+    version, sha256, url = matches[0]
+    if not re.fullmatch(r"\d+(?:\.\d+)+", version):
+        raise RuntimeError("RESEARCH.md の WASI SDK version が不正です")
+    if not re.fullmatch(r"[0-9a-fA-F]{64}", sha256):
+        raise RuntimeError("RESEARCH.md の WASI SDK SHA-256 が不正です")
+    asset = url.rsplit("/", 1)[-1]
+    if not re.fullmatch(rf"wasi-sdk-{re.escape(version)}-x86_64-linux\.tar\.gz", asset):
+        raise RuntimeError("RESEARCH.md の WASI SDK asset URL が不正です")
+    return {"version": version, "sha256": sha256.lower(), "asset": asset, "url": url}
+
+
+def parse_wasi_sdk_release(release_text: str) -> tuple[str, str | None]:
+    try:
+        release = json.loads(release_text)
+    except json.JSONDecodeError as error:
+        raise RuntimeError("wasi-sdk release JSON を解析できません") from error
+    candidates = []
+    for asset in release.get("assets", []):
+        name = asset.get("name", "")
+        match = re.fullmatch(r"wasi-sdk-(\d+(?:\.\d+)+)-x86_64-linux\.tar\.gz", name)
+        if match:
+            candidates.append((parse_version(match.group(1)) or (), match.group(1), asset.get("digest")))
+    if not candidates:
+        raise RuntimeError("wasi-sdk release に Linux x86_64 asset がありません")
+    _, version, digest = max(candidates, key=lambda candidate: candidate[0])
+    sha256 = digest.removeprefix("sha256:").lower() if isinstance(digest, str) else None
+    if sha256 is not None and not re.fullmatch(r"[0-9a-f]{64}", sha256):
+        raise RuntimeError("wasi-sdk release asset digest が SHA-256 ではありません")
+    return version, sha256
 
 
 def parse_node_major(value: str) -> int | None:
@@ -230,6 +305,10 @@ def consistency(root: Path = ROOT) -> list[str]:
             errors.append(f"{path}: shallow = true が必要です")
 
     research = parse_research_commits(read_text(root / "RESEARCH.md"))
+    try:
+        parse_wasi_sdk_pin(read_text(root / "RESEARCH.md"))
+    except RuntimeError as error:
+        errors.append(f"RESEARCH.md: {error}")
     for module in modules:
         path = module.get("path", "")
         if not path.startswith("vendor/"):
@@ -395,6 +474,19 @@ def upstream_report(root: Path = ROOT) -> str:
             add_row(f"{name} (branch)", "取得できません", "取得できません", "要確認")
 
     try:
+        pin = parse_wasi_sdk_pin(read_text(root / "RESEARCH.md"))
+        latest_version, latest_sha = parse_wasi_sdk_release(fetch(WASI_SDK_RELEASE))
+        fixed = f"{pin['version']} ({pin['sha256'][:12]})"
+        latest = f"{latest_version} ({latest_sha[:12]})" if latest_sha else latest_version
+        status = compare_status(pin["version"], latest_version)
+        if latest_sha is not None and latest_sha != pin["sha256"]:
+            status = "更新あり"
+        add_row("wasi-sdk", fixed, latest, status)
+    except (OSError, urllib.error.URLError, RuntimeError) as error:
+        print(f"wasi-sdk: upstream を取得できません: {error}", file=sys.stderr)
+        add_row("wasi-sdk", "取得できません", "取得できません", "要確認")
+
+    try:
         node = parse_node_lts(fetch(NODE_INDEX))
         if node is None:
             raise RuntimeError("Active LTS が見つかりません")
@@ -492,6 +584,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("consistency", help="offline repository consistency checks")
+    subparsers.add_parser("wasi-sdk-pin", help="print the pinned WASI SDK values")
+    subparsers.add_parser("yosys-pin", help="print the pinned Yosys values")
     upstream = subparsers.add_parser("upstream", help="report upstream pin updates")
     upstream.add_argument("--report", required=True, type=Path)
     upstream.add_argument("--github-output", type=Path)
@@ -504,6 +598,14 @@ def main() -> int:
                 print(f"error: {error}", file=sys.stderr)
             return 1
         print("pin consistency: OK")
+        return 0
+    if args.command == "wasi-sdk-pin":
+        pin = parse_wasi_sdk_pin(read_text(ROOT / "RESEARCH.md"))
+        print("\t".join((pin["version"], pin["sha256"], pin["asset"], pin["url"])))
+        return 0
+    if args.command == "yosys-pin":
+        pin = parse_research_dependency(read_text(ROOT / "RESEARCH.md"), "yosys")
+        print("\t".join((pin["version"], pin["commit"], pin["url"])))
         return 0
 
     report = upstream_report()

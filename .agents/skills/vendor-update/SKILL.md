@@ -16,12 +16,14 @@ description: 午後のFPGA Web Toolchain の依存（vendor/ と third_party/ �
 | libftdi | `git -C vendor/libftdi rev-parse HEAD`（gitlink） | `.gitmodules` の URL と branch（既定は upstream の `HEAD`）の log と `ChangeLog` | Dependabot は `developer.intra2net.com` に接続できないため、「固定版の更新確認」が branch 先端を監視する。`git://` の URL を維持する |
 | zlib | `git -C vendor/zlib describe --tags` | `ChangeLog` | タグのオブジェクトではなく、commit の SHA を記録する |
 | emsdk / Emscripten | `git -C vendor/emsdk describe --tags --exact-match` | Emscripten の `ChangeLog.md`（間にある版をすべて）。JSPI、例外、pthread、`settings.js` の廃止・既定値の変更 | タグは版の順（`--sort=-v:refname`）で比べる。廃止された設定は外す（例: `WASM_BIGINT`） |
+| Yosys | `git -C vendor/yosys describe --tags --exact-match` | `CHANGELOG` と CMake、ABC 統合、Slang 無効時の依存 | v0.70 は CMake ビルド。ABC と必要な `libs/*` のみ初期化し、合成結果をネイティブ版と比較する |
+| wasi-sdk | `RESEARCH.md` の WASI SDK 固定値表 | [wasi-sdk releases](https://github.com/WebAssembly/wasi-sdk/releases) とリリースアセット | Linux x86_64 アーカイブの SHA-256 を確認し、wasi-libc の配布ライセンスも確認する |
 | yomiyasu | `git -C vendor/yomiyasu rev-parse HEAD` | https://github.com/nanaism/yomiyasu の commit と release | `.agents/skills/yomiyasu` のリンク先が残っていることを確かめる |
 | npm（`@playwright/test`） | `package.json` と `package-lock.json` | Playwright の release notes | Chromium の版が変わる。JSPI と WebUSB の動作を E2E で確かめる |
 | fixture 用 pip | `tests/fixtures/requirements.txt` | Apycula、yowasp-yosys、yowasp-nextpnr-himbaechel-gowin の release | nextpnr の wheel が指定する Apycula の版に合わせる。合わない版にすると 20K の `.fs` が作れない |
 | GitHub Actions | workflow の `uses:` にある commit SHA と `# vX.Y.Z` | 各 action の release。後続の major も確かめ、`runs.using` の Node.js がサポート対象か調べる | full commit SHA と `# vX.Y.Z` を併記する |
 
-タグで固定した submodule（openFPGALoader、libusb、zlib、emsdk）は Dependabot の対象外です。libftdi も取得元に接続できないため Dependabot の対象外とし、`.gitmodules` の URL と branch から求めた upstream 先端を「固定版の更新確認」ワークフローが監視します。更新は Issue で知らせます。
+タグで固定した submodule（openFPGALoader、libusb、zlib、emsdk、Yosys）は Dependabot の対象外です。wasi-sdk の固定版も「固定版の更新確認」ワークフローで監視します。libftdi も取得元に接続できないため Dependabot の対象外とし、`.gitmodules` の URL と branch から求めた upstream 先端を同じワークフローが監視します。更新情報は Issue を使って共有する運用です。
 
 ## 更新手順
 

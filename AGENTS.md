@@ -28,7 +28,7 @@
 - すべての自動検査は fail closed にします。必要なツールやファイルがない場合、または出力を解析できない場合は失敗として扱います。
 - `.cst` はプロジェクトのピン割り当てから生成し、手で編集しません。
 - ツールのバージョンと依存の pin は、pin checker が検査するファイルを正とします。ソースコードなどに二重の固定値を持たせません。
-- Emscripten のオプションは安定性を最優先にし、そのうえで実行速度で選びます。変更するときは「experiment-record」スキルで比べてから決めます。
+- 書き込み部（openFPGALoader）は Emscripten で、合成・配置配線のツール（Yosys、nextpnr）は WASI SDK でビルドします。Apicula は Pyodide（Emscripten 製）で動かします。どちらのオプションも安定性を最優先にし、そのうえで実行速度で選びます。変更するときは「experiment-record」スキルで比べてから決めます。
 
 ## 4. 実機と仮想デバイス
 
@@ -89,9 +89,14 @@ Dependabot の PR を含むすべての更新で「vendor-update」スキルの�
 ```sh
 git submodule update --init --depth 1    # submodule の取得
 git -C vendor/emsdk fetch --depth=1 --tags origin  # build-wasm.sh に必要な emsdk のタグを取得。CI の build.yml と同じ
+git submodule update --init --depth 1 -- vendor/yosys
+git -C vendor/yosys submodule update --init --depth 1 -- abc libs/cxxopts libs/fmt libs/tomlplusplus libs/boost_regex libs/symfpu
 npm ci                                   # Playwright と esbuild などを取得。build-web.sh の前に実行する
 npx playwright install --with-deps chromium
 scripts/build-wasm.sh                    # openFPGALoader を WASM にする（build/jspi-pthread/）
+scripts/build-synth-wasm.sh              # Yosys を WASI SDK でビルドする
+scripts/build-synth-wasm.sh --native     # Yosys のネイティブ参照版をビルドする
+node --test tests/synth/*.test.mjs       # WASM とネイティブの合成結果を比較する
 scripts/build-web.sh                     # 画面と WASM を dist/ にまとめる
 tests/fixtures/build-fs.sh               # 4 ボード用の .fs を作る（build/fixtures/）
 node --test tests/web/*.test.mjs         # 画面の部品の単体テスト

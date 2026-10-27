@@ -15,6 +15,7 @@ SUBMODULES = (
     "vendor/openFPGALoader",
     "vendor/yomiyasu",
     "vendor/zlib",
+    "vendor/yosys",
 )
 RELEASE_SOURCE_KEYS = {"version", "commit", "submodule_shas", "emsdk_version"}
 
