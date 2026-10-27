@@ -13,6 +13,7 @@ import {
 } from "./lib/options.mjs";
 import { parseProgress } from "./lib/parse-progress.mjs";
 import { writeTerminalText } from "./lib/terminal-output.mjs";
+import { initializeIde } from "./ide.mjs";
 
 const form = document.querySelector("#program-form");
 const boardSelect = document.querySelector("#board-select");
@@ -449,6 +450,7 @@ function finishRun(
       dumpDownload.download =
         `${context.board.id}-flash-0x${context.offset.toString(16)}-${context.dumpSize}.bin`;
       downloadResult.hidden = false;
+      document.dispatchEvent(new CustomEvent("toolchain:artifacts-ready"));
     }
   }
 
@@ -624,3 +626,4 @@ form.addEventListener("submit", async (event) => {
 
 updateForm();
 initialize();
+initializeIde({ form, boardSelect, programLog, BOARDS });

@@ -89,7 +89,7 @@ Dependabot の PR を含むすべての更新で「vendor-update」スキルの�
 ```sh
 git submodule update --init --depth 1    # submodule の取得
 git -C vendor/emsdk fetch --depth=1 --tags origin  # build-wasm.sh に必要な emsdk のタグを取得。CI の build.yml と同じ
-npm ci                                   # Playwright などの取得
+npm ci                                   # Playwright と esbuild などを取得。build-web.sh の前に実行する
 npx playwright install --with-deps chromium
 scripts/build-wasm.sh                    # openFPGALoader を WASM にする（build/jspi-pthread/）
 scripts/build-web.sh                     # 画面と WASM を dist/ にまとめる

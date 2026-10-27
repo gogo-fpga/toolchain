@@ -3,11 +3,16 @@ set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 build_root="${BUILD_ROOT:-$root/build}"
+if [[ ! -x "$root/node_modules/.bin/esbuild" ]]; then
+  printf 'Missing esbuild. Run npm ci before scripts/build-web.sh.\n' >&2
+  exit 1
+fi
 if [[ "$build_root" != /* ]]; then
   build_root="$root/$build_root"
 fi
 artifacts="$build_root/jspi-pthread"
 dist="$root/dist"
+cd "$root"
 
 case "${BUILD_INFO_CHECK:-full}" in
   full)
@@ -41,6 +46,7 @@ fi
 rm -rf -- "$dist"
 mkdir -p "$dist"
 cp -R "$root/web/." "$dist/"
+node_modules/.bin/esbuild web/editor/editor.mjs --bundle --minify --format=esm --outfile="$dist/editor/editor.bundle.mjs"
 cp "$artifacts/openFPGALoader.mjs" "$dist/openFPGALoader.mjs"
 cp "$artifacts/openFPGALoader.wasm" "$dist/openFPGALoader.wasm"
 cp "$artifacts/build-info.json" "$dist/build-info.json"
