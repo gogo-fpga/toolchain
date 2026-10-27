@@ -40,7 +40,7 @@ function expectJapaneseFailure(bytes, expectedPattern) {
     () => importProjectZip(bytes),
     (error) => {
       assert.match(error.message, expectedPattern);
-      assert.match(error.message, /[ぁ-んァ-ヶ一-龯]/);
+      assert.match(error.message, /[ぁ-んァ-ヶ\u4e00-\u9fff]/u);
       return true;
     },
   );
