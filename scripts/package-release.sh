@@ -47,6 +47,11 @@ required_files=(
   "$root/dist/openFPGALoader.mjs"
   "$root/dist/openFPGALoader.wasm"
   "$root/dist/serve.py"
+  "$root/dist/pack/pyodide/pyodide.mjs"
+  "$root/dist/pack/pyodide/pyodide.asm.mjs"
+  "$root/dist/pack/pyodide/pyodide.asm.wasm"
+  "$root/dist/pack/pyodide/pyodide-lock.json"
+  "$root/dist/pack/pyodide/python_stdlib.zip"
   "$root/README.md"
   "$root/LICENSE"
   "$root/NOTICE"
@@ -55,6 +60,22 @@ required_files=(
 for required_file in "${required_files[@]}"; do
   if [[ ! -f "$required_file" ]]; then
     printf 'Required release file is missing: %s\n' "$required_file" >&2
+    exit 1
+  fi
+done
+asset_wheels=(
+  "$root"/dist/pack/wheels/apycula-*.whl
+  "$root"/dist/pack/wheels/micropip-*.whl
+  "$root"/dist/pack/wheels/numpy-*.whl
+  "$root"/dist/pack/wheels/msgspec-*.whl
+)
+if [[ ${#asset_wheels[@]} != 4 ]]; then
+  printf 'Release must contain exactly one Apicula, micropip, NumPy, and msgspec wheel.\n' >&2
+  exit 1
+fi
+for asset_wheel in "${asset_wheels[@]}"; do
+  if [[ ! -s "$asset_wheel" ]]; then
+    printf 'Required Pyodide wheel is missing or empty: %s\n' "$asset_wheel" >&2
     exit 1
   fi
 done
@@ -103,6 +124,8 @@ license_copies=(
   "$root/licenses/apycula-dependencies/fastcrc-LICENSE:fastcrc-LICENSE"
   "$root/licenses/apycula-dependencies/msgspec-LICENSE:msgspec-LICENSE"
   "$root/licenses/apycula-dependencies/numpy-LICENSE:numpy-LICENSE"
+  "$root/licenses/pyodide-MPL-2.0.txt:pyodide-MPL-2.0.txt"
+  "$root/licenses/CPython-PSF-License.txt:CPython-PSF-License.txt"
   "$root/licenses/wasi-sdk/LICENSE:wasi-sdk-LICENSE"
   "$root/licenses/llvm/LICENSE.TXT:wasi-sdk-llvm-LICENSE.TXT"
   "$root/licenses/wasi-libc/LICENSE:wasi-libc-LICENSE"
@@ -124,8 +147,8 @@ license_copies=(
 for entry in "${license_copies[@]}"; do
   source_file="${entry%%:*}"
   destination_name="${entry#*:}"
-  if [[ ! -f "$source_file" ]]; then
-    printf 'Required license file is missing: %s\n' "$source_file" >&2
+  if [[ ! -s "$source_file" ]]; then
+    printf 'Required license file is missing or empty: %s\n' "$source_file" >&2
     exit 1
   fi
   cp "$source_file" "$web_root/licenses/$destination_name"

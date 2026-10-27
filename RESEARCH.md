@@ -60,7 +60,7 @@ T0 では書き込み部だけが実装されています。合成、配置配�
 | Yosys + ABC | C、C++ | Yosys: ISC。ABC: Berkeley の許諾条件 | [YoWASP](https://yowasp.org/) は Yosys を WASI で提供。[synth-explorer](https://github.com/cachanova/synth-explorer) は WASI SDK 33 で合成用 Yosys を構築 | T2。YoWASP とネイティブ版を比較し、必要な `synth_gowin` を含む upstream ビルドを検証する |
 | GHDL | Ada、C | GPL-2.0-or-later | [synth-explorer](https://github.com/cachanova/synth-explorer) は GHDL 5.0.1 で合成し、Verilog を別 Worker の Yosys に渡す。[ghdl-browser](https://github.com/UnsignedChad/ghdl-browser) と [ghdl-wasm](https://github.com/UnsignedChad/ghdl-wasm) は解析・シミュレーションの事例 | T3。`--synth --out=verilog` で Verilog に変換し、Yosys に渡す。GPL-3.0 の ghdl-yosys-plugin は Yosys WASM に組み込まず、ISC の Yosys を保つ。詳しくは[広域調査](docs/research/oss-survey.md)を参照 |
 | nextpnr-himbaechel（Gowin） | C++ | ISC | [YoWASP](https://yowasp.org/) が nextpnr の WASI 版を提供 | T2。必要な Gowin device database のみを含め、4 ボードの配置配線を検証する |
-| Apicula / `gowin_pack` | Python | Apicula: MIT。Pyodide: MPL-2.0 | この調査では Apicula のブラウザー実行例を確認できていない | T2。Apicula を Pyodide 上で実行する案を試し、依存、実行時間、配布サイズを測る |
+| Apicula / `gowin_pack` | Python | Apicula: MIT。Pyodide: MPL-2.0 | S3 で Node.js/Pyodide の native parity を確認し、配布 wheel を追加する。Worker は S4 | S3。4ボードの `.fs` 一致、実行時間、配布サイズを測定する |
 | openFPGALoader | C++ | Apache-2.0 | 移植元で Emscripten と WebUSB による WASM 化を実装 | T0 の書き込み部として移植済み。以降も upstream のソースを使う |
 | NVC | C | GPL-3.0-or-later | この調査では WASM 版を確認できていない | T4。LLVM なしの解釈実行を調査する。`configure.ac` は `--enable-llvm` を宣言し、LLVM を既定で有効にする。依存は pthread、zlib、libffi、libzstd |
 | Icarus Verilog (`iverilog` / `vvp`) | C | GPL-2.0 | [VeriSim](https://github.com/senolgulgonul/verisim) が Emscripten で `ivlpp`、`ivl`、`vvp` を個別に WASM 化 | T4。3 つの WASM を JavaScript で順番に呼ぶ方式を基礎にする。詳しくは[広域調査](docs/research/oss-survey.md)を参照 |
@@ -93,11 +93,21 @@ nextpnr は native build で `bbasm` を用意し、WASI build の `BBA_IMPORT` 
 
 S2 の P&R テストは各ボードの Verilog テンプレートを WASI Yosys で合成し、`generateCst` の制約と同じ `--seed` を使って native と WASI nextpnr に渡します。出力 JSON はパース後に比較し、実測で差が現れ、ツールまたはパスの metadata と確認できた値だけを狭く置き換えます。配置などの差は許容しません。比較規則には置換数の確認と、非 metadata 値を変える負の対照を設けます。
 
-nextpnr は ISC、Boost は Boost Software License 1.0、Eigen は主に MPL-2.0 で、一部に BSD など互換ライセンスのコードがあります。Apycula は MIT のライセンスです。Apycula と実行時依存の Python コードはビルド時の chipdb 生成にだけ使い、WASM や Release には含めません。配布するのは生成済みの chipdb です。ライセンス本文は `licenses/` と配布 zip に含めます。
+nextpnr は ISC、Boost は Boost Software License 1.0、Eigen は主に MPL-2.0 で、一部に BSD など互換ライセンスのコードがあります。Apycula は MIT のライセンスです。S2 の chipdb 生成では Apicula と Python 依存をビルド時だけ使い、S3 では `gowin_pack` を実行する Apicula wheel と Pyodide runtime を web build / Release に追加します。ライセンス本文は `licenses/` と配布 zip に含めます。
 
 Apycula 0.35 と `requirements-nextpnr.txt` の固定依存で、4 family の chipdb 生成と P&R が成功しました。他の Apycula 版は試していません。native と WASI で別々に生成した `.bba` と chipdb は一致しなかったため、native build の `.bba` を WASI build に取り込みます。これにより、両実行形式が同じ chipdb を使うことをテストで byte 単位に確認します。
 
 Boost 1.92.0 は `-fwasm-exceptions` と `libunwind` を使って WASI 向けにビルドできました。別の Boost 版は試していません。nextpnr WASM は 34,141,610 bytes、native binary は 55,324,696 bytes です。ビルド時間は初回の WASI が 5 分 5.890 秒、native が 2 分 44.644 秒でした。chipdb 生成を共有する変更後の再ビルドは、既存のビルドを再利用して WASI が 10.957 秒、native が 4.575 秒でした。
+
+### Pyodide 上の Apicula `gowin_pack`
+
+S3 では Apicula 0.35 の Python wheel を配布物に含め、Node.js の Pyodide 314.0.7 から実行します。Pyodide の lock は Python 3.14.2、micropip 0.11.1、NumPy 2.4.6（SHA-256 `a292c1f5d7d8a2208cd5e94fc467604c131cabcd2fc14fed6eefde121e7fabdf`）、msgspec 0.20.0（SHA-256 `2a4075cee8afc2c0424c63ae1a9b0655e727478df7fa2eb78f86f846fc5fb4bd`）を指定します。これらの wheel hash はビルド時に Pyodide の lock から読み、Apicula wheel の hash は `requirements-nextpnr.txt` の固定値を使います。
+
+Pyodide は新規依存として導入し、upstream の 314.0.0〜314.0.7 の変更履歴を確認しました。314.0.0 で Python 3.14.2 と Emscripten 5.0.3 に更新され、`lzma` が標準ライブラリーに含まれます。`pyodide.asm.mjs` への ES module 名変更は Node の実行には影響しませんが、S4 の Worker は module worker を使う必要があります。314.0.1〜314.0.6 の修正・性能改善はこの file-based 実行で使う API を変えません。314.0.7 の `dedent` オプションは既定値が従来動作を保つため採用不要です。`loadPackage` は lock 内の名前を指定し、依存解決を切った `micropip.install` でローカル wheel を入れるため、314.0.6 の requirement-specifier 処理変更にも依存しません。
+
+Apicula 0.35 の wheel は 4,281,385 bytes、SHA-256 `6495d1c7cdc3cf6ac0a74bf7246932e96e5af84e24c17c1fef7296ebe7ed82fe` です。wheel に同梱された chipdb を `importlib.resources` で読み、圧縮データの展開に `lzma` を使います。`lzma` は Pyodide core に含まれることを実行時に検査します。`fastcrc` は Pyodide にないため、Apicula は CRC table fallback を選び、その警告を stderr に残します。Cattrs は使用しません。
+
+Pyodide の NumPy / msgspec は 2.4.6 / 0.20.0 で、native 参照環境の 2.5.4 / 0.22.0 と版が異なります。S3 の比較では、同一の WASI nextpnr routed JSON を使い、全4ボードで native と Pyodide の `.fs` を5回ずつバイト比較し、IDCODE も確認しました。17件の synthesis tests は成功し、壊れた JSON、別 device、wheel hash 不一致、欠落 wheel の4負例を検出しました。Pyodide setup は 4,627.9 ms、pack assets は 21,021,184 bytes、`.fs` は 1K 351,954、4K 1,167,294、9K 2,069,320、20K 4,618,782 bytes でした。native / Pyodide の実行時間と各回の値は `docs/experiments/S3A-pyodide-gowin-pack.md` と CSV に記録しました。ブラウザー Worker での実行は S4 の範囲で、本段階では確認しません。
 
 | Family | Native / WASI chipdb bytes |
 |---|---:|

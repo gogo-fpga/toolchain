@@ -38,6 +38,8 @@ python3 "$root/scripts/build-info.py" "$build_info_action" \
   --root "$root" \
   --artifacts "$artifacts"
 
+scripts/build-pack-assets.sh
+
 if [[ ! -f "$root/web/index.html" || ! -f "$root/web/serve.py" ]]; then
   printf 'Missing web application sources under %s/web\n' "$root" >&2
   exit 1
@@ -51,5 +53,7 @@ node_modules/.bin/esbuild web/lib/project-zip.mjs --bundle --minify --format=esm
 cp "$artifacts/openFPGALoader.mjs" "$dist/openFPGALoader.mjs"
 cp "$artifacts/openFPGALoader.wasm" "$dist/openFPGALoader.wasm"
 cp "$artifacts/build-info.json" "$dist/build-info.json"
+mkdir -p "$dist/pack"
+cp -R "$root/build/pack/." "$dist/pack/"
 
 printf 'Assembled web app in %s from %s\n' "$dist" "$artifacts"

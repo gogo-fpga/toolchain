@@ -92,7 +92,7 @@ git -C vendor/emsdk fetch --depth=1 --tags origin  # build-wasm.sh に必要な 
 git submodule update --init --depth 1 -- vendor/yosys
 git -C vendor/yosys submodule update --init --depth 1 -- abc libs/cxxopts libs/fmt libs/tomlplusplus libs/boost_regex libs/symfpu
 git submodule update --init --depth 1 -- vendor/nextpnr
-npm ci                                   # Playwright と esbuild などを取得。build-web.sh の前に実行する
+npm ci                                   # Pyodide、Playwright、esbuild などを取得
 npx playwright install --with-deps chromium
 scripts/build-wasm.sh                    # openFPGALoader を WASM にする（build/jspi-pthread/）
 scripts/build-synth-wasm.sh              # Yosys を WASI SDK でビルドする
@@ -101,7 +101,9 @@ node --test tests/synth/*.test.mjs       # WASM とネイティブの合成結�
 scripts/build-pnr-wasm.sh                # nextpnr と Gowin chipdb を WASI SDK でビルドする
 scripts/build-pnr-wasm.sh --native       # nextpnr のネイティブ参照版をビルドする
 node --test tests/synth/nextpnr.test.mjs # nextpnr の WASI/native 結果と負の対照を検証する
-scripts/build-web.sh                     # 画面と WASM を dist/ にまとめる
+scripts/build-pack-assets.sh             # Pyodide、Apicula、NumPy、msgspec を検証して build/pack/ に配置する
+node --test tests/synth/gowin-pack.test.mjs # Pyodide と native の .fs を比較する
+scripts/build-web.sh                     # 画面、WASM、Pyodide assets を dist/ にまとめる
 tests/fixtures/build-fs.sh               # 4 ボード用の .fs を作る（build/fixtures/）
 node --test tests/web/*.test.mjs         # 画面の部品の単体テスト
 WASM_BUILD_ROOT=build node --test --test-concurrency=1 tests/sim/*.test.mjs  # 仮想 USB での検出・書き込み
