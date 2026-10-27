@@ -251,7 +251,7 @@ class CheckPinsTests(unittest.TestCase):
     def prepare_upstream_fixture(self, libftdi_branch=None):
         names = (*check_pins.TAGGED_SUBMODULES, *check_pins.BRANCH_SUBMODULES)
         self.pinned = {
-            name: chr(ord("a") + index) * 40
+            name: f"{index + 1:040x}"
             for index, name in enumerate(names)
         }
         lines = []
