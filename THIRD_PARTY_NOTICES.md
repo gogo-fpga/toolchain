@@ -14,6 +14,11 @@
 | ABC | `6c5104934c90eb3cdef9ea063318f7588908a185` | Regents of the University of California の許諾条件 | Yosys WASM に静的リンク | `licenses/abc-copyright.txt` |
 | cxxopts | `4bf61f08697b110d9e3991864650a405b3dd515d` | MIT | Yosys WASM に静的リンク | `licenses/cxxopts-LICENSE` |
 | fmt | `a00f82c6b66dcae15503ba19c1598b2733057dea` | MIT | Yosys WASM に静的リンク | `licenses/fmt-LICENSE` |
+| nextpnr-himbaechel | nextpnr-0.11.1 / `62e659ed6748e9f60b2a4aa25dd4fe79a9605881` | ISC | WASI WASM に静的リンク | `licenses/nextpnr-COPYING` |
+| Boost | 1.92.0 / SHA-256 `ea7b982002cc9dfbe59b0b217b206f470dc75f3de0bb2973d844118934d82411` | Boost Software License 1.0 | `program_options`、`iostreams` を nextpnr WASM に静的リンク | `licenses/boost-LICENSE_1_0.txt` |
+| Eigen | 5.0.1 / SHA-256 `e9c326dc8c05cd1e044c71f30f1b2e34a6161a3b6ecf445d56b53ff1669e3dec` | 主に MPL-2.0。一部に BSD など互換ライセンスのコード | nextpnr WASM のビルドでヘッダーを使用 | `licenses/eigen-*` |
+| Apycula | `requirements-nextpnr.txt` で固定 | MIT | ビルド時に Gowin chipdb を生成。Apicula の Python コードは WASM と Release に含めず、生成した chipdb のみを配布 | `licenses/apycula-LICENSE` |
+| Apycula の実行時依存（fastcrc、msgspec、NumPy） | `requirements-nextpnr.txt` で固定 | 各 package のライセンス | Apicula と同じく chipdb 生成時のみ使用。WASM と Release にコードを含めない | `licenses/apycula-dependencies/` |
 | wasi-sdk | 34.0 / `b761e3a0721dbae9c09a0059e5fdb2bf917d1b4a8a7b430fb3b5aafb0984b2c4`。ライセンス原文の source commit: `5a0bf653a1a06e1c18867567c5937006d3394a69` | Apache-2.0 | ビルド用 SDK | `licenses/wasi-sdk-LICENSE` |
 | LLVM runtime | `895aa2c896ada719451be2e3673c83da8ddf1141` | Apache-2.0 with LLVM Exceptions | libc++、libc++abi、libunwind などを Yosys WASM に静的リンク | `licenses/wasi-sdk-llvm-LICENSE.TXT` |
 | wasi-libc | `2e6fb9d8ee0cdf9e431fbcabe8af3115de000a13` | Apache-2.0 with LLVM Exceptions、Apache-2.0、MIT と同梱部品のライセンス | libc を Yosys WASM に静的リンク | `licenses/wasi-libc-LICENSE*` |
@@ -23,7 +28,7 @@
 
 Emscripten SDK の `upstream/emscripten/LICENSE` は Emscripten の MIT と University of Illinois/NCSA のライセンス本文を含む文書です。また、Node.js の一部利用と musl の MIT ライセンスへの案内も記載されています。musl の本文は `system/lib/libc/musl/COPYRIGHT` です。libc++、libc++abi、llvm-libc、compiler-rt、libunwind は SDK 内に個別のライセンスファイルがあるため、上表のとおり別に同梱します。
 
-Yosys の `COPYING` は ISC License の本文です。ABC の `copyright.txt` は University of California, Berkeley の許諾条件を記載したファイルです。WASI SDK のアーカイブにはライセンス本文が含まれないため、wasi-sdk 34 の source commit と、その commit が参照する LLVM、wasi-libc の各 commit からライセンス文書を取得し、リポジトリーと配布 zip に収録する方針です。wasi-libc の原文には主要ライセンスだけでなく、musl、cloudlibc、musl-fts、wasi-headers の許諾文書も含まれています。
+Yosys と nextpnr の `COPYING` は ISC License の本文です。ABC の `copyright.txt` は University of California, Berkeley の許諾条件を記載したファイルです。Boost と Eigen のライセンス、Apycula と build dependencies のライセンス本文も `licenses/` と配布 zip に含めます。WASI SDK のアーカイブにはライセンス本文が含まれないため、wasi-sdk 34 の source commit と、その commit が参照する LLVM、wasi-libc の各 commit からライセンス文書を取得し、リポジトリーと配布 zip に収録する方針です。wasi-libc の原文には主要ライセンスだけでなく、musl、cloudlibc、musl-fts、wasi-headers の許諾文書も含まれています。
 
 ## 配布物に含まないもの
 

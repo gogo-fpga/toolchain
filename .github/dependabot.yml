@@ -15,7 +15,7 @@ updates:
     open-pull-requests-limit: 5
 
   # タグで固定した submodule は Dependabot が branch HEAD に進めないよう対象外です。
-  # openFPGALoader、libusb、zlib、emsdk、Yosys、wasi-sdk は固定版確認ワークフローで監視します。
+  # openFPGALoader、libusb、zlib、emsdk、Yosys、nextpnr、wasi-sdk、Boost、Eigen、Apycula は固定版確認ワークフローで監視します。
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -42,6 +42,14 @@ updates:
 
   - package-ecosystem: "pip"
     directory: "/tests/fixtures"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: "pip"
+    directory: "/"
     schedule:
       interval: "weekly"
     cooldown:

@@ -26,8 +26,14 @@ ACTIONLINT_ENV = re.compile(r"^\s*ACTIONLINT_(VERSION|SHA256):\s*['\"]?([^'\"#\s
 GITMODULE_SECTION = re.compile(r"^\s*\[submodule\s+['\"]([^'\"]+)['\"]\]\s*$")
 GITMODULE_KEY = re.compile(r"^\s*(path|url|shallow|branch)\s*=\s*(.*?)\s*$")
 
-TAGGED_SUBMODULES = ("openFPGALoader", "libusb", "zlib", "emsdk", "yosys")
+TAGGED_SUBMODULES = ("openFPGALoader", "libusb", "zlib", "emsdk", "yosys", "nextpnr")
 BRANCH_SUBMODULES = ("libftdi",)
+ARCHIVE_TAG_SOURCES = {
+    "boost": "https://github.com/boostorg/boost.git",
+    "eigen": "https://gitlab.com/libeigen/eigen.git",
+}
+APYCULA_REQUIREMENTS = "requirements-nextpnr.txt"
+APYCULA_PYPI_RELEASE = "https://pypi.org/pypi/apycula/json"
 NODE_INDEX = "https://nodejs.org/dist/index.json"
 ACTIONLINT_RELEASE = "https://api.github.com/repos/rhysd/actionlint/releases/latest"
 RUNNER_IMAGES_README = "https://raw.githubusercontent.com/actions/runner-images/main/README.md"
@@ -103,7 +109,7 @@ def parse_research_dependency(text: str, dependency: str) -> dict[str, str]:
     raise RuntimeError(f"RESEARCH.md に {dependency} の pin がありません")
 
 
-def parse_wasi_sdk_pin(text: str) -> dict[str, str]:
+def parse_archive_pin(text: str, dependency: str) -> dict[str, str]:
     lines = text.splitlines()
     header_index = None
     for index, line in enumerate(lines):
@@ -114,26 +120,67 @@ def parse_wasi_sdk_pin(text: str) -> dict[str, str]:
             header_index = index
             break
     if header_index is None:
-        raise RuntimeError("RESEARCH.md に WASI SDK 固定値表がありません")
+        raise RuntimeError("RESEARCH.md にアーカイブ固定値表がありません")
 
     matches = []
     for line in lines[header_index + 2:]:
         if not line.lstrip().startswith("|"):
             break
         cells = [cell.strip().strip("`") for cell in line.strip().strip("|").split("|")]
-        if len(cells) >= 4 and cells[0] == "wasi-sdk":
+        if len(cells) >= 4 and cells[0] == dependency:
             matches.append((cells[1], cells[2], cells[3]))
     if len(matches) != 1:
-        raise RuntimeError("RESEARCH.md の WASI SDK 固定値は一件必要です")
+        raise RuntimeError(f"RESEARCH.md の {dependency} 固定値は一件必要です")
     version, sha256, url = matches[0]
     if not re.fullmatch(r"\d+(?:\.\d+)+", version):
-        raise RuntimeError("RESEARCH.md の WASI SDK version が不正です")
+        raise RuntimeError(f"RESEARCH.md の {dependency} version が不正です")
     if not re.fullmatch(r"[0-9a-fA-F]{64}", sha256):
-        raise RuntimeError("RESEARCH.md の WASI SDK SHA-256 が不正です")
-    asset = url.rsplit("/", 1)[-1]
-    if not re.fullmatch(rf"wasi-sdk-{re.escape(version)}-x86_64-linux\.tar\.gz", asset):
+        raise RuntimeError(f"RESEARCH.md の {dependency} SHA-256 が不正です")
+    if not url.startswith("https://"):
+        raise RuntimeError(f"RESEARCH.md の {dependency} URL は HTTPS が必要です")
+    return {
+        "version": version,
+        "sha256": sha256.lower(),
+        "asset": url.rsplit("/", 1)[-1],
+        "url": url,
+    }
+
+
+def parse_wasi_sdk_pin(text: str) -> dict[str, str]:
+    pin = parse_archive_pin(text, "wasi-sdk")
+    if not re.fullmatch(
+        rf"wasi-sdk-{re.escape(pin['version'])}-x86_64-linux\.tar\.gz",
+        pin["asset"],
+    ):
         raise RuntimeError("RESEARCH.md の WASI SDK asset URL が不正です")
-    return {"version": version, "sha256": sha256.lower(), "asset": asset, "url": url}
+    return pin
+
+
+def parse_apycula_requirements(text: str) -> tuple[str, list[str]]:
+    package = None
+    version = None
+    hashes: list[str] = []
+    package_hashes: dict[str, list[str]] = {}
+    for raw_line in text.splitlines():
+        line = raw_line.split("#", 1)[0].strip()
+        if not line:
+            continue
+        requirement = re.match(r"^([A-Za-z0-9_.-]+)==([A-Za-z0-9.+!-]+)", line)
+        if requirement:
+            package = requirement.group(1).lower().replace("_", "-")
+            version = requirement.group(2)
+            package_hashes.setdefault(package, [])
+        if package is None:
+            raise RuntimeError("requirements-nextpnr.txt に hash なしの行があります")
+        found = re.findall(r"--hash=sha256:([0-9a-fA-F]{64})", line)
+        package_hashes[package].extend(value.lower() for value in found)
+        hashes.extend(found)
+    apycula_versions = re.findall(r"(?mi)^\s*apycula==([A-Za-z0-9.+!-]+)", text)
+    if len(apycula_versions) != 1:
+        raise RuntimeError("requirements-nextpnr.txt の Apycula 固定値は一件必要です")
+    if not hashes or any(not found for found in package_hashes.values()):
+        raise RuntimeError("requirements-nextpnr.txt の全依存に SHA-256 hash が必要です")
+    return apycula_versions[0], sorted(set(hashes))
 
 
 def parse_wasi_sdk_release(release_text: str) -> tuple[str, str | None]:
@@ -309,6 +356,24 @@ def consistency(root: Path = ROOT) -> list[str]:
         parse_wasi_sdk_pin(read_text(root / "RESEARCH.md"))
     except RuntimeError as error:
         errors.append(f"RESEARCH.md: {error}")
+    for dependency in ARCHIVE_TAG_SOURCES:
+        try:
+            pin = parse_archive_pin(read_text(root / "RESEARCH.md"), dependency)
+            expected_url = (
+                f"https://github.com/boostorg/boost/releases/download/boost-{pin['version']}/"
+                f"boost-{pin['version']}-b2-nodocs.tar.xz"
+                if dependency == "boost"
+                else f"https://gitlab.com/libeigen/eigen/-/archive/{pin['version']}/"
+                f"eigen-{pin['version']}.tar.gz"
+            )
+            if pin["url"] != expected_url:
+                errors.append(f"RESEARCH.md: {dependency} asset URL が pin と一致しません")
+        except RuntimeError as error:
+            errors.append(f"RESEARCH.md: {error}")
+    try:
+        parse_apycula_requirements(read_text(root / APYCULA_REQUIREMENTS))
+    except RuntimeError as error:
+        errors.append(f"{APYCULA_REQUIREMENTS}: {error}")
     for module in modules:
         path = module.get("path", "")
         if not path.startswith("vendor/"):
@@ -486,6 +551,35 @@ def upstream_report(root: Path = ROOT) -> str:
         print(f"wasi-sdk: upstream を取得できません: {error}", file=sys.stderr)
         add_row("wasi-sdk", "取得できません", "取得できません", "要確認")
 
+    for name, url in ARCHIVE_TAG_SOURCES.items():
+        try:
+            pin = parse_archive_pin(read_text(root / "RESEARCH.md"), name)
+            latest_tag = latest_stable_tag(run("git", "ls-remote", "--tags", url, cwd=root))
+            if latest_tag is None:
+                raise RuntimeError("安定版タグがありません")
+            latest_version = parse_version(latest_tag)
+            if latest_version is None:
+                raise RuntimeError("最新タグの version を読めません")
+            fixed = f"{pin['version']} ({pin['sha256'][:12]})"
+            latest = latest_tag
+            add_row(f"{name} archive", fixed, latest, compare_status(pin["version"], latest))
+        except (OSError, urllib.error.URLError, RuntimeError, subprocess.CalledProcessError) as error:
+            print(f"{name}: upstream を取得できません: {error}", file=sys.stderr)
+            add_row(f"{name} archive", "取得できません", "取得できません", "要確認")
+
+    try:
+        apycula_version, _ = parse_apycula_requirements(
+            read_text(root / APYCULA_REQUIREMENTS)
+        )
+        pypi = json.loads(fetch(APYCULA_PYPI_RELEASE))
+        latest_apycula = str(pypi.get("info", {}).get("version", ""))
+        if not latest_apycula:
+            raise RuntimeError("PyPI の latest version がありません")
+        add_row("Apycula", apycula_version, latest_apycula, compare_status(apycula_version, latest_apycula))
+    except (OSError, RuntimeError, json.JSONDecodeError) as error:
+        print(f"Apycula: pin を取得できません: {error}", file=sys.stderr)
+        add_row("Apycula", "取得できません", "取得できません", "要確認")
+
     try:
         node = parse_node_lts(fetch(NODE_INDEX))
         if node is None:
@@ -586,6 +680,10 @@ def main() -> int:
     subparsers.add_parser("consistency", help="offline repository consistency checks")
     subparsers.add_parser("wasi-sdk-pin", help="print the pinned WASI SDK values")
     subparsers.add_parser("yosys-pin", help="print the pinned Yosys values")
+    subparsers.add_parser("nextpnr-pin", help="print the pinned nextpnr values")
+    archive_pin = subparsers.add_parser("archive-pin", help="print a pinned source archive")
+    archive_pin.add_argument("dependency", choices=tuple(ARCHIVE_TAG_SOURCES))
+    subparsers.add_parser("pnr-cache-pin", help="print the PnR dependency cache inputs")
     upstream = subparsers.add_parser("upstream", help="report upstream pin updates")
     upstream.add_argument("--report", required=True, type=Path)
     upstream.add_argument("--github-output", type=Path)
@@ -606,6 +704,35 @@ def main() -> int:
     if args.command == "yosys-pin":
         pin = parse_research_dependency(read_text(ROOT / "RESEARCH.md"), "yosys")
         print("\t".join((pin["version"], pin["commit"], pin["url"])))
+        return 0
+    if args.command == "nextpnr-pin":
+        pin = parse_research_dependency(read_text(ROOT / "RESEARCH.md"), "nextpnr")
+        print("\t".join((pin["version"], pin["commit"], pin["url"])))
+        return 0
+    if args.command == "archive-pin":
+        pin = parse_archive_pin(read_text(ROOT / "RESEARCH.md"), args.dependency)
+        print("\t".join((pin["version"], pin["sha256"], pin["asset"], pin["url"])))
+        return 0
+    if args.command == "pnr-cache-pin":
+        wasi = parse_wasi_sdk_pin(read_text(ROOT / "RESEARCH.md"))
+        archives = [
+            parse_archive_pin(read_text(ROOT / "RESEARCH.md"), dependency)
+            for dependency in ("boost", "eigen")
+        ]
+        apycula_version, apycula_hashes = parse_apycula_requirements(
+            read_text(ROOT / APYCULA_REQUIREMENTS)
+        )
+        print(
+            "\t".join(
+                [
+                    wasi["version"],
+                    wasi["sha256"],
+                    *(value for pin in archives for value in (pin["version"], pin["sha256"])),
+                    apycula_version,
+                    *apycula_hashes,
+                ]
+            )
+        )
         return 0
 
     report = upstream_report()

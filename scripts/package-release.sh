@@ -24,6 +24,7 @@ submodules=(
   vendor/yomiyasu
   vendor/zlib
   vendor/yosys
+  vendor/nextpnr
 )
 yosys_nested_submodules=(
   abc
@@ -66,6 +67,7 @@ commit="$(git -C "$root" rev-parse HEAD)"
 source_date_epoch="$(git -C "$root" log -1 --format=%ct)"
 emsdk_version="$(git -C "$root/vendor/emsdk" describe --tags --exact-match)"
 yosys_pin="$(python3 "$root/.github/scripts/check-pins.py" yosys-pin)"
+yosys_version="${yosys_pin%%$'\t'*}"
 yosys_commit="${yosys_pin#*$'\t'}"
 yosys_commit="${yosys_commit%%$'\t'*}"
 export SOURCE_DATE_EPOCH="$source_date_epoch"
@@ -90,6 +92,17 @@ license_copies=(
   "$root/vendor/yosys/abc/copyright.txt:abc-copyright.txt"
   "$root/vendor/yosys/libs/cxxopts/LICENSE:cxxopts-LICENSE"
   "$root/vendor/yosys/libs/fmt/LICENSE:fmt-LICENSE"
+  "$root/vendor/nextpnr/COPYING:nextpnr-COPYING"
+  "$root/licenses/boost-LICENSE_1_0.txt:boost-LICENSE_1_0.txt"
+  "$root/licenses/eigen-LICENSE:eigen-LICENSE"
+  "$root/licenses/eigen-COPYING.MPL2:eigen-COPYING.MPL2"
+  "$root/licenses/eigen-COPYING.BSD:eigen-COPYING.BSD"
+  "$root/licenses/eigen-COPYING.APACHE:eigen-COPYING.APACHE"
+  "$root/licenses/eigen-COPYING.MINPACK:eigen-COPYING.MINPACK"
+  "$root/licenses/apycula-LICENSE:apycula-LICENSE"
+  "$root/licenses/apycula-dependencies/fastcrc-LICENSE:fastcrc-LICENSE"
+  "$root/licenses/apycula-dependencies/msgspec-LICENSE:msgspec-LICENSE"
+  "$root/licenses/apycula-dependencies/numpy-LICENSE:numpy-LICENSE"
   "$root/licenses/wasi-sdk/LICENSE:wasi-sdk-LICENSE"
   "$root/licenses/llvm/LICENSE.TXT:wasi-sdk-llvm-LICENSE.TXT"
   "$root/licenses/wasi-libc/LICENSE:wasi-libc-LICENSE"
@@ -153,6 +166,10 @@ for path in "${submodules[@]}"; do
 done
 
 printf '%s\n' "$yosys_commit" > "$source_root/vendor/yosys/.gitcommit"
+nextpnr_pin="$(python3 "$root/.github/scripts/check-pins.py" nextpnr-pin)"
+nextpnr_commit="${nextpnr_pin#*$'\t'}"
+nextpnr_commit="${nextpnr_commit%%$'\t'*}"
+printf '%s\n' "$nextpnr_commit" > "$source_root/vendor/nextpnr/.gitcommit"
 for path in "${yosys_nested_submodules[@]}"; do
   tree_line="$(git -C "$root/vendor/yosys" ls-tree HEAD -- "$path")"
   if [[ -z "$tree_line" ]]; then
@@ -231,7 +248,7 @@ chmod 644 "$source_root/RELEASE-SOURCE.json"
 TZ=UTC gzip -n -9 -c "$work/$source_name.tar" > "$release_dir/$source_archive"
 
 python3 - "$root" "$root/dist/build-info.json" "$release_dir/notes.md" "$version" \
-  "$commit" "$emsdk_version" "${submodules[@]}" <<'PY'
+  "$commit" "$emsdk_version" "$yosys_version" "${submodules[@]}" <<'PY'
 import json
 import re
 import subprocess
@@ -241,9 +258,9 @@ from pathlib import Path
 root = Path(sys.argv[1])
 build_info_path = Path(sys.argv[2])
 notes_path = Path(sys.argv[3])
-version, commit, emsdk_version = sys.argv[4:7]
+version, commit, emsdk_version, yosys_version = sys.argv[4:8]
 source_name = f"toolchain-source-{version}"
-submodules = sys.argv[7:]
+submodules = sys.argv[8:]
 build_info = json.loads(build_info_path.read_text(encoding="utf-8"))
 labels = {
     "vendor/openFPGALoader": "openFPGALoader",
@@ -253,6 +270,7 @@ labels = {
     "vendor/emsdk": "emsdk",
     "vendor/yomiyasu": "yomiyasu",
     "vendor/yosys": "Yosys",
+    "vendor/nextpnr": "nextpnr",
 }
 rows = []
 for path in submodules:

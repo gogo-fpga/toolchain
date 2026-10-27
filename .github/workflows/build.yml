@@ -73,7 +73,7 @@ jobs:
           build=false
           while IFS= read -r -d '' path; do
             case "$path" in
-              .github/workflows/build.yml)
+              .github/workflows/build.yml|.github/scripts/check-pins.py|RESEARCH.md|requirements-nextpnr.txt)
                 build=true
                 break
                 ;;
@@ -128,7 +128,7 @@ jobs:
         run: |
           git submodule update --init --depth 1 -- \
             vendor/emsdk vendor/libftdi vendor/libusb vendor/openFPGALoader \
-            vendor/yomiyasu vendor/zlib vendor/yosys
+            vendor/yomiyasu vendor/zlib vendor/yosys vendor/nextpnr
           git -C vendor/yosys submodule update --init --depth 1 -- \
             abc libs/cxxopts libs/fmt libs/tomlplusplus libs/boost_regex libs/symfpu
 
@@ -314,7 +314,7 @@ jobs:
         run: scripts/build-synth-wasm.sh --native
 
       - name: WASM/native 合成を比較
-        run: node --test tests/synth/*.test.mjs
+        run: node --test tests/synth/yosys.test.mjs
 
       - name: 合成成果物を保存
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -334,6 +334,114 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           JOB_DISPLAY_NAME: Yosys WASI synthesis
+        run: |
+          step_lines="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}/jobs" --paginate --jq '
+            .jobs[] | select(.name == env.JOB_DISPLAY_NAME) | .steps[] |
+            select(.completed_at != null) |
+            [.number, .name, (if .started_at == null then "unknown" else ((.completed_at | fromdateiso8601) - (.started_at | fromdateiso8601)) end), .conclusion] |
+            @tsv
+          ' 2>/dev/null)" || step_lines=""
+          if [[ -n "$step_lines" ]]; then
+            {
+              printf '| # | Step | Seconds | Conclusion |\n|---:|---|---:|---|\n'
+              printf '%s\n' "$step_lines" | awk -F '\t' '{ printf "| %s | %s | %s | %s |\n", $1, $2, $3, $4 }'
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Step timings unavailable (unknown)." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  nextpnr:
+    name: nextpnr WASI place and route
+    needs: [changes, synth]
+    if: needs.changes.outputs.build == 'true' && needs.synth.result == 'success'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 90
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: false
+          persist-credentials: false
+
+      - name: nextpnr submodule を取得
+        run: git submodule update --init --depth 1 -- vendor/nextpnr
+
+      - name: Python venv をインストール
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-venv
+
+      - name: Node.js を設定
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+
+      - name: Yosys WASM と share を取得
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ci-yosys-synth-${{ github.run_id }}
+          path: build
+
+      - id: nextpnr-pin
+        name: nextpnr cache key pins を作成
+        run: |
+          echo "gitlink=$(git rev-parse HEAD:vendor/nextpnr)" >> "$GITHUB_OUTPUT"
+          pins="$(python3 .github/scripts/check-pins.py pnr-cache-pin)"
+          printf '%s' "$pins" | sha256sum | awk '{ print "dependencies=" $1 }' >> "$GITHUB_OUTPUT"
+
+      - id: nextpnr-cache-restore
+        name: nextpnr build cache を復元
+        if: github.event_name != 'schedule' && (github.event_name != 'workflow_dispatch' || inputs.cache)
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            build/cache/
+            build/deps/
+            build/wasi-sdk-*
+            build/wasi/nextpnr/
+            build/native/nextpnr/
+          key: nextpnr-ubuntu-26.04-${{ steps.nextpnr-pin.outputs.gitlink }}-${{ steps.nextpnr-pin.outputs.dependencies }}-${{ hashFiles('scripts/build-pnr-wasm.sh', 'scripts/build-pnr-info.py') }}
+
+      - id: nextpnr-wasi-build
+        name: WASI nextpnr と chipdb をビルド
+        run: scripts/build-pnr-wasm.sh
+
+      - name: nextpnr build cache を保存
+        if: steps.nextpnr-cache-restore.outputs.cache-hit != 'true' && steps.nextpnr-wasi-build.outcome == 'success' && github.event_name != 'schedule' && (github.event_name != 'workflow_dispatch' || inputs.cache)
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            build/cache/
+            build/deps/
+            build/wasi-sdk-*
+            build/wasi/nextpnr/
+            build/native/nextpnr/
+          key: nextpnr-ubuntu-26.04-${{ steps.nextpnr-pin.outputs.gitlink }}-${{ steps.nextpnr-pin.outputs.dependencies }}-${{ hashFiles('scripts/build-pnr-wasm.sh', 'scripts/build-pnr-info.py') }}
+
+      - name: native nextpnr をビルド
+        run: scripts/build-pnr-wasm.sh --native
+
+      - name: WASI/native P&R を比較
+        run: node --test tests/synth/nextpnr.test.mjs
+
+      - name: nextpnr 成果物を保存
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ci-nextpnr-${{ github.run_id }}
+          path: |
+            build/wasi/nextpnr/
+            build/native/nextpnr/
+          retention-days: 1
+
+      - name: Summarize step timings
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_DISPLAY_NAME: nextpnr WASI place and route
         run: |
           step_lines="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}/jobs" --paginate --jq '
             .jobs[] | select(.name == env.JOB_DISPLAY_NAME) | .steps[] |

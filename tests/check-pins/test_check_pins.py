@@ -42,7 +42,19 @@ class CheckPinsTests(unittest.TestCase):
                 "| wasi-sdk | 34.0 | `" + "e" * 64 + "` | "
                 "https://github.com/WebAssembly/wasi-sdk/releases/download/"
                 "wasi-sdk-34/wasi-sdk-34.0-x86_64-linux.tar.gz |\n"
+                "| boost | 1.92.0 | `" + "a" * 64 + "` | "
+                "https://github.com/boostorg/boost/releases/download/boost-1.92.0/"
+                "boost-1.92.0-b2-nodocs.tar.xz |\n"
+                "| eigen | 5.0.1 | `" + "b" * 64 + "` | "
+                "https://gitlab.com/libeigen/eigen/-/archive/5.0.1/eigen-5.0.1.tar.gz |\n"
             )
+        (self.root / check_pins.APYCULA_REQUIREMENTS).write_text(
+            "apycula==0.35 \\\n    --hash=sha256:" + "a" * 64 + "\n"
+            "fastcrc==0.5.0 \\\n    --hash=sha256:" + "b" * 64 + "\n"
+            "msgspec==0.22.0 \\\n    --hash=sha256:" + "c" * 64 + "\n"
+            "numpy==2.5.4 \\\n    --hash=sha256:" + "d" * 64 + "\n",
+            encoding="utf-8",
+        )
         (self.root / "package.json").write_text("{}", encoding="utf-8")
         (self.root / ".github/workflows/build.yml").write_text(
             "jobs:\n"
@@ -175,6 +187,35 @@ class CheckPinsTests(unittest.TestCase):
             check_pins.parse_wasi_sdk_pin(research),
         )
 
+    def test_archive_pin_parser_reads_version_checksum_and_url(self):
+        research = (
+            "| 依存 | 版 | SHA-256 | 取得元 |\n"
+            "|---|---|---|---|\n"
+            "| boost | 1.92.0 | `" + "a" * 64 + "` | "
+            "https://github.com/boostorg/boost/releases/download/boost-1.92.0/"
+            "boost-1.92.0-b2-nodocs.tar.xz |\n"
+        )
+        self.assertEqual(
+            {
+                "version": "1.92.0",
+                "sha256": "a" * 64,
+                "asset": "boost-1.92.0-b2-nodocs.tar.xz",
+                "url": "https://github.com/boostorg/boost/releases/download/boost-1.92.0/"
+                "boost-1.92.0-b2-nodocs.tar.xz",
+            },
+            check_pins.parse_archive_pin(research, "boost"),
+        )
+
+    def test_apycula_requirements_require_all_hashes(self):
+        version, hashes = check_pins.parse_apycula_requirements(
+            "apycula==0.35 \\\n    --hash=sha256:" + "a" * 64 + "\n"
+            "numpy==2.5.4 \\\n    --hash=sha256:" + "b" * 64 + "\n"
+        )
+        self.assertEqual("0.35", version)
+        self.assertEqual(["a" * 64, "b" * 64], hashes)
+        with self.assertRaisesRegex(RuntimeError, "hash"):
+            check_pins.parse_apycula_requirements("apycula==0.35\n")
+
     def test_invalid_wasi_sdk_checksum_is_rejected(self):
         research = (
             "| 依存 | 版 | SHA-256 | 取得元 |\n"
@@ -210,7 +251,7 @@ class CheckPinsTests(unittest.TestCase):
     def prepare_upstream_fixture(self, libftdi_branch=None):
         names = (*check_pins.TAGGED_SUBMODULES, *check_pins.BRANCH_SUBMODULES)
         self.pinned = {
-            name: chr(ord("a") + index) * 40
+            name: f"{index + 1:040x}"
             for index, name in enumerate(names)
         }
         lines = []
@@ -258,6 +299,10 @@ class CheckPinsTests(unittest.TestCase):
             f"https://example.invalid/{name}.git": name
             for name in (*check_pins.TAGGED_SUBMODULES, *check_pins.BRANCH_SUBMODULES)
         }
+        archive_tags = {
+            check_pins.ARCHIVE_TAG_SOURCES["boost"]: "1" * 40 + "\trefs/tags/boost-1.92.0\n",
+            check_pins.ARCHIVE_TAG_SOURCES["eigen"]: "2" * 40 + "\trefs/tags/5.0.1\n",
+        }
         refs = []
 
         def fake_run(*args, cwd=check_pins.ROOT):
@@ -265,6 +310,8 @@ class CheckPinsTests(unittest.TestCase):
                 return real_run(*args, cwd=cwd)
             if args[:2] == ("git", "ls-remote"):
                 if args[2] == "--tags":
+                    if args[3] in archive_tags:
+                        return archive_tags[args[3]]
                     return tag_outputs[module_urls[args[3]]]
                 refs.append(args[3])
                 if branch_error:
@@ -281,6 +328,8 @@ class CheckPinsTests(unittest.TestCase):
                 return "## Available Images\n| `ubuntu-26.04` |\n"
             if url == check_pins.WASI_SDK_RELEASE:
                 return self.latest_wasi_sdk
+            if url == check_pins.APYCULA_PYPI_RELEASE:
+                return '{"info":{"version":"0.35"}}'
             raise AssertionError(f"unexpected URL: {url}")
 
         with patch.object(check_pins, "run", side_effect=fake_run), patch.object(
@@ -324,6 +373,22 @@ class CheckPinsTests(unittest.TestCase):
         self.assertEqual(
             ("wasi-sdk", "34.0 (" + "e" * 12 + ")", "34.0 (" + "e" * 12 + ")", "最新"),
             next(row for row in rows if row[0] == "wasi-sdk"),
+        )
+        self.assertEqual(
+            ("nextpnr", "v1.0.0", "v1.0.0", "最新"),
+            next(row for row in rows if row[0] == "nextpnr"),
+        )
+        self.assertEqual(
+            ("boost archive", "1.92.0 (" + "a" * 12 + ")", "boost-1.92.0", "最新"),
+            next(row for row in rows if row[0] == "boost archive"),
+        )
+        self.assertEqual(
+            ("eigen archive", "5.0.1 (" + "b" * 12 + ")", "5.0.1", "最新"),
+            next(row for row in rows if row[0] == "eigen archive"),
+        )
+        self.assertEqual(
+            ("Apycula", "0.35", "0.35", "最新"),
+            next(row for row in rows if row[0] == "Apycula"),
         )
 
     def test_wasi_sdk_release_update_is_reported(self):
