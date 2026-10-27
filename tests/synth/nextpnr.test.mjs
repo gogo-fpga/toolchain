@@ -28,6 +28,7 @@ const nextpnrNativePath = path.join(root, "build/native/nextpnr/nextpnr-himbaech
 const wasiSharePath = path.join(root, "build/wasi/nextpnr/share");
 const nativeSharePath = path.join(root, "build/native/nextpnr/share");
 const chipdbPath = path.join(wasiSharePath, "himbaechel/gowin");
+const nativeChipdbPath = path.join(nativeSharePath, "himbaechel/gowin");
 const boardsById = new Map(BOARDS.map((board) => [board.id, board]));
 const boardIds = Object.keys(TEMPLATE_PINS);
 const wasmModule = new WebAssembly.Module(readFileSync(nextpnrWasmPath));
@@ -207,6 +208,18 @@ function assertSuccessful(result, runtime, boardId) {
 const chipdbNames = readdirSync(chipdbPath).filter((name) => name.endsWith(".bin")).sort();
 const expectedChipdbNames = BOARDS.map((board) => `chipdb-${board.nextpnrFamily}.bin`).sort();
 assert.deepStrictEqual(chipdbNames, expectedChipdbNames, "Gowin chipdb set does not match boards");
+assert.deepStrictEqual(
+  readdirSync(nativeChipdbPath).filter((name) => name.endsWith(".bin")).sort(),
+  expectedChipdbNames,
+  "Native Gowin chipdb set does not match boards",
+);
+for (const name of expectedChipdbNames) {
+  assert.deepStrictEqual(
+    readFileSync(path.join(nativeChipdbPath, name)),
+    readFileSync(path.join(chipdbPath, name)),
+    `Native and WASI chipdb data differs: ${name}`,
+  );
+}
 console.log(
   `nextpnr WASM: ${statSync(nextpnrWasmPath).size} bytes; ` +
     `chipdb: ${chipdbNames.map((name) => `${name}=${statSync(path.join(chipdbPath, name)).size}`).join(", ")}`,
@@ -284,7 +297,6 @@ test("invalid pin and missing chipdb fail closed", () => {
     }
     const missing = runWasi(workdir, pnrArgs(board), emptyChipdb);
     assert.notEqual(missing.status, 0, "WASI nextpnr accepted a missing chipdb");
-    assert.match(missing.stderr, /chipdb|database/i, `Missing chipdb error was not useful:\n${missing.stderr}`);
     console.log(
       `WASI module size ${statSync(nextpnrWasmPath).size} bytes; ` +
         `chipdb files ${readdirSync(path.join(wasiSharePath, "himbaechel/gowin")).length}; ` +

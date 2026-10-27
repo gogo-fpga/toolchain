@@ -157,6 +157,27 @@ fi
 build_boost() {
   boost_mode=$1
   stage_dir="$deps_dir/boost-stage-$boost_mode"
+  source_dir=$boost_source
+  b2=$boost_b2
+  if [ "$boost_mode" = wasi ]; then
+    stage_dir="$stage_dir-wasm-exceptions"
+    source_dir="$deps_dir/boost-wasi-$boost_version"
+    if [ ! -f "$source_dir/boost/version.hpp" ]; then
+      if [ -e "$source_dir" ]; then
+        printf 'Incomplete Boost WASI source tree: %s\n' "$source_dir" >&2
+        exit 1
+      fi
+      mkdir "$source_dir"
+      tar -xJf "$boost_archive" --strip-components=1 -C "$source_dir"
+    fi
+    b2="$root/$source_dir/tools/build/src/engine/b2"
+    if [ ! -x "$b2" ]; then
+      (
+        cd "$source_dir"
+        ./bootstrap.sh --with-toolset=gcc
+      )
+    fi
+  fi
   if [ -f "$stage_dir/lib/libboost_program_options.a" ] &&
     [ -f "$stage_dir/lib/libboost_iostreams.a" ]; then
     return
@@ -183,7 +204,7 @@ EOF
     wasi_sdk="$root/$sdk_dir"
     wasi_jam="$root/$deps_dir/boost-wasi-config.jam"
     {
-      printf 'using clang : : %s/bin/clang++ --target=wasm32-wasip1 --sysroot=%s/share/wasi-sysroot -D_WASI_EMULATED_MMAN -ffile-prefix-map=%s=/src :\n' "$wasi_sdk" "$wasi_sdk" "$root"
+      printf 'using clang : : %s/bin/clang++ --target=wasm32-wasip1 --sysroot=%s/share/wasi-sysroot -D_WASI_EMULATED_MMAN -fwasm-exceptions -ffile-prefix-map=%s=/src -ffile-prefix-map=%s=/boost :\n' "$wasi_sdk" "$wasi_sdk" "$root" "$root/$source_dir"
       printf '  <archiver>%s/bin/llvm-ar\n' "$wasi_sdk"
       printf '  <ranlib>%s/bin/llvm-ranlib\n' "$wasi_sdk"
       printf '  <linkflags>--target=wasm32-wasip1\n'
@@ -192,8 +213,8 @@ EOF
       printf '  ;\n'
     } > "$wasi_jam"
     (
-      cd "$boost_source"
-      "$boost_b2" --user-config="$wasi_jam" toolset=clang \
+      cd "$source_dir"
+      "$b2" --user-config="$wasi_jam" toolset=clang \
         variant=release link=static threading=single runtime-link=static \
         -sNO_COMPRESSION=1 -sNO_ZLIB=1 -sNO_BZIP2=1 \
         --with-program_options --with-iostreams \
@@ -201,8 +222,8 @@ EOF
     )
   else
     (
-      cd "$boost_source"
-      "$boost_b2" toolset=gcc variant=release link=static threading=single \
+      cd "$source_dir"
+      "$b2" toolset=gcc variant=release link=static threading=single \
         -sNO_COMPRESSION=1 -sNO_ZLIB=1 -sNO_BZIP2=1 \
         --with-program_options --with-iostreams \
         --stagedir="$root/$stage_dir" -j "${JOBS:-2}" stage
@@ -269,6 +290,7 @@ cmake -S vendor/nextpnr -B "$native_build" \
   -DEigen3_DIR="$root/$eigen_build" \
   -DAPYCULA_INSTALL_PREFIX="$root/$apycula_venv"
 cmake --build "$native_build" --target bbasm --parallel "$jobs"
+cmake --build "$native_build" --target nextpnr-himbaechel-gowin-bba --parallel "$jobs"
 
 if [ "$mode" = native ]; then
   cmake --build "$native_build" --target nextpnr-himbaechel-gowin --parallel "$jobs"
@@ -299,13 +321,14 @@ if [ ! -x "$sdk_dir/bin/clang++" ] || [ ! -f "$sdk_dir/share/cmake/wasi-sdk-p1.c
 fi
 
 wasi_build=build/wasi/nextpnr
-prefix_flags="-I$root/$boost_source -ffile-prefix-map=$root=/src -ffile-prefix-map=$root/$wasi_build=/build -ffile-prefix-map=$root/$sdk_dir=/wasi-sdk -ffile-prefix-map=$boost_source=/boost -ffile-prefix-map=$eigen_source=/eigen -DNPNR_DISABLE_THREADS"
+c_flags="-I$root/$boost_source -ffile-prefix-map=$root=/src -ffile-prefix-map=$root/$wasi_build=/build -ffile-prefix-map=$root/$sdk_dir=/wasi-sdk -ffile-prefix-map=$boost_source=/boost -ffile-prefix-map=$eigen_source=/eigen -DNPNR_DISABLE_THREADS"
+cxx_flags="$c_flags -fwasm-exceptions"
 cmake -S vendor/nextpnr -B "$wasi_build" \
   -DCMAKE_TOOLCHAIN_FILE="$root/$sdk_dir/share/cmake/wasi-sdk-p1.cmake" \
   -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_C_FLAGS="$prefix_flags" \
-  -DCMAKE_CXX_FLAGS="$prefix_flags" \
-  -DCMAKE_EXE_LINKER_FLAGS="-Wl,-z,stack-size=8388608 -lwasi-emulated-mman" \
+  -DCMAKE_C_FLAGS="$c_flags" \
+  -DCMAKE_CXX_FLAGS="$cxx_flags" \
+  -DCMAKE_EXE_LINKER_FLAGS="-fwasm-exceptions -Wl,-z,stack-size=8388608 -lwasi-emulated-mman -Wl,--whole-archive -lunwind -Wl,--no-whole-archive" \
   -DCMAKE_DISABLE_FIND_PACKAGE_Threads=ON \
   -DBUILD_GUI=OFF \
   -DBUILD_PYTHON=OFF \
@@ -316,6 +339,7 @@ cmake -S vendor/nextpnr -B "$wasi_build" \
   -DEXTERNAL_CHIPDB=ON \
   -DEXTERNAL_CHIPDB_ROOT=/share \
   -DBBA_IMPORT="$root/$native_build/bba-export.cmake" \
+  -DIMPORT_BBA_FILES="$root/$native_build" \
   -DARCH=himbaechel \
   -DHIMBAECHEL_UARCH=gowin \
   -DHIMBAECHEL_SPLIT=ON \
@@ -327,13 +351,11 @@ cmake -S vendor/nextpnr -B "$wasi_build" \
   -DEigen3_DIR="$root/$eigen_build" \
   -DAPYCULA_INSTALL_PREFIX="$root/$apycula_venv"
 cmake --build "$wasi_build" --target nextpnr-himbaechel-gowin --parallel "$jobs"
-binary="$wasi_build/nextpnr-himbaechel-gowin"
+binary="$wasi_build/nextpnr-himbaechel-gowin.wasm"
 if [ ! -f "$binary" ]; then
   printf 'WASI nextpnr output is missing: %s\n' "$binary" >&2
   exit 1
 fi
-mv "$binary" "$wasi_build/nextpnr-himbaechel-gowin.wasm"
-binary="$wasi_build/nextpnr-himbaechel-gowin.wasm"
 for family in $families; do
   chipdb="$wasi_build/share/himbaechel/gowin/chipdb-$family.bin"
   if [ ! -s "$chipdb" ]; then
