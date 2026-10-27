@@ -28,7 +28,7 @@ done
 nextpnr_pin=$(python3 .github/scripts/check-pins.py nextpnr-pin)
 old_ifs=$IFS
 IFS=$(printf '\t')
-read -r nextpnr_version nextpnr_commit nextpnr_url <<EOF
+read -r nextpnr_version nextpnr_commit _ <<EOF
 $nextpnr_pin
 EOF
 IFS=$old_ifs
@@ -145,7 +145,7 @@ if [ ! -f "$eigen_build/Eigen3Config.cmake" ]; then
     -DEIGEN_BUILD_CMAKE_PACKAGE=ON
 fi
 
-boost_b2="$boost_source/b2"
+boost_b2="$boost_source/tools/build/src/engine/b2"
 if [ ! -x "$boost_b2" ]; then
   (
     cd "$boost_source"
@@ -165,7 +165,7 @@ build_boost() {
     wasi_pin=$(python3 .github/scripts/check-pins.py wasi-sdk-pin)
     old_ifs=$IFS
     IFS=$(printf '\t')
-    read -r wasi_version wasi_sha wasi_asset wasi_url <<EOF
+    read -r _ wasi_sha wasi_asset wasi_url <<EOF
 $wasi_pin
 EOF
     IFS=$old_ifs
@@ -288,7 +288,7 @@ fi
 wasi_pin=$(python3 .github/scripts/check-pins.py wasi-sdk-pin)
 old_ifs=$IFS
 IFS=$(printf '\t')
-read -r wasi_version wasi_sha wasi_asset wasi_url <<EOF
+read -r _ wasi_sha wasi_asset wasi_url <<EOF
 $wasi_pin
 EOF
 IFS=$old_ifs
