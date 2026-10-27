@@ -245,7 +245,7 @@ fi
 jobs=${JOBS:-2}
 native_build=build/native/nextpnr
 native_chipdb_root=$(CDPATH='' cd "$(dirname "$native_build")" && pwd)/nextpnr/share
-native_prefix_flags="-ffile-prefix-map=$root=/src -ffile-prefix-map=$root/$native_build=/build -ffile-prefix-map=$root/$boost_source=/boost -ffile-prefix-map=$root/$eigen_source=/eigen -DNPNR_DISABLE_THREADS"
+native_prefix_flags="-I$root/$boost_source -ffile-prefix-map=$root=/src -ffile-prefix-map=$root/$native_build=/build -ffile-prefix-map=$root/$boost_source=/boost -ffile-prefix-map=$root/$eigen_source=/eigen -DNPNR_DISABLE_THREADS"
 cmake -S vendor/nextpnr -B "$native_build" \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_CXX_FLAGS="$native_prefix_flags" \
@@ -299,7 +299,7 @@ if [ ! -x "$sdk_dir/bin/clang++" ] || [ ! -f "$sdk_dir/share/cmake/wasi-sdk-p1.c
 fi
 
 wasi_build=build/wasi/nextpnr
-prefix_flags="-ffile-prefix-map=$root=/src -ffile-prefix-map=$root/$wasi_build=/build -ffile-prefix-map=$root/$sdk_dir=/wasi-sdk -ffile-prefix-map=$boost_source=/boost -ffile-prefix-map=$eigen_source=/eigen -DNPNR_DISABLE_THREADS"
+prefix_flags="-I$root/$boost_source -ffile-prefix-map=$root=/src -ffile-prefix-map=$root/$wasi_build=/build -ffile-prefix-map=$root/$sdk_dir=/wasi-sdk -ffile-prefix-map=$boost_source=/boost -ffile-prefix-map=$eigen_source=/eigen -DNPNR_DISABLE_THREADS"
 cmake -S vendor/nextpnr -B "$wasi_build" \
   -DCMAKE_TOOLCHAIN_FILE="$root/$sdk_dir/share/cmake/wasi-sdk-p1.cmake" \
   -DCMAKE_BUILD_TYPE=Release \
