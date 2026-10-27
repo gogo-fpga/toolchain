@@ -77,6 +77,22 @@ export function validatePath(path) {
   return { ok: errors.length === 0, errors };
 }
 
+export function findConstraintBoardMismatch(project) {
+  for (const file of project?.files ?? []) {
+    const path = file?.path;
+    const match = typeof path === "string"
+      ? path.match(/^constraints\/([A-Za-z0-9_-]+)\.cst$/)
+      : null;
+    if (!match || match[1] === project.board) continue;
+    return {
+      path,
+      boardId: match[1],
+      boardName: getBoard(match[1])?.label ?? match[1],
+    };
+  }
+  return null;
+}
+
 export function validateProject(project) {
   const errors = [];
   if (!isObject(project)) {

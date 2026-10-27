@@ -619,8 +619,7 @@ dialog::backdrop {
   margin: 0.8rem 0;
 }
 
-.file-actions button,
-#use-bitstream-button {
+.file-actions button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -832,7 +831,6 @@ dialog::backdrop {
 
 .ide-header button,
 .file-actions button,
-#use-bitstream-button,
 .bottom-tabs button,
 .editor-tab button {
   min-height: 2.35rem;

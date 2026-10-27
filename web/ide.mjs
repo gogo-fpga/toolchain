@@ -1,5 +1,9 @@
 import { createOpfsStore } from "./lib/project-store.mjs";
-import { validatePath, validateProjectName } from "./lib/project.mjs";
+import {
+  findConstraintBoardMismatch,
+  validatePath,
+  validateProjectName,
+} from "./lib/project.mjs";
 import { createBlinkTemplate } from "./lib/templates.mjs";
 import {
   exportProjectZip,
@@ -34,7 +38,7 @@ function templateForPath(path) {
       "",
     ].join("\n");
   }
-  if (path.endsWith(".cst")) return "# ピン割り当ては未設定です。\n";
+  if (path.endsWith(".cst")) return "// ピン割り当ては未設定です。\n";
   return path.endsWith(".fs") ? new Uint8Array() : "";
 }
 
@@ -77,11 +81,11 @@ export function initializeIde({
   const boardFpga = document.querySelector("#board-fpga");
   const boardIdcode = document.querySelector("#board-idcode");
   const boardTarget = document.querySelector("#board-target");
+  const boardConstraintWarning = document.querySelector("#board-constraint-warning");
   const fileList = document.querySelector("#file-list");
   const addFileButton = document.querySelector("#add-file-button");
   const renameFileButton = document.querySelector("#rename-file-button");
   const deleteFileButton = document.querySelector("#delete-file-button");
-  const useBitstreamButton = document.querySelector("#use-bitstream-button");
   const fileTabs = document.querySelector("#editor-tabs");
   const editorMount = document.querySelector("#editor-mount");
   const problemList = document.querySelector("#problem-list");
@@ -144,6 +148,11 @@ export function initializeIde({
       .map((idcode) => `0x${idcode.toString(16).toUpperCase().padStart(8, "0")}`)
       .join("、");
     boardTarget.textContent = boardData.writeTargets.join("、");
+    const mismatch = findConstraintBoardMismatch(project);
+    boardConstraintWarning.hidden = !mismatch;
+    boardConstraintWarning.textContent = mismatch
+      ? `この制約ファイル（${mismatch.path}）は ${mismatch.boardName} 用です。ピン割り当ては T2 で編集できるようになります。`
+      : "";
   }
 
   function setProjectStatus(message) {
@@ -382,7 +391,6 @@ export function initializeIde({
     const hasSelection = Boolean(selectedPath);
     renameFileButton.disabled = !hasSelection;
     deleteFileButton.disabled = !hasSelection;
-    useBitstreamButton.disabled = !selectedPath?.endsWith(".fs");
     renderFsFileInfo();
   }
 
@@ -518,12 +526,6 @@ export function initializeIde({
     renderFsSource(true);
     void refreshProjectSwitcher();
     scheduleSave();
-  }
-
-  function useSelectedBitstream() {
-    if (!selectedPath?.endsWith(".fs")) return;
-    fsSource.value = selectedPath;
-    fsSource.dispatchEvent(new Event("change", { bubbles: true }));
   }
 
   function renderBoardOptions() {
@@ -676,7 +678,6 @@ export function initializeIde({
   addFileButton.addEventListener("click", () => showFileDialog("add"));
   renameFileButton.addEventListener("click", () => showFileDialog("rename"));
   deleteFileButton.addEventListener("click", deleteSelectedFile);
-  useBitstreamButton.addEventListener("click", useSelectedBitstream);
   filePathSaveButton.addEventListener("click", () => {
     void submitFileDialog();
   });
@@ -736,6 +737,7 @@ export function initializeIde({
     }
   });
   boardSelect.addEventListener("change", () => {
+    if (project) project.board = boardSelect.value;
     updateBoardInformation();
     scheduleSave();
   });

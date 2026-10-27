@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { validatePath, validateProject } from "../../web/lib/project.mjs";
+import {
+  findConstraintBoardMismatch,
+  validatePath,
+  validateProject,
+} from "../../web/lib/project.mjs";
 
 const validProject = {
   version: 1,
@@ -35,6 +39,29 @@ test("project schema rejects unknown boards and duplicate paths", () => {
   });
   assert.equal(duplicate.ok, false);
   assert.match(duplicate.errors.join(" "), /複数登録/);
+});
+
+test("constraint board mismatch detection handles matching, mismatched, and missing constraints", () => {
+  assert.equal(
+    findConstraintBoardMismatch({
+      ...validProject,
+      files: [{ path: "constraints/tangnano9k.cst" }],
+    }),
+    null,
+  );
+  assert.deepEqual(
+    findConstraintBoardMismatch({
+      ...validProject,
+      board: "tangnano4k",
+      files: [{ path: "constraints/tangnano1k.cst" }],
+    }),
+    {
+      path: "constraints/tangnano1k.cst",
+      boardId: "tangnano1k",
+      boardName: "Tang Nano 1K",
+    },
+  );
+  assert.equal(findConstraintBoardMismatch(validProject), null);
 });
 
 test("validatePath accepts relative supported files", () => {

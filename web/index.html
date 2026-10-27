@@ -85,9 +85,6 @@
               <button id="rename-file-button" type="button" class="secondary" disabled>名前変更</button>
               <button id="delete-file-button" type="button" class="secondary danger" disabled>削除</button>
             </div>
-            <button id="use-bitstream-button" type="button" class="secondary" disabled>
-              選択した .fs を使う
-            </button>
             <div class="project-archive-actions">
               <button id="export-project-button" type="button" class="secondary">
                 zip で書き出す
@@ -194,6 +191,13 @@
                 <dt>書き込み先</dt>
                 <dd id="board-target">SRAM</dd>
               </dl>
+              <p
+                id="board-constraint-warning"
+                class="caution"
+                role="status"
+                aria-live="polite"
+                hidden
+              ></p>
             </section>
 
             <section class="writer-controls" aria-labelledby="writer-heading">

@@ -605,6 +605,7 @@ async function createTemplateProject(page, name, board, language = "verilog") {
 
 async function uploadProjectBitstream(page, fixturePath, board) {
   const path = `artifacts/${board}.fs`;
+  await expect(page.locator("#use-bitstream-button")).toHaveCount(0);
   await page.locator("#add-file-button").click();
   await page.locator("#file-path-input").fill(path);
   await page.locator("#file-content-input").setInputFiles(fixturePath);
