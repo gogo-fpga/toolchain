@@ -22,6 +22,7 @@ const submodules = [
   "vendor/openFPGALoader",
   "vendor/yomiyasu",
   "vendor/zlib",
+  "vendor/yosys",
 ];
 
 function sha256(contents) {

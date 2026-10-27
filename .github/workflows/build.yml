@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       cache:
-        description: Use the emsdk and fixture caches
+        description: Use the emsdk, WASI SDK, and fixture caches
         required: false
         type: boolean
         default: true
@@ -121,8 +121,16 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          submodules: true
+          submodules: false
           persist-credentials: false
+
+      - name: 必要な submodule を取得
+        run: |
+          git submodule update --init --depth 1 -- \
+            vendor/emsdk vendor/libftdi vendor/libusb vendor/openFPGALoader \
+            vendor/yomiyasu vendor/zlib vendor/yosys
+          git -C vendor/yosys submodule update --init --depth 1 -- \
+            abc libs/cxxopts libs/fmt libs/tomlplusplus libs/boost_regex libs/symfpu
 
       - name: Autotools をインストール
         run: |
@@ -224,6 +232,108 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           JOB_DISPLAY_NAME: Build
+        run: |
+          step_lines="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}/jobs" --paginate --jq '
+            .jobs[] | select(.name == env.JOB_DISPLAY_NAME) | .steps[] |
+            select(.completed_at != null) |
+            [.number, .name, (if .started_at == null then "unknown" else ((.completed_at | fromdateiso8601) - (.started_at | fromdateiso8601)) end), .conclusion] |
+            @tsv
+          ' 2>/dev/null)" || step_lines=""
+          if [[ -n "$step_lines" ]]; then
+            {
+              printf '| # | Step | Seconds | Conclusion |\n|---:|---|---:|---|\n'
+              printf '%s\n' "$step_lines" | awk -F '\t' '{ printf "| %s | %s | %s | %s |\n", $1, $2, $3, $4 }'
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Step timings unavailable (unknown)." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  synth:
+    name: Yosys WASI synthesis
+    needs: changes
+    if: needs.changes.outputs.build == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 90
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: false
+          persist-credentials: false
+
+      - name: Yosys と必要な nested submodule を取得
+        run: |
+          git submodule update --init --depth 1 -- vendor/yosys
+          git -C vendor/yosys submodule update --init --depth 1 -- \
+            abc libs/cxxopts libs/fmt libs/tomlplusplus libs/boost_regex libs/symfpu
+
+      - name: ビルド依存をインストール
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bison flex
+
+      - name: Node.js を設定
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+
+      - id: synth-key
+        name: Yosys と WASI SDK の cache key を作成
+        run: |
+          pin="$(python3 .github/scripts/check-pins.py wasi-sdk-pin)"
+          printf 'revision=%s\n' "$(git rev-parse HEAD:vendor/yosys)" >> "$GITHUB_OUTPUT"
+          printf 'pin=%s\n' "$(printf '%s' "$pin" | sha256sum | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
+      - id: synth-cache-restore
+        name: WASI SDK を cache から復元
+        if: github.event_name != 'schedule' && (github.event_name != 'workflow_dispatch' || inputs.cache)
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            build/cache/
+            build/wasi-sdk-*
+          key: yosys-wasi-ubuntu-26.04-${{ steps.synth-key.outputs.revision }}-${{ steps.synth-key.outputs.pin }}-${{ hashFiles('scripts/build-synth-wasm.sh', 'scripts/build-synth-info.py') }}
+
+      - id: synth-wasi-build
+        name: Yosys WASI 版をビルド
+        run: scripts/build-synth-wasm.sh
+
+      - name: WASI SDK cache を保存
+        if: steps.synth-cache-restore.outputs.cache-hit != 'true' && steps.synth-wasi-build.outcome == 'success' && github.event_name != 'schedule' && (github.event_name != 'workflow_dispatch' || inputs.cache)
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            build/cache/
+            build/wasi-sdk-*
+          key: yosys-wasi-ubuntu-26.04-${{ steps.synth-key.outputs.revision }}-${{ steps.synth-key.outputs.pin }}-${{ hashFiles('scripts/build-synth-wasm.sh', 'scripts/build-synth-info.py') }}
+
+      - name: Yosys native 版をビルド
+        run: scripts/build-synth-wasm.sh --native
+
+      - name: WASM/native 合成を比較
+        run: node --test tests/synth/*.test.mjs
+
+      - name: 合成成果物を保存
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ci-yosys-synth-${{ github.run_id }}
+          path: |
+            build/wasi/yosys/yosys.wasm
+            build/wasi/yosys/share/
+            build/wasi/yosys/build-info.json
+            build/native/yosys
+            build/native/build-info.json
+          retention-days: 1
+
+      - name: Summarize step timings
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_DISPLAY_NAME: Yosys WASI synthesis
         run: |
           step_lines="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}/jobs" --paginate --jq '
             .jobs[] | select(.name == env.JOB_DISPLAY_NAME) | .steps[] |

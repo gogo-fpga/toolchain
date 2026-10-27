@@ -35,6 +35,14 @@ class CheckPinsTests(unittest.TestCase):
             "| libusb | v1.0.30 | `01234567` | https://example.invalid/libusb.git |\n",
             encoding="utf-8",
         )
+        with (self.root / "RESEARCH.md").open("a", encoding="utf-8") as research:
+            research.write(
+                "\n| 依存 | 版 | SHA-256 | 取得元 |\n"
+                "|---|---|---|---|\n"
+                "| wasi-sdk | 34.0 | `" + "e" * 64 + "` | "
+                "https://github.com/WebAssembly/wasi-sdk/releases/download/"
+                "wasi-sdk-34/wasi-sdk-34.0-x86_64-linux.tar.gz |\n"
+            )
         (self.root / "package.json").write_text("{}", encoding="utf-8")
         (self.root / ".github/workflows/build.yml").write_text(
             "jobs:\n"
@@ -148,6 +156,44 @@ class CheckPinsTests(unittest.TestCase):
             check_pins.parse_research_commits(research),
         )
 
+    def test_wasi_sdk_pin_parser_reads_version_checksum_and_url(self):
+        research = (
+            "| 依存 | 版 | SHA-256 | 取得元 |\n"
+            "|---|---|---|---|\n"
+            "| wasi-sdk | 34.0 | `" + "e" * 64 + "` | "
+            "https://github.com/WebAssembly/wasi-sdk/releases/download/"
+            "wasi-sdk-34/wasi-sdk-34.0-x86_64-linux.tar.gz |\n"
+        )
+        self.assertEqual(
+            {
+                "version": "34.0",
+                "sha256": "e" * 64,
+                "asset": "wasi-sdk-34.0-x86_64-linux.tar.gz",
+                "url": "https://github.com/WebAssembly/wasi-sdk/releases/download/"
+                "wasi-sdk-34/wasi-sdk-34.0-x86_64-linux.tar.gz",
+            },
+            check_pins.parse_wasi_sdk_pin(research),
+        )
+
+    def test_invalid_wasi_sdk_checksum_is_rejected(self):
+        research = (
+            "| 依存 | 版 | SHA-256 | 取得元 |\n"
+            "|---|---|---|---|\n"
+            "| wasi-sdk | 34.0 | `short` | "
+            "https://github.com/WebAssembly/wasi-sdk/releases/download/"
+            "wasi-sdk-34/wasi-sdk-34.0-x86_64-linux.tar.gz |\n"
+        )
+        with self.assertRaisesRegex(RuntimeError, "SHA-256"):
+            check_pins.parse_wasi_sdk_pin(research)
+
+    def test_wasi_sdk_release_reads_linux_asset_version_and_digest(self):
+        version, digest = check_pins.parse_wasi_sdk_release(
+            '{"assets":[{"name":"wasi-sdk-35.0-x86_64-linux.tar.gz","digest":"sha256:'
+            + "f" * 64
+            + '"}]}'
+        )
+        self.assertEqual(("35.0", "f" * 64), (version, digest))
+
     def test_numeric_tag_order_and_prerelease_filter(self):
         tags = "\n".join(
             (
@@ -195,6 +241,11 @@ class CheckPinsTests(unittest.TestCase):
                 check=True,
             )
         self.commit_fixture("upstream fixture")
+        self.latest_wasi_sdk = (
+            '{"assets":[{"name":"wasi-sdk-34.0-x86_64-linux.tar.gz","digest":"sha256:'
+            + "e" * 64
+            + '"}]}'
+        )
         return {
             name: f"{sha}\trefs/tags/v1.0.0\n"
             for name, sha in self.pinned.items()
@@ -228,6 +279,8 @@ class CheckPinsTests(unittest.TestCase):
                 return '{"tag_name":"v1.7.12"}'
             if url == check_pins.RUNNER_IMAGES_README:
                 return "## Available Images\n| `ubuntu-26.04` |\n"
+            if url == check_pins.WASI_SDK_RELEASE:
+                return self.latest_wasi_sdk
             raise AssertionError(f"unexpected URL: {url}")
 
         with patch.object(check_pins, "run", side_effect=fake_run), patch.object(
@@ -259,6 +312,31 @@ class CheckPinsTests(unittest.TestCase):
         self.assertEqual(
             ("libusb", "v1.0.0", "v1.0.0", "最新"),
             next(row for row in rows if row[0] == "libusb"),
+        )
+
+    def test_yosys_tag_and_wasi_sdk_are_monitored(self):
+        tags = self.prepare_upstream_fixture()
+        rows, _ = self.upstream_report(tags, self.pinned["libftdi"] + "\tHEAD\n")
+        self.assertEqual(
+            ("yosys", "v1.0.0", "v1.0.0", "最新"),
+            next(row for row in rows if row[0] == "yosys"),
+        )
+        self.assertEqual(
+            ("wasi-sdk", "34.0 (" + "e" * 12 + ")", "34.0 (" + "e" * 12 + ")", "最新"),
+            next(row for row in rows if row[0] == "wasi-sdk"),
+        )
+
+    def test_wasi_sdk_release_update_is_reported(self):
+        tags = self.prepare_upstream_fixture()
+        self.latest_wasi_sdk = (
+            '{"assets":[{"name":"wasi-sdk-35.0-x86_64-linux.tar.gz","digest":"sha256:'
+            + "f" * 64
+            + '"}]}'
+        )
+        rows, _ = self.upstream_report(tags, self.pinned["libftdi"] + "\tHEAD\n")
+        self.assertEqual(
+            ("wasi-sdk", "34.0 (" + "e" * 12 + ")", "35.0 (" + "f" * 12 + ")", "更新あり"),
+            next(row for row in rows if row[0] == "wasi-sdk"),
         )
 
     def test_gitlink_without_matching_tag_needs_review(self):
@@ -298,7 +376,7 @@ class CheckPinsTests(unittest.TestCase):
 
     def test_libftdi_branch_update_is_reported(self):
         tags = self.prepare_upstream_fixture(libftdi_branch="next")
-        latest = "f" * 40
+        latest = "0" * 40
         rows, refs = self.upstream_report(tags, latest + "\trefs/heads/next\n")
         self.assertEqual(
             ("libftdi (branch)", self.pinned["libftdi"][:12], latest[:12], "更新あり"),

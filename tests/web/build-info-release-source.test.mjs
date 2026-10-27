@@ -21,6 +21,7 @@ const submodules = [
   "vendor/openFPGALoader",
   "vendor/yomiyasu",
   "vendor/zlib",
+  "vendor/yosys",
 ];
 
 function git(root, ...args) {

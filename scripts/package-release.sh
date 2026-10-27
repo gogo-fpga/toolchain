@@ -23,6 +23,15 @@ submodules=(
   vendor/openFPGALoader
   vendor/yomiyasu
   vendor/zlib
+  vendor/yosys
+)
+yosys_nested_submodules=(
+  abc
+  libs/cxxopts
+  libs/fmt
+  libs/tomlplusplus
+  libs/boost_regex
+  libs/symfpu
 )
 
 for tool in git tar gzip zip sha256sum python3 find sort touch chmod cp xargs; do
@@ -56,6 +65,9 @@ python3 "$root/scripts/build-info.py" check-artifacts \
 commit="$(git -C "$root" rev-parse HEAD)"
 source_date_epoch="$(git -C "$root" log -1 --format=%ct)"
 emsdk_version="$(git -C "$root/vendor/emsdk" describe --tags --exact-match)"
+yosys_pin="$(python3 "$root/.github/scripts/check-pins.py" yosys-pin)"
+yosys_commit="${yosys_pin#*$'\t'}"
+yosys_commit="${yosys_commit%%$'\t'*}"
 export SOURCE_DATE_EPOCH="$source_date_epoch"
 mkdir -p "$release_dir"
 work="$(mktemp -d "$release_dir/.package.XXXXXX")"
@@ -74,6 +86,20 @@ license_copies=(
   "$root/vendor/libusb/COPYING:libusb-COPYING"
   "$root/vendor/libftdi/COPYING.LIB:libftdi-COPYING.LIB"
   "$root/vendor/zlib/LICENSE:zlib-LICENSE"
+  "$root/vendor/yosys/COPYING:yosys-COPYING"
+  "$root/vendor/yosys/abc/copyright.txt:abc-copyright.txt"
+  "$root/vendor/yosys/libs/cxxopts/LICENSE:cxxopts-LICENSE"
+  "$root/vendor/yosys/libs/fmt/LICENSE:fmt-LICENSE"
+  "$root/licenses/wasi-sdk/LICENSE:wasi-sdk-LICENSE"
+  "$root/licenses/llvm/LICENSE.TXT:wasi-sdk-llvm-LICENSE.TXT"
+  "$root/licenses/wasi-libc/LICENSE:wasi-libc-LICENSE"
+  "$root/licenses/wasi-libc/LICENSE-APACHE:wasi-libc-LICENSE-APACHE"
+  "$root/licenses/wasi-libc/LICENSE-APACHE-LLVM:wasi-libc-LICENSE-APACHE-LLVM"
+  "$root/licenses/wasi-libc/LICENSE-MIT:wasi-libc-LICENSE-MIT"
+  "$root/licenses/wasi-libc/fts/musl-fts/COPYING:wasi-libc-musl-fts-COPYING"
+  "$root/licenses/wasi-libc/libc-bottom-half/cloudlibc/LICENSE:wasi-libc-cloudlibc-LICENSE"
+  "$root/licenses/wasi-libc/libc-top-half/musl/COPYRIGHT:wasi-libc-musl-COPYRIGHT"
+  "$root/licenses/wasi-libc/tools/wasi-headers/LICENSE:wasi-libc-headers-LICENSE"
   "$emscripten_root/LICENSE:emscripten-LICENSE"
   "$emscripten_root/system/lib/libc/musl/COPYRIGHT:emscripten-musl-COPYRIGHT"
   "$emscripten_root/system/lib/libcxx/LICENSE.TXT:emscripten-libcxx-LICENSE.TXT"
@@ -123,6 +149,27 @@ for path in "${submodules[@]}"; do
   if [[ -z "${submodule_shas[$path]:-}" ]]; then
     printf 'Missing submodule gitlink: %s\n' "$path" >&2
     exit 1
+  fi
+done
+
+printf '%s\n' "$yosys_commit" > "$source_root/vendor/yosys/.gitcommit"
+for path in "${yosys_nested_submodules[@]}"; do
+  tree_line="$(git -C "$root/vendor/yosys" ls-tree HEAD -- "$path")"
+  if [[ -z "$tree_line" ]]; then
+    printf 'Missing Yosys nested submodule gitlink: %s\n' "$path" >&2
+    exit 1
+  fi
+  metadata="${tree_line%%$'\t'*}"
+  read -r mode object_type sha <<< "$metadata"
+  if [[ "$mode" != 160000 || "$object_type" != commit ]]; then
+    printf 'Expected a Yosys nested submodule gitlink for %s\n' "$path" >&2
+    exit 1
+  fi
+  mkdir -p "$source_root/vendor/yosys/$path"
+  git -C "$root/vendor/yosys/$path" archive --format=tar "$sha" \
+    | tar -xf - -C "$source_root/vendor/yosys/$path"
+  if [[ "$path" == abc ]]; then
+    printf '%s\n' "$sha" > "$source_root/vendor/yosys/abc/.gitcommit"
   fi
 done
 
@@ -205,6 +252,7 @@ labels = {
     "vendor/zlib": "zlib",
     "vendor/emsdk": "emsdk",
     "vendor/yomiyasu": "yomiyasu",
+    "vendor/yosys": "Yosys",
 }
 rows = []
 for path in submodules:
@@ -220,6 +268,8 @@ for path in submodules:
         raise SystemExit(f"Expected a gitlink for {path}")
     if path == "vendor/emsdk":
         pinned_version = emsdk_version
+    elif path == "vendor/yosys":
+        pinned_version = yosys_version
     elif path == "vendor/libftdi":
         cmake = (root / path / "CMakeLists.txt").read_text(encoding="utf-8")
         major = re.search(r"set\(MAJOR_VERSION\s+([0-9]+)\)", cmake)

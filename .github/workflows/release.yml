@@ -27,13 +27,21 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
-          submodules: true
+          submodules: false
           persist-credentials: false
+
+      - name: 必要な submodule を取得
+        run: |
+          git submodule update --init --depth 1 -- \
+            vendor/emsdk vendor/libftdi vendor/libusb vendor/openFPGALoader \
+            vendor/yomiyasu vendor/zlib vendor/yosys
+          git -C vendor/yosys submodule update --init --depth 1 -- \
+            abc libs/cxxopts libs/fmt libs/tomlplusplus libs/boost_regex libs/symfpu
 
       - name: Autotools をインストール
         run: |
           sudo apt-get update
-          sudo apt-get install -y autoconf automake libtool
+          sudo apt-get install -y autoconf automake bison flex libtool
           autoconf --version | head -n 1
           automake --version | head -n 1
           libtoolize --version | head -n 1
@@ -52,6 +60,14 @@ jobs:
 
       - name: WASM をビルド
         run: scripts/build-wasm.sh
+
+      - name: Yosys WASI と native をビルド
+        run: |
+          scripts/build-synth-wasm.sh
+          scripts/build-synth-wasm.sh --native
+
+      - name: Yosys WASI/native 合成テスト
+        run: node --test tests/synth/*.test.mjs
 
       - name: Web アプリを組み立て
         run: scripts/build-web.sh
@@ -79,6 +95,8 @@ jobs:
           path: |
             build/jspi-pthread/
             build/fixtures/*.fs
+            build/wasi/yosys/
+            build/native/
           retention-days: 1
 
   test:
@@ -162,6 +180,9 @@ jobs:
         working-directory: ${{ runner.temp }}/toolchain-source
         run: |
           scripts/build-wasm.sh
+          scripts/build-synth-wasm.sh
+          scripts/build-synth-wasm.sh --native
+          node --test tests/synth/*.test.mjs
           scripts/build-web.sh
 
       - name: Release zip と再ビルドの hash を比較
