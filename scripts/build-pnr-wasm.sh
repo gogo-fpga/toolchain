@@ -187,9 +187,11 @@ EOF
       printf '  <ranlib>%s/bin/llvm-ranlib\n' "$wasi_sdk"
       printf '  <cxxflags>--target=wasm32-wasip1\n'
       printf '  <cxxflags>--sysroot=%s/share/wasi-sysroot\n' "$wasi_sdk"
+      printf '  <cxxflags>-D_WASI_EMULATED_MMAN\n'
       printf '  <cxxflags>-ffile-prefix-map=%s=/src\n' "$root"
       printf '  <linkflags>--target=wasm32-wasip1\n'
       printf '  <linkflags>--sysroot=%s/share/wasi-sysroot\n' "$wasi_sdk"
+      printf '  <linkflags>-lwasi-emulated-mman\n'
       printf '  ;\n'
     } > "$wasi_jam"
     (
@@ -306,7 +308,7 @@ cmake -S vendor/nextpnr -B "$wasi_build" \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_C_FLAGS="$prefix_flags" \
   -DCMAKE_CXX_FLAGS="$prefix_flags" \
-  -DCMAKE_EXE_LINKER_FLAGS="-Wl,-z,stack-size=8388608" \
+  -DCMAKE_EXE_LINKER_FLAGS="-Wl,-z,stack-size=8388608 -lwasi-emulated-mman" \
   -DCMAKE_DISABLE_FIND_PACKAGE_Threads=ON \
   -DBUILD_GUI=OFF \
   -DBUILD_PYTHON=OFF \
