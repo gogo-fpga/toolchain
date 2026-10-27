@@ -46,7 +46,7 @@
 
 ## 6. 依存関係の管理
 
-`.github/dependabot.yml` では、branch を追う submodule（yomiyasu）、GitHub Actions、npm、pip を週次で更新対象にします。`libftdi` は Dependabot から取得元 `developer.intra2net.com` に接続できません。そのため、「固定版の更新確認」ワークフローが `vendor/libftdi` の branch 先端を調べ、差があれば Issue で知らせます。タグで固定した submodule（openFPGALoader、libusb、zlib、emsdk）、Node.js、actionlint、runner も同じワークフローの対象です。依存を追加する際は、同じ変更で監視対象にも加えてください。
+`.github/dependabot.yml` では、branch を追う submodule（yomiyasu）、GitHub Actions、npm、pip を週次で更新対象にします。`libftdi` は Dependabot から取得元 `developer.intra2net.com` に接続できません。そのため、「固定版の更新確認」ワークフローが `vendor/libftdi` の branch 先端を調べ、差があれば Issue で知らせます。タグで固定した submodule（openFPGALoader、libusb、zlib、emsdk、Yosys、nextpnr）、WASI SDK、Boost・Eigen のアーカイブ、Apycula、Node.js、actionlint、runner も同じワークフローの対象です。`requirements-nextpnr.txt` は Dependabot の pip 対象です。依存を追加する際は、同じ変更で監視対象にも加えてください。
 
 Dependabot の PR を含むすべての更新で「vendor-update」スキルの変更履歴の確認と回帰テストを行います。マージは人間が行います。
 
@@ -91,12 +91,16 @@ git submodule update --init --depth 1    # submodule の取得
 git -C vendor/emsdk fetch --depth=1 --tags origin  # build-wasm.sh に必要な emsdk のタグを取得。CI の build.yml と同じ
 git submodule update --init --depth 1 -- vendor/yosys
 git -C vendor/yosys submodule update --init --depth 1 -- abc libs/cxxopts libs/fmt libs/tomlplusplus libs/boost_regex libs/symfpu
+git submodule update --init --depth 1 -- vendor/nextpnr
 npm ci                                   # Playwright と esbuild などを取得。build-web.sh の前に実行する
 npx playwright install --with-deps chromium
 scripts/build-wasm.sh                    # openFPGALoader を WASM にする（build/jspi-pthread/）
 scripts/build-synth-wasm.sh              # Yosys を WASI SDK でビルドする
 scripts/build-synth-wasm.sh --native     # Yosys のネイティブ参照版をビルドする
 node --test tests/synth/*.test.mjs       # WASM とネイティブの合成結果を比較する
+scripts/build-pnr-wasm.sh                # nextpnr と Gowin chipdb を WASI SDK でビルドする
+scripts/build-pnr-wasm.sh --native       # nextpnr のネイティブ参照版をビルドする
+node --test tests/synth/nextpnr.test.mjs # nextpnr の WASI/native 結果と負の対照を検証する
 scripts/build-web.sh                     # 画面と WASM を dist/ にまとめる
 tests/fixtures/build-fs.sh               # 4 ボード用の .fs を作る（build/fixtures/）
 node --test tests/web/*.test.mjs         # 画面の部品の単体テスト

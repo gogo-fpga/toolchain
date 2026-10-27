@@ -26,3 +26,7 @@
 	path = vendor/yosys
 	url = https://github.com/YosysHQ/yosys.git
 	shallow = true
+[submodule "vendor/nextpnr"]
+	path = vendor/nextpnr
+	url = https://github.com/YosysHQ/nextpnr.git
+	shallow = true

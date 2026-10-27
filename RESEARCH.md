@@ -39,12 +39,15 @@ vendor submodule の commit は次のとおりです。pin checker がこの表�
 | emsdk | 6.0.13 | `35659964bc2762fffec0d257997fb61475f765b7` | `https://github.com/emscripten-core/emsdk.git` |
 | yomiyasu | 未確認 | `552c12c472ddfb79e2ee7a15219847782686a945` | `https://github.com/nanaism/yomiyasu.git` |
 | yosys | v0.70 | `28ba3cb926fe376fa05ebfc1b921747d011d4557` | `https://github.com/YosysHQ/yosys.git` |
+| nextpnr | nextpnr-0.11.1 | `62e659ed6748e9f60b2a4aa25dd4fe79a9605881` | `https://github.com/YosysHQ/nextpnr.git` |
 
 WASI SDK の固定値は pin checker とビルドスクリプトが読む次の表を正とします。
 
 | 依存 | 版 | SHA-256 | 取得元 |
 |---|---|---|---|
 | wasi-sdk | 34.0 | `b761e3a0721dbae9c09a0059e5fdb2bf917d1b4a8a7b430fb3b5aafb0984b2c4` | `https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-34/wasi-sdk-34.0-x86_64-linux.tar.gz` |
+| boost | 1.92.0 | `ea7b982002cc9dfbe59b0b217b206f470dc75f3de0bb2973d844118934d82411` | `https://github.com/boostorg/boost/releases/download/boost-1.92.0/boost-1.92.0-b2-nodocs.tar.xz` |
+| eigen | 5.0.1 | `e9c326dc8c05cd1e044c71f30f1b2e34a6161a3b6ecf445d56b53ff1669e3dec` | `https://gitlab.com/libeigen/eigen/-/archive/5.0.1/eigen-5.0.1.tar.gz` |
 
 libftdi は `developer.intra2net.com` に Dependabot が接続できないため、`.gitmodules` の URL と branch から upstream 先端を調べ、「固定版の更新確認」ワークフローで監視します。
 
@@ -79,6 +82,20 @@ upstream の [`kernel/yosys.cc`](https://github.com/YosysHQ/yosys/blob/28ba3cb92
 S1 の合成 JSON は `creator` にコンパイラー情報、`attributes.src` に techlib の実行時パスを記録します。native は `build/native/share`、WASI は `/share` を使うため、比較では `creator` の Yosys gitlink 由来 prefix を確認し、`attributes.src` にある native share path だけを `/share` に置き換えます。それ以外の値とキー順は変換せず比較します。
 
 WASI SDK 34.0 の Linux x86_64 アーカイブ名、URL、SHA-256 は上の固定値表に置き、pin checker が更新を監視します。ビルドスクリプトは同じ表を読み、値を重複して持ちません。
+
+### nextpnr-himbaechel（Gowin）と WASI SDK
+
+nextpnr は `nextpnr-0.11.1` の gitlink に固定します。upstream の [`himbaechel/CMakeLists.txt`](https://github.com/YosysHQ/nextpnr/blob/62e659ed6748e9f60b2a4aa25dd4fe79a9605881/himbaechel/CMakeLists.txt#L1-L22) では `HIMBAECHEL_SPLIT=ON` により microarchitecture ごとに実行ファイルを分けます。Gowin の [`CMakeLists.txt`](https://github.com/YosysHQ/nextpnr/blob/62e659ed6748e9f60b2a4aa25dd4fe79a9605881/himbaechel/uarch/gowin/CMakeLists.txt#L28-L57) は `HIMBAECHEL_GOWIN_DEVICES` に列挙した device ごとに chipdb を生成します。対象 family は `web/lib/boards.mjs` の4ボードから導き、`GW1NZ-1`、`GW1NS-4`、`GW1N-9C`、`GW2A-18C` 以外が入る場合はビルドを停止します。device 名も同じファイルの board 定義をテストで使います。
+
+nextpnr は CMake の `STATIC_BUILD` を使い、Boost 1.92.0 の `program_options` と `iostreams` のみを静的リンクします。Boost は WASI SDK の clang で構築し、Eigen 5.0.1 はヘッダーとして参照します。Apycula は `requirements-nextpnr.txt` のハッシュ付き固定版を使ってチップデータを生成します。依存の版、取得元、checksum は pin checker が検査する上表と lock file から読み、ビルドスクリプトに重複して持ちません。
+
+nextpnr の native build が `bbasm` を提供し、同じ CMake 設定で作る WASI build に `BBA_IMPORT` として渡します。upstream の [`CMakeLists.txt`](https://github.com/YosysHQ/nextpnr/blob/62e659ed6748e9f60b2a4aa25dd4fe79a9605881/CMakeLists.txt#L268-L271) と [`BBAsm.cmake`](https://github.com/YosysHQ/nextpnr/blob/62e659ed6748e9f60b2a4aa25dd4fe79a9605881/cmake/BBAsm.cmake#L70-L130) の構成に合わせ、native helper で chipdb を生成します。WASI 実行時の外部 chipdb は `/share/himbaechel/gowin/` から読み、WASM と別に配置します。native build も同じ生成規則を使い、native 用の実行時パスを設定します。Threads は無効、WASM の stack は 8 MiB とします。
+
+S2 の P&R テストは各ボードの Verilog テンプレートを WASI Yosys で合成し、`generateCst` の制約と同じ `--seed` を使って native と WASI nextpnr に渡します。出力 JSON はパース後に比較し、実測で差が現れ、ツールまたはパスの metadata と確認できた値だけを狭く置き換えます。配置などの差は許容しません。比較規則には置換数の確認と、非 metadata 値を変える負の対照を設けます。
+
+nextpnr は ISC、Boost は Boost Software License 1.0、Eigen は主に MPL-2.0 で、一部に BSD など互換ライセンスのコードがあります。Apycula は MIT のライセンスです。Python パッケージは chipdb 生成時だけ使用し、WASM には含めません。ライセンス本文は `licenses/` と配布 zip に含めます。
+
+Apycula 0.35 を先に試します。chipdb 生成または P&R が失敗した場合に限り、試行版とエラーを記録して動作する最新の版を選びます。nextpnr、Boost、Eigen、Apycula の release notes と変更履歴を調べ、採否とビルド結果をこの節に記録します。
 
 Yosys v0.69 から v0.70 では `alumacc -macc-only`、`optbarriers`、`flatten` と `prep` の `-barriers`、`mcm`、`rmports -purge`、`ltp -select`、色付きログが追加され、`read_xaiger2` が削除されました。`vendor/yosys/CHANGELOG` の該当節を確認しました。今回の `read_verilog` と `synth_gowin` を使う経路ではどの変更も必要ないため、追加のオプションやパスは採用しません。WASI SDK 34 の release notes では CMake toolchain の調整、wasi-libc の更新、WASI Preview 3 対応の作業が挙げられています。Preview 1 の同期実行を使う本段階では追加の対応を行いません。
 
