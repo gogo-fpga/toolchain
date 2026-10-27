@@ -10,6 +10,8 @@ import {
   importProjectZip,
 } from "./lib/project-zip.bundle.mjs";
 import { createHdlEditor, languageForPath } from "./editor/editor.bundle.mjs";
+import { createBuildRunner } from "./lib/build-runner.mjs";
+import { parseToolDiagnostics } from "./lib/tool-diagnostics.mjs";
 
 const UI_STATE_PREFIX = "toolchain.ide.";
 
@@ -68,6 +70,7 @@ export function initializeIde({
   programLog,
   BOARDS,
   onFsSourceChange = () => {},
+  onBuildStateChange = () => {},
 }) {
   const store = createOpfsStore(navigator.storage);
   const projectName = document.querySelector("#project-name");
@@ -117,6 +120,11 @@ export function initializeIde({
   const boardPane = document.querySelector("#board-pane");
   const closeFilesPaneButton = document.querySelector("#close-files-pane");
   const closeBoardPaneButton = document.querySelector("#close-board-pane");
+  const synthesisButton = document.querySelector("#synthesis-button");
+  const synthesisStage = document.querySelector("#synthesis-stage");
+  const synthesisReason = document.querySelector("#synthesis-reason");
+  const synthesisAssetSize = document.querySelector("#synthesis-asset-size");
+  const programButton = document.querySelector("#program-button");
 
   let project = null;
   let fileContents = new Map();
@@ -128,6 +136,8 @@ export function initializeIde({
   let pendingSave = Promise.resolve();
   let fileDialogMode = "add";
   let projectSwitchVersion = 0;
+  const buildRunner = createBuildRunner();
+  let buildRunning = false;
 
   function appendProjectLog(message) {
     const prior = programLog.textContent.trim();
@@ -163,7 +173,7 @@ export function initializeIde({
     projectActionStatus.textContent = message;
   }
 
-  function renderFsSource(useDefault = false) {
+  function renderFsSource(useDefault = false, preferredPath = null) {
     const paths = (project?.files ?? [])
       .map(({ path }) => path)
       .filter((path) => path.endsWith(".fs"));
@@ -179,7 +189,9 @@ export function initializeIde({
     localOption.value = "local";
     localOption.textContent = "パソコンのファイルから選ぶ";
     fsSource.append(localOption);
-    const selected = !useDefault &&
+    const selected = preferredPath && paths.includes(preferredPath)
+      ? preferredPath
+      : !useDefault &&
       (previous === "local" || paths.includes(previous))
       ? previous
       : paths.length === 1
@@ -198,6 +210,153 @@ export function initializeIde({
         name: selected.split("/").at(-1),
         bytes,
       });
+    }
+  }
+
+  function updateSynthesisControls() {
+    const hasVerilog = (project?.files ?? []).some(({ path }) => /\.v$/i.test(path));
+    const hasVhdl = (project?.files ?? []).some(({ path }) => /\.(?:vhd|vhdl)$/i.test(path));
+    const board = BOARDS.find(({ id }) => id === boardSelect.value);
+    const supported = hasVerilog && !hasVhdl && Boolean(board);
+    synthesisButton.disabled = !supported && !buildRunning;
+    synthesisReason.textContent = hasVhdl
+      ? "VHDL の合成は T3 で対応予定です"
+      : supported
+        ? ""
+        : "Verilog プロジェクトを開いてください。";
+    if (board) {
+      void fetch(new URL("./synth/manifest.json", import.meta.url))
+        .then((response) => response.json())
+        .then((manifest) => {
+          const paths = new Set([
+            "yosys.wasm",
+            "nextpnr-himbaechel-gowin.wasm",
+            "yosys-share.tar",
+            `chipdb/chipdb-${board.nextpnrFamily}.bin`,
+          ]);
+          const size = manifest.assets
+            .filter(({ path }) => paths.has(path))
+            .reduce((total, asset) => total + asset.size, 0);
+          synthesisAssetSize.textContent =
+            `初回は約 ${(size / 1_000_000).toFixed(1)} MB を読み込みます`;
+        })
+        .catch(() => {
+          synthesisAssetSize.textContent = "合成資材の情報を読み込めません。";
+        });
+    }
+  }
+
+  async function runProjectBuild() {
+    if (buildRunning) {
+      buildRunner.cancel();
+      return;
+    }
+    if (!project) return;
+    await flushPendingSave();
+    buildRunning = true;
+    onBuildStateChange(true);
+    synthesisButton.textContent = "中止";
+    synthesisStage.textContent = "合成";
+    programButton.disabled = true;
+    programLog.textContent = "";
+    const diagnostics = [];
+    const toolText = new Map();
+    try {
+      const files = project.files
+        .filter(({ path }) => !path.startsWith("build/"))
+        .map(({ path }) => ({ path, content: fileContents.get(path) }));
+      const result = await buildRunner.build(
+        { board: boardSelect.value, top: "top", files },
+        {
+          onStage: (stage) => {
+            const labels = ["合成", "配置配線", "ビットストリーム"];
+            const activeIndex = { synth: 0, pnr: 1, pack: 2 }[stage];
+            synthesisStage.textContent = labels
+              .map((label, index) => index <= activeIndex ? label : "")
+              .filter(Boolean)
+              .join(" → ");
+          },
+          onLog: ({ tool, stream, text }) => {
+            appendProjectLog(`[${tool} ${stream}] ${text}`);
+            const prior = toolText.get(tool) ?? "";
+            toolText.set(tool, prior + text);
+          },
+        },
+      );
+      for (const [tool, text] of toolText) {
+        diagnostics.push(...parseToolDiagnostics(tool, text));
+      }
+      const editorResults = editorDiagnostics(diagnostics);
+      for (const file of result.files) {
+        if (!project.files.some(({ path }) => path === file.path)) {
+          project.files.push({ path: file.path });
+        }
+        fileContents.set(file.path, file.bytes);
+      }
+      await saveProject();
+      renderFileList();
+      renderFsSource(true, "build/top.fs");
+      renderProblems(editorResults);
+      window.dispatchEvent(
+        new CustomEvent("toolchain:diagnostics", { detail: editorResults }),
+      );
+      window.dispatchEvent(
+        new CustomEvent("toolchain:build-complete", {
+          detail: {
+            timings: result.timings,
+            memoryBytes: result.memoryBytes,
+          },
+        }),
+      );
+      synthesisStage.textContent = "ビルド完了";
+      appendProjectLog(`合成 ${result.timings.synth.toFixed(0)} ms、配置配線 ${result.timings.pnr.toFixed(0)} ms、ビットストリーム ${result.timings.pack.toFixed(0)} ms`);
+    } catch (error) {
+      if (error.name !== "AbortError") {
+        for (const [tool, text] of toolText) {
+          diagnostics.push(...parseToolDiagnostics(tool, text));
+        }
+        const failedTool = {
+          synth: "yosys",
+          pnr: "nextpnr",
+          pack: "gowin_pack",
+        }[error.stage] ??
+          (/^Yosys\b/i.test(error.message)
+            ? "yosys"
+            : /^nextpnr\b/i.test(error.message)
+              ? "nextpnr"
+              : null);
+        if (failedTool) {
+          const reported = parseToolDiagnostics(
+            failedTool,
+            `${[...toolText.values()].join("\n")}\n${error.message}`,
+          );
+          for (const diagnostic of reported) {
+            if (
+              !diagnostics.some(({ file, line, message }) =>
+                file === diagnostic.file &&
+                line === diagnostic.line &&
+                message === diagnostic.message
+              )
+            ) {
+              diagnostics.push(diagnostic);
+            }
+          }
+        }
+        const editorResults = editorDiagnostics(diagnostics);
+        renderProblems(editorResults);
+        window.dispatchEvent(
+          new CustomEvent("toolchain:diagnostics", { detail: editorResults }),
+        );
+        appendProjectLog(`ビルドエラー: ${error.message}`);
+        synthesisStage.textContent = "ビルド失敗";
+      } else {
+        synthesisStage.textContent = "中止しました";
+      }
+    } finally {
+      buildRunning = false;
+      synthesisButton.textContent = "合成・配置配線";
+      onBuildStateChange(false);
+      updateSynthesisControls();
     }
   }
 
@@ -251,9 +410,33 @@ export function initializeIde({
         info: "情報",
         hint: "ヒント",
       }[diagnostic.severity] ?? "エラー";
-      item.textContent = `${severity}: ${diagnostic.message}`;
+      const location = diagnostic.file
+        ? `${diagnostic.file}:${diagnostic.line}${diagnostic.column ? `:${diagnostic.column}` : ""}: `
+        : "";
+      item.textContent = `${severity}: ${location}${diagnostic.message}`;
       problemList.append(item);
     }
+  }
+
+  function editorDiagnostics(diagnostics) {
+    return diagnostics.map((diagnostic) => {
+      const path = diagnostic.file ?? activeTab;
+      const lines = textForPath(path).split(/\r?\n/);
+      const lineIndex = Number.isInteger(diagnostic.line)
+        ? Math.min(Math.max(diagnostic.line - 1, 0), lines.length - 1)
+        : 0;
+      const lineStart = lines
+        .slice(0, lineIndex)
+        .reduce((length, line) => length + line.length + 1, 0);
+      const columnOffset = Number.isInteger(diagnostic.column)
+        ? Math.max(diagnostic.column - 1, 0)
+        : 0;
+      const from = path === activeTab
+        ? lineStart + Math.min(columnOffset, lines[lineIndex].length)
+        : 0;
+      const to = path === activeTab ? lineStart + lines[lineIndex].length : from;
+      return { ...diagnostic, from, to };
+    });
   }
 
   function scheduleSave() {
@@ -571,6 +754,7 @@ export function initializeIde({
       updateEditor();
     }
     updateBoardInformation();
+    updateSynthesisControls();
     renderFsSource(true);
     void refreshProjectSwitcher();
     boardSelect.dispatchEvent(new Event("change", { bubbles: true }));
@@ -779,5 +963,7 @@ export function initializeIde({
   });
 
   renderFsSource(true);
+  synthesisButton.addEventListener("click", () => void runProjectBuild());
+  boardSelect.addEventListener("change", updateSynthesisControls);
   void initializeProject();
 }

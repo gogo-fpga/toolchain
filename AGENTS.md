@@ -101,6 +101,7 @@ node --test tests/synth/*.test.mjs       # WASM とネイティブの合成結�
 scripts/build-pnr-wasm.sh                # nextpnr と Gowin chipdb を WASI SDK でビルドする
 scripts/build-pnr-wasm.sh --native       # nextpnr のネイティブ参照版をビルドする
 node --test tests/synth/nextpnr.test.mjs # nextpnr の WASI/native 結果と負の対照を検証する
+node --test tests/synth/wasi-p1.test.mjs # WASI Preview 1 shim と nextpnr/Yosys の一致を検証する
 scripts/build-pack-assets.sh             # Pyodide、Apicula、NumPy、msgspec を検証して build/pack/ に配置する
 node --test tests/synth/gowin-pack.test.mjs # Pyodide と native の .fs を比較する
 scripts/build-web.sh                     # 画面、WASM、Pyodide assets を dist/ にまとめる
@@ -108,6 +109,7 @@ tests/fixtures/build-fs.sh               # 4 ボード用の .fs を作る（bui
 node --test tests/web/*.test.mjs         # 画面の部品の単体テスト
 WASM_BUILD_ROOT=build node --test --test-concurrency=1 tests/sim/*.test.mjs  # 仮想 USB での検出・書き込み
 npx playwright test                      # 画面の E2E（既定は 8000。使用中なら PLAYWRIGHT_PORT=8123 を指定）
+scripts/package-release.sh v0.1.0        # 配布物とライセンス本文を検証する
 python3 dist/serve.py --port 8000        # COOP/COEP 付きでローカル配信
 shellcheck scripts/*.sh tests/fixtures/*.sh tests/check-*/run.sh
 python3 .github/scripts/check-jisx0213.py

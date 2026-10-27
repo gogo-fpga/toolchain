@@ -61,6 +61,7 @@ let supportAvailable = false;
 let activeWorker = null;
 let selectedFileIdcode = null;
 let fileIdcodeReady = true;
+let synthesisBuildRunning = false;
 let fileReadVersion = 0;
 let verifySelection = defaultOptions().verify;
 let terminalState = { text: "" };
@@ -256,6 +257,7 @@ function updateForm() {
       : "書き込む";
   programButton.disabled =
     !supportAvailable ||
+    synthesisBuildRunning ||
     activeWorker !== null ||
     !fileIdcodeReady ||
     errors.length > 0;
@@ -653,5 +655,9 @@ initializeIde({
   onFsSourceChange: (source) => {
     projectFsSource = source;
     void readSelectedFileIdcode();
+  },
+  onBuildStateChange: (running) => {
+    synthesisBuildRunning = running;
+    updateForm();
   },
 });

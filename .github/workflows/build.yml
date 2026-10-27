@@ -427,6 +427,9 @@ jobs:
       - name: WASI/native P&R を比較
         run: node --test tests/synth/nextpnr.test.mjs
 
+      - name: WASI Preview 1 shim を検証
+        run: node --test tests/synth/wasi-p1.test.mjs
+
       - name: nextpnr 成果物を保存
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -669,8 +672,8 @@ jobs:
 
   e2e:
     name: Playwright E2E
-    needs: build
-    if: needs.build.result == 'success'
+    needs: [changes, build, synth, nextpnr, pyodide-pack]
+    if: needs.changes.outputs.build == 'true' && needs.build.result == 'success' && needs.synth.result == 'success' && needs.nextpnr.result == 'success' && needs.pyodide-pack.result == 'success'
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     permissions:
@@ -697,6 +700,31 @@ jobs:
         with:
           name: ci-build-${{ github.run_id }}
           path: build
+
+      - name: WASI Yosys 成果物を取得
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ci-yosys-synth-${{ github.run_id }}
+          path: build
+
+      - name: nextpnr 成果物を取得
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ci-nextpnr-${{ github.run_id }}
+          path: build
+
+      - name: Pyodide pack assets を取得
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ci-pyodide-pack-${{ github.run_id }}
+          path: build/pack
+
+      - name: Native Apycula venv を作成
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-venv
+          python3 -m venv build/deps/apycula-venv
+          build/deps/apycula-venv/bin/pip install --require-hashes -r requirements-nextpnr.txt
 
       - name: Playwright E2E
         env:

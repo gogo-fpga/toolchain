@@ -55,16 +55,14 @@ function normalizeDiagnostics(diagnostics, documentLength) {
       Math.max(from, diagnostic.to),
       documentLength,
     );
-    return [
-      {
-        from,
-        to,
-        severity: DIAGNOSTIC_SEVERITIES.has(diagnostic.severity)
-          ? diagnostic.severity
-          : "error",
-        message: diagnostic.message,
-      },
-    ];
+    return [{
+      ...diagnostic,
+      from,
+      to,
+      severity: DIAGNOSTIC_SEVERITIES.has(diagnostic.severity)
+        ? diagnostic.severity
+        : "error",
+    }];
   });
 }
 

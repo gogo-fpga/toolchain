@@ -109,6 +109,18 @@ Apicula 0.35 の wheel は 4,281,385 bytes、SHA-256 `6495d1c7cdc3cf6ac0a74bf724
 
 Pyodide の NumPy / msgspec は 2.4.6 / 0.20.0 で、native 参照環境の 2.5.4 / 0.22.0 と版が異なります。S3 の比較では、同一の WASI nextpnr routed JSON を使い、全4ボードで native と Pyodide の `.fs` を5回ずつバイト比較し、IDCODE も確認しました。17件の synthesis tests は成功し、壊れた JSON、別 device、wheel hash 不一致、欠落 wheel の4負例を検出しました。Pyodide setup は 4,627.9 ms、pack assets は 21,021,184 bytes、`.fs` は 1K 351,954、4K 1,167,294、9K 2,069,320、20K 4,618,782 bytes でした。native / Pyodide の実行時間と各回の値は `docs/experiments/S3A-pyodide-gowin-pack.md` と CSV に記録しました。ブラウザー Worker での実行は S4 の範囲で、本段階では確認しません。
 
+### S4: ブラウザー内の Verilog から .fs 生成
+
+`@yowasp/runtime` 11.0.72 は jco 変換済み module の WASI Preview 2 component import を実装し、README で内部用途と説明されています。Yosys と nextpnr は Preview 1 import を使うため、本リポジトリーでは Preview 1 shim を実装し、未対応 import は `LinkError` で拒否します。
+
+shim が公開する import は `args_get`、`args_sizes_get`、`clock_time_get`、`environ_get`、`environ_sizes_get`、`fd_close`、`fd_fdstat_get`、`fd_fdstat_set_flags`、`fd_filestat_get`、`fd_filestat_set_size`、`fd_pread`、`fd_prestat_dir_name`、`fd_prestat_get`、`fd_read`、`fd_readdir`、`fd_renumber`、`fd_seek`、`fd_write`、`path_create_directory`、`path_filestat_get`、`path_open`、`path_readlink`、`path_remove_directory`、`path_rename`、`path_unlink_file`、`proc_exit`、`random_get` の27個です。仮想ファイルは growable `Uint8Array` とし、Yosys と nextpnr は共有 workspace と `/tmp` を preopen します。Yosys share は deterministic USTAR を読み込みます。
+
+ブラウザーでは module Worker が manifest の size と SHA-256 を検証してから Yosys と nextpnr を順に実行し、選択した family の chipdb だけを配置します。次の pack Worker は S3 の `runGowinPack` を使い、キャンセル時に終了して次の build で作り直します。IDE は Verilog でのみ build を有効化し、VHDL は「VHDL の合成は T3 で対応予定です」と表示します。`.fs` をプロジェクトへ保存し、成功後に書き込み対象として選びます。
+
+Playwright の preflight は `build/synth` と `dist/synth` の相対 file set と各 file の byte 列を比較します。E2E の期待値は Node WASI Yosys、Node WASI nextpnr、native `gowin_pack` で生成し、ブラウザー成果物と比較します。測定値は Chromium と VM の値として記録し、実機の性能値とは扱いません。
+
+全4ボードで5回ずつ、Chromium内の出力が期待する`.fs`とbyte-identicalであること、IDCODE、fake USBによるSRAM書込みを確認しました。20回分の段階別時間と各toolの`memoryBytes`、出力sizeは [S4A実験記録](docs/experiments/S4A-browser-build.md) とCSVに記録しています。中央値はVM/Chromium上で合成1,533–1,563 ms、配置配線468–1,079 ms、ビットストリーム318–1,423 msです。各boardの最初のビットストリーム計測はPyodide初期化を含みます。これらの測定値をTang Nano実機の性能として扱いません。
+
 | Family | Native / WASI chipdb bytes |
 |---|---:|
 | GW1N-9C | 12,846,661 |

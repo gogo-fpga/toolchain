@@ -8,6 +8,7 @@ const ALLOWED_EXTENSIONS = new Set([
   ".vhd",
   ".vhdl",
   ".fs",
+  ".json",
   ".cst",
   ".md",
   ".txt",
