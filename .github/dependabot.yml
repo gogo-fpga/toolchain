@@ -47,6 +47,10 @@ updates:
     cooldown:
       default-days: 7
     open-pull-requests-limit: 5
+    ignore:
+      # yowasp-nextpnr-himbaechel-gowin が Apycula の版を固定しているため、単独では上げられません。
+      # yowasp-nextpnr-himbaechel-gowin の更新 PR で、要求に合わせて手で上げます。
+      - dependency-name: "apycula"
 
   - package-ecosystem: "pip"
     directory: "/"
