@@ -145,7 +145,7 @@ if [ ! -f "$eigen_build/Eigen3Config.cmake" ]; then
     -DEIGEN_BUILD_CMAKE_PACKAGE=ON
 fi
 
-boost_b2="$boost_source/tools/build/src/engine/b2"
+boost_b2="$root/$boost_source/tools/build/src/engine/b2"
 if [ ! -x "$boost_b2" ]; then
   (
     cd "$boost_source"
