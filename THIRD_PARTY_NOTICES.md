@@ -17,8 +17,11 @@
 | nextpnr-himbaechel | nextpnr-0.11.1 / `62e659ed6748e9f60b2a4aa25dd4fe79a9605881` | ISC | WASI WASM に静的リンク | `licenses/nextpnr-COPYING` |
 | Boost | 1.92.0 / SHA-256 `ea7b982002cc9dfbe59b0b217b206f470dc75f3de0bb2973d844118934d82411` | Boost Software License 1.0 | `program_options`、`iostreams` を nextpnr WASM に静的リンク | `licenses/boost-LICENSE_1_0.txt` |
 | Eigen | 5.0.1 / SHA-256 `e9c326dc8c05cd1e044c71f30f1b2e34a6161a3b6ecf445d56b53ff1669e3dec` | 主に MPL-2.0。一部に BSD など互換ライセンスのコード | nextpnr WASM のビルドでヘッダーを使用 | `licenses/eigen-*` |
-| Apycula | `requirements-nextpnr.txt` で固定 | MIT | ビルド時に Gowin chipdb を生成。Apicula の Python コードは WASM と Release に含めず、生成した chipdb のみを配布 | `licenses/apycula-LICENSE` |
-| Apycula の実行時依存（fastcrc、msgspec、NumPy） | `requirements-nextpnr.txt` で固定 | 各 package のライセンス | Apicula と同じく chipdb 生成時のみ使用。WASM と Release にコードを含めない | `licenses/apycula-dependencies/` |
+| Apicula / `gowin_pack` | 0.35、`requirements-nextpnr.txt` の wheel SHA-256 で固定 | MIT | Apicula wheel と Python コードを `dist/pack/wheels/` と Release に含む。Pyodide 上で bitstream を生成 | `licenses/apycula-LICENSE` |
+| Pyodide / micropip | npm 314.0.7、lock の micropip 0.11.1 | MPL-2.0 | `pyodide.mjs`、WASM、Python 標準ライブラリーと micropip wheel を `dist/pack/` に含む | `licenses/pyodide-MPL-2.0.txt` |
+| CPython | Pyodide に含まれる Python 3.14.2 | PSF License Version 2 | Pyodide の `python_stdlib.zip` として `dist/pack/pyodide/` に含む | `licenses/CPython-PSF-License.txt` |
+| NumPy / msgspec | Pyodide lock: 2.4.6 / 0.20.0 | NumPy: BSD-3-Clause、msgspec: BSD-3-Clause | Pyodide 用 wheel を `dist/pack/wheels/` に含む。native test 環境にも固定依存を導入 | `licenses/apycula-dependencies/numpy-LICENSE`、`licenses/apycula-dependencies/msgspec-LICENSE` |
+| fastcrc | `requirements-nextpnr.txt` で固定 | MIT | native `gowin_pack` の検証依存。Pyodide には含まず、Apicula の CRC table fallback を使う | `licenses/apycula-dependencies/fastcrc-LICENSE` |
 | wasi-sdk | 34.0 / `b761e3a0721dbae9c09a0059e5fdb2bf917d1b4a8a7b430fb3b5aafb0984b2c4`。ライセンス原文の source commit: `5a0bf653a1a06e1c18867567c5937006d3394a69` | Apache-2.0 | ビルド用 SDK | `licenses/wasi-sdk-LICENSE` |
 | LLVM runtime | `895aa2c896ada719451be2e3673c83da8ddf1141` | Apache-2.0 with LLVM Exceptions | libc++、libc++abi、libunwind などを Yosys WASM に静的リンク | `licenses/wasi-sdk-llvm-LICENSE.TXT` |
 | wasi-libc | `2e6fb9d8ee0cdf9e431fbcabe8af3115de000a13` | Apache-2.0 with LLVM Exceptions、Apache-2.0、MIT と同梱部品のライセンス | libc を Yosys WASM に静的リンク | `licenses/wasi-libc-LICENSE*` |
@@ -37,5 +40,7 @@ Yosys と nextpnr の `COPYING` は ISC License の本文です。ABC の `copyr
 - esbuild: CodeMirror のバンドルに使うビルド用ツールです。配布物には含めません。
 
 ## LGPL ライブラリの再リンク
+
+Pyodide（MPL-2.0）は npm の `pyodide` 314.0.7 を改変せずに同梱します。対応するソースは https://github.com/pyodide/pyodide/tree/314.0.7 で公開されています。
 
 ソース tarball には、使用した固定版の libusb と libftdi の完全なソースを含めます。改変した LGPL ライブラリを使う場合は、tarball 内の `vendor/libusb` または `vendor/libftdi` のソースを置き換え、`scripts/build-wasm.sh` と `scripts/build-web.sh` を実行して再ビルドしてください。生成した WASM を含むアプリを配布する際は、ライブラリの改変に応じて LGPL の条件を満たしてください。

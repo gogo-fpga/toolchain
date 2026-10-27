@@ -20,6 +20,7 @@ description: 午後のFPGA Web Toolchain の依存（vendor/ と third_party/ �
 | nextpnr | `git -C vendor/nextpnr describe --tags --exact-match` | release と `git log <old>..<new> -- CMakeLists.txt cmake/BBAsm.cmake himbaechel/` | Gowin chipdb 生成、WASI の BBA import、外部 chipdb パスを確認し、native と WASI の配置配線 JSON を比較する |
 | Boost / Eigen | `RESEARCH.md` のアーカイブ固定値表 | 各 release notes とアーカイブに含まれる変更履歴 | Boost は WASI で必要な2 component のみを静的ビルドし、Eigen はヘッダーのみ参照する。両方の SHA-256 を確認する |
 | Apycula | `requirements-nextpnr.txt` | PyPI の release と Apycula の変更履歴 | 0.35 を先に試し、chipdb 生成または P&R が失敗した場合だけ、動作する最新の版へ切り替える。試行版とエラーを RESEARCH.md に記録する |
+| Pyodide / NumPy / msgspec | `package.json`、`package-lock.json`、Pyodide の `pyodide-lock.json` | Pyodide、NumPy、msgspec の release notes とライセンス | Pyodide は npm の exact pin とし、NumPy / msgspec の版と SHA-256 はロックファイルから導く。配布 asset の hash と native `gowin_pack` との `.fs` 一致を検証する |
 | wasi-sdk | `RESEARCH.md` の WASI SDK 固定値表 | [wasi-sdk releases](https://github.com/WebAssembly/wasi-sdk/releases) とリリースアセット | Linux x86_64 アーカイブの SHA-256 を確認し、wasi-libc の配布ライセンスも確認する |
 | yomiyasu | `git -C vendor/yomiyasu rev-parse HEAD` | https://github.com/nanaism/yomiyasu の commit と release | `.agents/skills/yomiyasu` のリンク先が残っていることを確かめる |
 | npm（`@playwright/test`） | `package.json` と `package-lock.json` | Playwright の release notes | Chromium の版が変わる。JSPI と WebUSB の動作を E2E で確かめる |
@@ -42,6 +43,7 @@ description: 午後のFPGA Web Toolchain の依存（vendor/ と third_party/ �
    - `scripts/build-wasm.sh` と `scripts/build-web.sh`。別の `BUILD_ROOT` で 2 回ビルドし、成果物の SHA-256 が一致すること
    - `node --test tests/web/*.test.mjs`
    - Yosys・nextpnr の WASI/native 合成・配置配線比較と負の対照
+   - Pyodide 上の Apicula `gowin_pack` と native 版の `.fs` 比較、および asset hash 検証
    - `WASM_BUILD_ROOT=build node --test --test-concurrency=1 tests/sim/*.test.mjs`（負の対照を含む）
    - `npx playwright test`
    - WASM の大きさと、仮想 USB での書き込み時間

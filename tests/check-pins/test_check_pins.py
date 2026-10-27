@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import os
 import subprocess
 import tempfile
@@ -215,6 +216,36 @@ class CheckPinsTests(unittest.TestCase):
         self.assertEqual(["a" * 64, "b" * 64], hashes)
         with self.assertRaisesRegex(RuntimeError, "hash"):
             check_pins.parse_apycula_requirements("apycula==0.35\n")
+
+    def test_apycula_wheel_pin_comes_from_requirement_and_release_metadata(self):
+        wheel_hash = "a" * 64
+        requirements = (
+            "apycula==0.35 \\\n    --hash=sha256:"
+            + "b" * 64
+            + " \\\n    --hash=sha256:"
+            + wheel_hash
+            + "\n"
+        )
+        release = json.dumps(
+            {
+                "urls": [
+                    {
+                        "filename": "apycula-0.35-py3-none-any.whl",
+                        "digests": {"sha256": wheel_hash},
+                        "url": "https://files.pythonhosted.org/apycula.whl",
+                    }
+                ]
+            }
+        )
+        self.assertEqual(
+            ("apycula-0.35-py3-none-any.whl", wheel_hash, "https://files.pythonhosted.org/apycula.whl"),
+            check_pins.parse_apycula_wheel_info(requirements, release),
+        )
+        with self.assertRaisesRegex(RuntimeError, "一致する"):
+            check_pins.parse_apycula_wheel_info(
+                requirements,
+                release.replace(wheel_hash, "c" * 64),
+            )
 
     def test_invalid_wasi_sdk_checksum_is_rejected(self):
         research = (

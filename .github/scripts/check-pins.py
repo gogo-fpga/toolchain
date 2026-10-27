@@ -156,10 +156,9 @@ def parse_wasi_sdk_pin(text: str) -> dict[str, str]:
     return pin
 
 
-def parse_apycula_requirements(text: str) -> tuple[str, list[str]]:
+def parse_apycula_package_hashes(text: str) -> tuple[str, dict[str, list[str]]]:
     package = None
     version = None
-    hashes: list[str] = []
     package_hashes: dict[str, list[str]] = {}
     for raw_line in text.splitlines():
         line = raw_line.split("#", 1)[0].strip()
@@ -174,13 +173,51 @@ def parse_apycula_requirements(text: str) -> tuple[str, list[str]]:
             raise RuntimeError("requirements-nextpnr.txt に hash なしの行があります")
         found = re.findall(r"--hash=sha256:([0-9a-fA-F]{64})", line)
         package_hashes[package].extend(value.lower() for value in found)
-        hashes.extend(found)
     apycula_versions = re.findall(r"(?mi)^\s*apycula==([A-Za-z0-9.+!-]+)", text)
     if len(apycula_versions) != 1:
         raise RuntimeError("requirements-nextpnr.txt の Apycula 固定値は一件必要です")
-    if not hashes or any(not found for found in package_hashes.values()):
+    if not package_hashes or any(not found for found in package_hashes.values()):
         raise RuntimeError("requirements-nextpnr.txt の全依存に SHA-256 hash が必要です")
-    return apycula_versions[0], sorted(set(hashes))
+    return apycula_versions[0], {
+        name: sorted(set(values)) for name, values in package_hashes.items()
+    }
+
+
+def parse_apycula_requirements(text: str) -> tuple[str, list[str]]:
+    version, package_hashes = parse_apycula_package_hashes(text)
+    return version, sorted({value for values in package_hashes.values() for value in values})
+
+
+def parse_apycula_wheel_info(
+    requirements_text: str, release_text: str
+) -> tuple[str, str, str]:
+    version, package_hashes = parse_apycula_package_hashes(requirements_text)
+    try:
+        release = json.loads(release_text)
+    except json.JSONDecodeError as error:
+        raise RuntimeError("Apycula release JSON を解析できません") from error
+    filename = f"apycula-{version}-py3-none-any.whl"
+    matches = [
+        item
+        for item in release.get("urls", [])
+        if item.get("filename") == filename
+        and item.get("digests", {}).get("sha256") in package_hashes.get("apycula", [])
+    ]
+    if len(matches) != 1:
+        raise RuntimeError(
+            f"requirements-nextpnr.txt に一致する Apycula wheel pin がありません: {filename}"
+        )
+    return filename, matches[0]["digests"]["sha256"], matches[0]["url"]
+
+
+def apycula_wheel_info() -> tuple[str, str, str]:
+    requirements = read_text(ROOT / APYCULA_REQUIREMENTS)
+    version, _ = parse_apycula_package_hashes(requirements)
+    url = f"https://pypi.org/pypi/apycula/{version}/json"
+    request = urllib.request.Request(url, headers={"User-Agent": "toolchain-pin-check/1"})
+    with urllib.request.urlopen(request, timeout=30) as response:
+        release_text = response.read().decode("utf-8")
+    return parse_apycula_wheel_info(requirements, release_text)
 
 
 def parse_wasi_sdk_release(release_text: str) -> tuple[str, str | None]:
@@ -684,6 +721,8 @@ def main() -> int:
     archive_pin = subparsers.add_parser("archive-pin", help="print a pinned source archive")
     archive_pin.add_argument("dependency", choices=tuple(ARCHIVE_TAG_SOURCES))
     subparsers.add_parser("pnr-cache-pin", help="print the PnR dependency cache inputs")
+    subparsers.add_parser("apycula-wheel-pins", help="print the Apycula wheel requirement hashes")
+    subparsers.add_parser("apycula-wheel-info", help="print the pinned Apycula wheel asset")
     upstream = subparsers.add_parser("upstream", help="report upstream pin updates")
     upstream.add_argument("--report", required=True, type=Path)
     upstream.add_argument("--github-output", type=Path)
@@ -733,6 +772,16 @@ def main() -> int:
                 ]
             )
         )
+        return 0
+    if args.command == "apycula-wheel-info":
+        filename, sha256, url = apycula_wheel_info()
+        print("\t".join((filename, sha256, url)))
+        return 0
+    if args.command == "apycula-wheel-pins":
+        version, packages = parse_apycula_package_hashes(
+            read_text(ROOT / APYCULA_REQUIREMENTS)
+        )
+        print("\t".join((version, *packages["apycula"])))
         return 0
 
     report = upstream_report()
