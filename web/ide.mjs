@@ -1,5 +1,14 @@
 import { createOpfsStore } from "./lib/project-store.mjs";
-import { validatePath } from "./lib/project.mjs";
+import {
+  findConstraintBoardMismatch,
+  validatePath,
+  validateProjectName,
+} from "./lib/project.mjs";
+import { createBlinkTemplate } from "./lib/templates.mjs";
+import {
+  exportProjectZip,
+  importProjectZip,
+} from "./lib/project-zip.bundle.mjs";
 import { createHdlEditor, languageForPath } from "./editor/editor.bundle.mjs";
 
 const UI_STATE_PREFIX = "toolchain.ide.";
@@ -29,7 +38,7 @@ function templateForPath(path) {
       "",
     ].join("\n");
   }
-  if (path.endsWith(".cst")) return "# ピン割り当ては未設定です。\n";
+  if (path.endsWith(".cst")) return "// ピン割り当ては未設定です。\n";
   return path.endsWith(".fs") ? new Uint8Array() : "";
 }
 
@@ -38,7 +47,9 @@ function readUiState(name, project) {
     const saved = JSON.parse(
       localStorage.getItem(`${UI_STATE_PREFIX}${name}`) ?? "null",
     );
-    const filePaths = new Set(project.files.map((file) => file.path));
+    const filePaths = new Set(
+      project.files.filter(({ path }) => !path.endsWith(".fs")).map(({ path }) => path),
+    );
     const openTabs = Array.isArray(saved?.openTabs)
       ? [...new Set(saved.openTabs.filter((path) => filePaths.has(path)))]
       : [];
@@ -51,18 +62,30 @@ function readUiState(name, project) {
   }
 }
 
-export function initializeIde({ form, boardSelect, programLog, BOARDS }) {
+export function initializeIde({
+  form,
+  boardSelect,
+  programLog,
+  BOARDS,
+  onFsSourceChange = () => {},
+}) {
   const store = createOpfsStore(navigator.storage);
   const projectName = document.querySelector("#project-name");
+  const projectSelect = document.querySelector("#project-select");
+  const projectActionStatus = document.querySelector("#project-action-status");
+  const newProjectButton = document.querySelector("#new-project-button");
+  const exportProjectButton = document.querySelector("#export-project-button");
+  const importProjectButton = document.querySelector("#import-project-button");
+  const projectZipInput = document.querySelector("#project-zip-input");
   const projectStatus = document.querySelector("#project-status");
   const boardFpga = document.querySelector("#board-fpga");
   const boardIdcode = document.querySelector("#board-idcode");
   const boardTarget = document.querySelector("#board-target");
+  const boardConstraintWarning = document.querySelector("#board-constraint-warning");
   const fileList = document.querySelector("#file-list");
   const addFileButton = document.querySelector("#add-file-button");
   const renameFileButton = document.querySelector("#rename-file-button");
   const deleteFileButton = document.querySelector("#delete-file-button");
-  const useBitstreamButton = document.querySelector("#use-bitstream-button");
   const fileTabs = document.querySelector("#editor-tabs");
   const editorMount = document.querySelector("#editor-mount");
   const problemList = document.querySelector("#problem-list");
@@ -70,10 +93,22 @@ export function initializeIde({ form, boardSelect, programLog, BOARDS }) {
   const fileDialog = document.querySelector("#file-dialog");
   const fileDialogHeading = document.querySelector("#file-dialog-heading");
   const filePathInput = document.querySelector("#file-path-input");
+  const fileUploadField = document.querySelector("#file-upload-field");
+  const fileContentInput = document.querySelector("#file-content-input");
   const filePathError = document.querySelector("#file-path-error");
   const filePathSaveButton = document.querySelector("#file-path-save");
   const filePathCancelButton = document.querySelector("#file-path-cancel");
   const fileInput = document.querySelector("#bitstream-file");
+  const fsSource = document.querySelector("#fs-source");
+  const fsFileInfo = document.querySelector("#fs-file-info");
+  const localFsField = document.querySelector("#local-fs-field");
+  const newProjectDialog = document.querySelector("#new-project-dialog");
+  const newProjectNameInput = document.querySelector("#new-project-name");
+  const newProjectBoardSelect = document.querySelector("#new-project-board");
+  const newProjectLanguageSelect = document.querySelector("#new-project-language");
+  const newProjectError = document.querySelector("#new-project-error");
+  const newProjectCreateButton = document.querySelector("#new-project-create");
+  const newProjectCancelButton = document.querySelector("#new-project-cancel");
   const tabButtons = [...document.querySelectorAll("[data-bottom-tab]")];
   const tabPanels = [...document.querySelectorAll("[data-bottom-panel]")];
   const toggleFilesButton = document.querySelector("#toggle-files-pane");
@@ -90,7 +125,9 @@ export function initializeIde({ form, boardSelect, programLog, BOARDS }) {
   let selectedPath = null;
   let editor = null;
   let saveTimer = null;
+  let pendingSave = Promise.resolve();
   let fileDialogMode = "add";
+  let projectSwitchVersion = 0;
 
   function appendProjectLog(message) {
     const prior = programLog.textContent.trim();
@@ -111,10 +148,84 @@ export function initializeIde({ form, boardSelect, programLog, BOARDS }) {
       .map((idcode) => `0x${idcode.toString(16).toUpperCase().padStart(8, "0")}`)
       .join("、");
     boardTarget.textContent = boardData.writeTargets.join("、");
+    const mismatch = findConstraintBoardMismatch(project);
+    boardConstraintWarning.hidden = !mismatch;
+    boardConstraintWarning.textContent = mismatch
+      ? `この制約ファイル（${mismatch.path}）は ${mismatch.boardName} 用です。ピン割り当ては T2 で編集できるようになります。`
+      : "";
   }
 
   function setProjectStatus(message) {
     projectStatus.textContent = message;
+  }
+
+  function setProjectActionStatus(message) {
+    projectActionStatus.textContent = message;
+  }
+
+  function renderFsSource(useDefault = false) {
+    const paths = (project?.files ?? [])
+      .map(({ path }) => path)
+      .filter((path) => path.endsWith(".fs"));
+    const previous = fsSource.value;
+    fsSource.replaceChildren();
+    for (const path of paths) {
+      const option = document.createElement("option");
+      option.value = path;
+      option.textContent = path;
+      fsSource.append(option);
+    }
+    const localOption = document.createElement("option");
+    localOption.value = "local";
+    localOption.textContent = "パソコンのファイルから選ぶ";
+    fsSource.append(localOption);
+    const selected = !useDefault &&
+      (previous === "local" || paths.includes(previous))
+      ? previous
+      : paths.length === 1
+        ? paths[0]
+        : "local";
+    fsSource.value = selected;
+    localFsField.hidden = selected !== "local";
+    if (selected === "local") {
+      onFsSourceChange(null);
+    } else {
+      const content = fileContents.get(selected);
+      const bytes = content instanceof Uint8Array
+        ? new Uint8Array(content)
+        : new TextEncoder().encode(content ?? "");
+      onFsSourceChange({
+        name: selected.split("/").at(-1),
+        bytes,
+      });
+    }
+  }
+
+  async function refreshProjectSwitcher() {
+    const names = await store.listProjects();
+    projectSelect.replaceChildren();
+    for (const name of names) {
+      const option = document.createElement("option");
+      option.value = name;
+      option.textContent = name;
+      projectSelect.append(option);
+    }
+    if (project) projectSelect.value = project.name;
+  }
+
+  function renderFsFileInfo() {
+    if (!selectedPath?.endsWith(".fs")) {
+      fsFileInfo.hidden = true;
+      fsFileInfo.textContent = "";
+      return;
+    }
+    const content = fileContents.get(selectedPath);
+    const byteLength = typeof content === "string"
+      ? new TextEncoder().encode(content).length
+      : content?.byteLength ?? 0;
+    fsFileInfo.hidden = false;
+    fsFileInfo.textContent =
+      `${selectedPath} は読み取り専用です。サイズ: ${byteLength} バイト。エディターでは開きません。`;
   }
 
   function saveUiState() {
@@ -150,13 +261,15 @@ export function initializeIde({ form, boardSelect, programLog, BOARDS }) {
     clearTimeout(saveTimer);
     setProjectStatus("変更を保存しています。");
     saveTimer = setTimeout(() => {
-      void saveProject();
+      saveTimer = null;
+      pendingSave = saveProject();
     }, 500);
   }
 
   async function saveProject() {
     if (!project) return;
     clearTimeout(saveTimer);
+    saveTimer = null;
     project.board = boardSelect.value;
     try {
       await store.save(project, fileContents);
@@ -165,6 +278,15 @@ export function initializeIde({ form, boardSelect, programLog, BOARDS }) {
       setProjectStatus("プロジェクトを保存できません。");
       appendProjectLog(`プロジェクト保存エラー: ${error.message}`);
     }
+  }
+
+  async function flushPendingSave() {
+    if (saveTimer !== null) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+      pendingSave = saveProject();
+    }
+    await pendingSave;
   }
 
   function textForPath(path) {
@@ -255,14 +377,21 @@ export function initializeIde({ form, boardSelect, programLog, BOARDS }) {
       button.textContent = path;
       button.setAttribute("aria-label", `${path} を開く`);
       button.setAttribute("aria-pressed", String(path === selectedPath));
-      button.addEventListener("click", () => openFile(path));
+      button.addEventListener("click", () => {
+        if (path.endsWith(".fs")) {
+          selectedPath = path;
+          renderFileList();
+          return;
+        }
+        openFile(path);
+      });
       item.append(button);
       fileList.append(item);
     }
     const hasSelection = Boolean(selectedPath);
     renameFileButton.disabled = !hasSelection;
     deleteFileButton.disabled = !hasSelection;
-    useBitstreamButton.disabled = !selectedPath?.endsWith(".fs");
+    renderFsFileInfo();
   }
 
   function openFile(path) {
@@ -311,13 +440,15 @@ export function initializeIde({ form, boardSelect, programLog, BOARDS }) {
     const renaming = mode === "rename";
     fileDialogHeading.textContent = renaming ? "ファイル名を変更" : "ファイルを追加";
     filePathInput.value = renaming ? selectedPath ?? "" : "";
+    fileContentInput.value = "";
+    fileUploadField.hidden = mode !== "add";
     filePathError.textContent = "";
     filePathSaveButton.textContent = renaming ? "名前を変更" : "追加する";
     fileDialog.showModal();
     filePathInput.focus();
   }
 
-  function submitFileDialog() {
+  async function submitFileDialog() {
     const path = filePathInput.value.trim();
     const validation = validatePath(path);
     if (!validation.ok) {
@@ -332,8 +463,20 @@ export function initializeIde({ form, boardSelect, programLog, BOARDS }) {
         filePathError.textContent = "同じパスのファイルがすでにあります。";
         return;
       }
+      const upload = fileContentInput.files[0];
+      let content = templateForPath(path);
+      if (path.endsWith(".fs")) {
+        if (!upload || !upload.name.toLowerCase().endsWith(".fs")) {
+          filePathError.textContent = ".fs ファイルを選んでください。";
+          return;
+        }
+        content = new Uint8Array(await upload.arrayBuffer());
+      } else if (upload) {
+        filePathError.textContent = "アップロードできるのは .fs ファイルだけです。";
+        return;
+      }
       project.files.push({ path });
-      fileContents.set(path, templateForPath(path));
+      fileContents.set(path, content);
       selectedPath = path;
       if (!path.endsWith(".fs")) {
         openTabs = [...openTabs, path];
@@ -363,6 +506,8 @@ export function initializeIde({ form, boardSelect, programLog, BOARDS }) {
     renderFileList();
     renderFileTabs();
     updateEditor();
+    renderFsSource(true);
+    await refreshProjectSwitcher();
     scheduleSave();
   }
 
@@ -378,20 +523,9 @@ export function initializeIde({ form, boardSelect, programLog, BOARDS }) {
     renderFileList();
     renderFileTabs();
     updateEditor();
+    renderFsSource(true);
+    void refreshProjectSwitcher();
     scheduleSave();
-  }
-
-  function useSelectedBitstream() {
-    if (!selectedPath?.endsWith(".fs")) return;
-    const file = new File(
-      [fileContents.get(selectedPath)],
-      selectedPath.split("/").at(-1),
-      { type: "text/plain" },
-    );
-    const transfer = new DataTransfer();
-    transfer.items.add(file);
-    fileInput.files = transfer.files;
-    fileInput.dispatchEvent(new Event("change", { bubbles: true }));
   }
 
   function renderBoardOptions() {
@@ -399,45 +533,33 @@ export function initializeIde({ form, boardSelect, programLog, BOARDS }) {
       const boardData = BOARDS.find(({ id }) => id === board.value);
       if (boardData) board.dataset.board = JSON.stringify(boardData);
     }
+    for (const board of BOARDS) {
+      const option = document.createElement("option");
+      option.value = board.id;
+      option.textContent = board.label;
+      newProjectBoardSelect.append(option);
+    }
   }
 
-  async function initializeProject() {
-    try {
-      const names = await store.listProjects();
-      if (names.length > 0) {
-        const loaded = await store.load(names[0]);
-        project = loaded.project;
-        fileContents = loaded.files;
-      } else {
-        project = {
-          version: 1,
-          name: "blink",
-          board: boardSelect.value,
-          top: "top",
-          files: [{ path: "src/top.v" }, { path: "src/top.vhd" }],
-        };
-        fileContents = new Map([
-          ["src/top.v", templateForPath("src/top.v")],
-          ["src/top.vhd", templateForPath("src/top.vhd")],
-        ]);
-        await store.save(project, fileContents);
+  function activateProject(loaded) {
+    project = loaded.project;
+    fileContents = loaded.files;
+    projectName.textContent = project.name;
+    boardSelect.value = project.board;
+    const savedState = readUiState(project.name, project);
+    openTabs = savedState.openTabs;
+    activeTab = savedState.activeTab;
+    if (!activeTab) {
+      const firstTextFile = project.files.find(({ path }) => !path.endsWith(".fs"));
+      if (firstTextFile) {
+        openTabs = [firstTextFile.path];
+        activeTab = firstTextFile.path;
       }
-
-      projectName.textContent = project.name;
-      boardSelect.value = project.board;
-      const savedState = readUiState(project.name, project);
-      openTabs = savedState.openTabs;
-      activeTab = savedState.activeTab;
-      if (!activeTab) {
-        const firstTextFile = project.files.find(({ path }) => !path.endsWith(".fs"));
-        if (firstTextFile) {
-          openTabs = [firstTextFile.path];
-          activeTab = firstTextFile.path;
-        }
-      }
-      selectedPath = activeTab ?? project.files[0]?.path ?? null;
-      renderFileList();
-      renderFileTabs();
+    }
+    selectedPath = activeTab ?? project.files[0]?.path ?? null;
+    renderFileList();
+    renderFileTabs();
+    if (!editor) {
       editor = createHdlEditor(editorMount, {
         doc: activeTab ? textForPath(activeTab) : "",
         language: activeTab ? languageForPath(activeTab) : "plain",
@@ -445,12 +567,107 @@ export function initializeIde({ form, boardSelect, programLog, BOARDS }) {
         onDiagnostics: renderProblems,
         getProjectTexts: projectTexts,
       });
-      updateBoardInformation();
-      boardSelect.dispatchEvent(new Event("change", { bubbles: true }));
-      setProjectStatus("プロジェクトをローカルに保存しています。");
+    } else {
+      updateEditor();
+    }
+    updateBoardInformation();
+    renderFsSource(true);
+    void refreshProjectSwitcher();
+    boardSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    setProjectStatus("保存しました。");
+  }
+
+  async function openProject(name) {
+    saveUiState();
+    await flushPendingSave();
+    activateProject(await store.load(name));
+  }
+
+  async function initializeProject() {
+    try {
+      const names = await store.listProjects();
+      if (names.length > 0) {
+        activateProject(await store.load(names[0]));
+      } else {
+        const initial = createBlinkTemplate(boardSelect.value, "verilog");
+        await store.save(initial.project, initial.files);
+        activateProject(initial);
+      }
     } catch (error) {
       setProjectStatus("プロジェクトを読み込めません。");
       appendProjectLog(`プロジェクト読み込みエラー: ${error.message}`);
+    }
+  }
+
+  async function createProject() {
+    const name = newProjectNameInput.value;
+    const validation = validateProjectName(name);
+    if (!validation.ok) {
+      newProjectError.textContent = validation.errors[0];
+      return;
+    }
+    try {
+      const names = await store.listProjects();
+      if (names.includes(name)) {
+        newProjectError.textContent = "同じ名前のプロジェクトがすでにあります。";
+        return;
+      }
+      await flushPendingSave();
+      const created = createBlinkTemplate(
+        newProjectBoardSelect.value,
+        newProjectLanguageSelect.value,
+      );
+      created.project.name = name;
+      await store.save(created.project, created.files);
+      newProjectDialog.close();
+      newProjectNameInput.value = "";
+      newProjectError.textContent = "";
+      setProjectActionStatus("");
+      activateProject(created);
+    } catch (error) {
+      newProjectError.textContent = error.message;
+    }
+  }
+
+  function exportCurrentProject() {
+    if (!project) return;
+    try {
+      const bytes = exportProjectZip(project, fileContents);
+      const url = URL.createObjectURL(
+        new Blob([bytes], { type: "application/zip" }),
+      );
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${project.name}.zip`;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setProjectActionStatus("ZIP ファイルを書き出しました。");
+    } catch (error) {
+      setProjectActionStatus(error.message);
+    }
+  }
+
+  async function importProjectFile() {
+    const file = projectZipInput.files[0];
+    if (!file) return;
+    try {
+      const imported = importProjectZip(
+        new Uint8Array(await file.arrayBuffer()),
+      );
+      const names = await store.listProjects();
+      if (names.includes(imported.project.name)) {
+        setProjectActionStatus("同じ名前のプロジェクトがすでにあります。");
+        return;
+      }
+      await flushPendingSave();
+      await store.save(imported.project, imported.files);
+      projectZipInput.value = "";
+      activateProject(imported);
+      setProjectActionStatus("ZIP ファイルを読み込みました。");
+    } catch (error) {
+      setProjectActionStatus(error.message);
     }
   }
 
@@ -461,9 +678,16 @@ export function initializeIde({ form, boardSelect, programLog, BOARDS }) {
   addFileButton.addEventListener("click", () => showFileDialog("add"));
   renameFileButton.addEventListener("click", () => showFileDialog("rename"));
   deleteFileButton.addEventListener("click", deleteSelectedFile);
-  useBitstreamButton.addEventListener("click", useSelectedBitstream);
-  filePathSaveButton.addEventListener("click", submitFileDialog);
+  filePathSaveButton.addEventListener("click", () => {
+    void submitFileDialog();
+  });
   filePathCancelButton.addEventListener("click", () => fileDialog.close());
+  fileContentInput.addEventListener("change", () => {
+    const upload = fileContentInput.files[0];
+    if (upload && filePathInput.value.trim() === "") {
+      filePathInput.value = upload.name;
+    }
+  });
   filePathInput.addEventListener("input", () => {
     filePathError.textContent = "";
     filePathInput.removeAttribute("aria-invalid");
@@ -471,10 +695,49 @@ export function initializeIde({ form, boardSelect, programLog, BOARDS }) {
   filePathInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
-      submitFileDialog();
+      void submitFileDialog();
+    }
+  });
+  projectSelect.addEventListener("change", () => {
+    if (!project || projectSelect.value === project.name) return;
+    void openProject(projectSelect.value).catch((error) => {
+      setProjectActionStatus(`プロジェクトを切り替えられません: ${error.message}`);
+      void refreshProjectSwitcher();
+    });
+  });
+  newProjectButton.addEventListener("click", () => {
+    newProjectError.textContent = "";
+    newProjectBoardSelect.value = boardSelect.value;
+    newProjectDialog.showModal();
+    newProjectNameInput.focus();
+  });
+  newProjectCreateButton.addEventListener("click", () => {
+    void createProject();
+  });
+  newProjectCancelButton.addEventListener("click", () => newProjectDialog.close());
+  exportProjectButton.addEventListener("click", exportCurrentProject);
+  importProjectButton.addEventListener("click", () => projectZipInput.click());
+  projectZipInput.addEventListener("change", () => {
+    void importProjectFile();
+  });
+  fsSource.addEventListener("change", () => {
+    const selected = fsSource.value;
+    localFsField.hidden = selected !== "local";
+    if (selected === "local") {
+      onFsSourceChange(null);
+    } else {
+      const content = fileContents.get(selected);
+      const bytes = content instanceof Uint8Array
+        ? new Uint8Array(content)
+        : new TextEncoder().encode(content ?? "");
+      onFsSourceChange({
+        name: selected.split("/").at(-1),
+        bytes,
+      });
     }
   });
   boardSelect.addEventListener("change", () => {
+    if (project) project.board = boardSelect.value;
     updateBoardInformation();
     scheduleSave();
   });
@@ -515,5 +778,6 @@ export function initializeIde({ form, boardSelect, programLog, BOARDS }) {
     }
   });
 
+  renderFsSource(true);
   void initializeProject();
 }

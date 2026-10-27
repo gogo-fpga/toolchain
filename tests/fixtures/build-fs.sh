@@ -33,18 +33,22 @@ build_board() {
   local device="$4"
   local family_option="${5:-}"
   local pack_device="${6:-$device}"
-  local json="$build_dir/$board.json"
-  local routed="$build_dir/$board-routed.json"
-  local bitstream="$build_dir/$board.fs"
+  local source_file="${7:-$fixture_dir/blinky.v}"
+  local cst_file="${8:-$fixture_dir/$board.cst}"
+  local output_dir="${9:-$build_dir}"
+  local json="$output_dir/$board.json"
+  local routed="$output_dir/$board-routed.json"
+  local bitstream="$output_dir/$board.fs"
   local -a nextpnr_args=(
     --json "$json"
     --write "$routed"
     --device "$device"
     --freq 27
-    --vopt "cst=$fixture_dir/$board.cst"
+    --vopt "cst=$cst_file"
   )
 
-  "$yosys" -p "read_verilog $fixture_dir/blinky.v; synth_gowin -family $family -json $json"
+  mkdir -p "$output_dir"
+  "$yosys" -p "read_verilog $source_file; synth_gowin -family $family -json $json"
   if [[ -n "$family_option" ]]; then
     nextpnr_args+=(--vopt "$family_option")
   fi
@@ -77,3 +81,22 @@ build_board tangnano1k 0100681b gw1n GW1NZ-LV1QN48C6/I5
 build_board tangnano4k 0100981b gw1n GW1NSR-LV4CQN48PC7/I6
 build_board tangnano9k 1100481b gw1n GW1NR-LV9QN88PC6/I5 family=GW1N-9C GW1N-9C
 build_board tangnano20k 0000081b gw2a GW2AR-LV18QN88C8/I7 family=GW2A-18C GW2A-18C
+
+if ! command -v node >/dev/null 2>&1; then
+  printf 'Node.js is required to generate the HDL templates.\n' >&2
+  exit 1
+fi
+template_dir="$build_dir/templates"
+node "$fixture_dir/generate-templates.mjs" "$template_dir"
+build_board tangnano1k 0100681b gw1n GW1NZ-LV1QN48C6/I5 "" "" \
+  "$template_dir/tangnano1k/src/top.v" \
+  "$template_dir/tangnano1k/constraints/tangnano1k.cst" "$template_dir"
+build_board tangnano4k 0100981b gw1n GW1NSR-LV4CQN48PC7/I6 "" "" \
+  "$template_dir/tangnano4k/src/top.v" \
+  "$template_dir/tangnano4k/constraints/tangnano4k.cst" "$template_dir"
+build_board tangnano9k 1100481b gw1n GW1NR-LV9QN88PC6/I5 family=GW1N-9C GW1N-9C \
+  "$template_dir/tangnano9k/src/top.v" \
+  "$template_dir/tangnano9k/constraints/tangnano9k.cst" "$template_dir"
+build_board tangnano20k 0000081b gw2a GW2AR-LV18QN88C8/I7 family=GW2A-18C GW2A-18C \
+  "$template_dir/tangnano20k/src/top.v" \
+  "$template_dir/tangnano20k/constraints/tangnano20k.cst" "$template_dir"

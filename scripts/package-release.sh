@@ -70,6 +70,7 @@ cp "$root/README.md" "$root/LICENSE" "$root/NOTICE" \
 emscripten_root="$root/build/emsdk-$emsdk_version/upstream/emscripten"
 license_copies=(
   "$root/vendor/openFPGALoader/LICENSE:openFPGALoader-LICENSE"
+  "$root/node_modules/fflate/LICENSE:fflate-LICENSE"
   "$root/vendor/libusb/COPYING:libusb-COPYING"
   "$root/vendor/libftdi/COPYING.LIB:libftdi-COPYING.LIB"
   "$root/vendor/zlib/LICENSE:zlib-LICENSE"

@@ -12,6 +12,7 @@
 | zlib | v1.3.2 / `da607da739fa6047df13e66a2af6b8bec7c2a498` | zlib | WASM に静的リンク | `licenses/zlib-LICENSE` |
 | Emscripten のランタイムと libc | 6.0.13 / `35659964bc2762fffec0d257997fb61475f765b7` | MIT、University of Illinois/NCSA、LLVM の Apache-2.0 with LLVM Exceptions | ランタイムと libc の一部を WASM / mjs に含む。emcc はビルド用 | `licenses/emscripten-LICENSE`、`licenses/emscripten-musl-COPYRIGHT`、`licenses/emscripten-libcxx-LICENSE.TXT`、`licenses/emscripten-libcxxabi-LICENSE.TXT`、`licenses/emscripten-llvm-libc-LICENSE.TXT`、`licenses/emscripten-compiler-rt-LICENSE.TXT`、`licenses/emscripten-libunwind-LICENSE.TXT` |
 | CodeMirror 6（`codemirror` 6.0.2、`@codemirror/state` 6.7.6、`@codemirror/view` 6.43.15、`@codemirror/language` 6.13.1、`@codemirror/legacy-modes` 6.5.5、`@codemirror/lint` 6.9.7、`@codemirror/autocomplete` 6.20.4、`@codemirror/commands` 6.11.1） | npm 固定版 | MIT | `editor.bundle.mjs` に含む | npm パッケージに同梱 |
+| fflate | 0.8.3 | MIT | `project-zip.bundle.mjs` に含む | `licenses/fflate-LICENSE` |
 
 Emscripten SDK の `upstream/emscripten/LICENSE` は Emscripten の MIT と University of Illinois/NCSA のライセンス本文を含む文書です。また、Node.js の一部利用と musl の MIT ライセンスへの案内も記載されています。musl の本文は `system/lib/libc/musl/COPYRIGHT` です。libc++、libc++abi、llvm-libc、compiler-rt、libunwind は SDK 内に個別のライセンスファイルがあるため、上表のとおり別に同梱します。
 

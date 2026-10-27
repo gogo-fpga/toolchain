@@ -9,6 +9,7 @@ mkdirSync(screenshots, { recursive: true });
 async function openIde(page) {
   await page.goto("/");
   await expect(page.locator("#project-name")).toHaveText("blink");
+  await expect(page.locator("#project-status")).toHaveText("保存しました。");
   await expect(page.locator("#support-status")).toBeVisible();
 }
 
@@ -47,6 +48,18 @@ test("IDE loads without console errors and highlights Verilog keywords", async (
       .evaluate((log) => getComputedStyle(log, "::before").content),
   ).toBe('"ログはまだありません。"');
   expect(errors).toEqual([]);
+});
+
+test("new project dialog shows board and HDL choices", async ({ page }) => {
+  await openIde(page);
+  await page.locator("#new-project-button").click();
+  const dialog = page.locator("#new-project-dialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator("#new-project-board option")).toHaveCount(4);
+  await expect(dialog.locator("#new-project-language option")).toHaveCount(2);
+  await page.screenshot({
+    path: resolve(screenshots, "ide-new-project.png"),
+  });
 });
 
 test("Verilog autocomplete includes always", async ({ page }) => {
@@ -155,7 +168,6 @@ test("narrow layout opens and closes both side panes", async ({ page }) => {
 test("board screenshots show the selected FPGA and IDCODE", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openIde(page);
-  await editAndWaitForSave(page);
   const boards = [
     ["tangnano1k", "GW1NZ-1", "0x0100681B", "SRAM、内蔵フラッシュ"],
     ["tangnano4k", "GW1NSR-4C", "0x0100981B", "SRAM、内蔵フラッシュ"],
@@ -163,15 +175,42 @@ test("board screenshots show the selected FPGA and IDCODE", async ({ page }) => 
     ["tangnano20k", "GW2A(R)-18(C)", "0x0000081B", "SRAM、外付け SPI フラッシュ"],
   ];
   for (const [id, fpga, idcode, targets] of boards) {
-    await page.locator("#board-select").selectOption(id);
+    const name = `screenshot-${id}`;
+    await page.locator("#new-project-button").click();
+    await page.locator("#new-project-name").fill(name);
+    await page.locator("#new-project-board").selectOption(id);
+    await page.locator("#new-project-create").click();
+    await expect(page.locator("#project-name")).toHaveText(name);
+    await expect(page.locator("#project-status")).toHaveText("保存しました。");
+    await expect(page.locator("#file-list")).toContainText(
+      `constraints/${id}.cst`,
+    );
     await expect(page.locator("#board-fpga")).toHaveText(fpga);
     await expect(page.locator("#board-idcode")).toHaveText(idcode);
     await expect(page.locator("#board-target")).toHaveText(targets);
-    await expect(page.locator("#project-status")).toHaveText("保存しました。");
+    await expect(page.locator("#board-constraint-warning")).toBeHidden();
+    await expect(page.locator(".cm-content")).not.toContainText("// 保存済み");
     await page.screenshot({
       path: resolve(screenshots, `ide-${id}.png`),
     });
   }
+});
+
+test("board changes show and hide a mismatched constraint warning", async ({
+  page,
+}) => {
+  await openIde(page);
+  const warning = page.locator("#board-constraint-warning");
+  await expect(warning).toBeHidden();
+  await page.locator("#board-select").selectOption("tangnano4k");
+  await expect(warning).toHaveText(
+    "この制約ファイル（constraints/tangnano1k.cst）は Tang Nano 1K 用です。ピン割り当ては T2 で編集できるようになります。",
+  );
+  await page.screenshot({
+    path: resolve(screenshots, "ide-cst-mismatch.png"),
+  });
+  await page.locator("#board-select").selectOption("tangnano1k");
+  await expect(warning).toBeHidden();
 });
 
 test("injected diagnostics show an editor marker and a Japanese problem row", async ({

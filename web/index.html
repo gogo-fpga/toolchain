@@ -16,6 +16,16 @@
             <p class="eyebrow">GOWIN FPGA</p>
             <h1>午後のFPGA Web Toolchain</h1>
             <p class="project-title">プロジェクト: <strong id="project-name">読み込み中</strong></p>
+            <div class="project-toolbar">
+              <label for="project-select">
+                <span>切り替え</span>
+                <select id="project-select" aria-label="プロジェクトを切り替える"></select>
+              </label>
+              <button id="new-project-button" type="button" class="secondary">
+                新しいプロジェクト
+              </button>
+            </div>
+            <p id="project-action-status" role="status" aria-live="polite"></p>
           </div>
           <div class="header-controls">
             <label class="board-picker" for="board-select">
@@ -69,14 +79,21 @@
               >閉じる</button>
             </div>
             <ul id="file-list" class="file-list" aria-label="プロジェクトのファイル"></ul>
+            <p id="fs-file-info" class="fs-file-info" role="status" aria-live="polite" hidden></p>
             <div class="file-actions">
               <button id="add-file-button" type="button">ファイル追加</button>
               <button id="rename-file-button" type="button" class="secondary" disabled>名前変更</button>
               <button id="delete-file-button" type="button" class="secondary danger" disabled>削除</button>
             </div>
-            <button id="use-bitstream-button" type="button" class="secondary" disabled>
-              選択した .fs を使う
-            </button>
+            <div class="project-archive-actions">
+              <button id="export-project-button" type="button" class="secondary">
+                zip で書き出す
+              </button>
+              <button id="import-project-button" type="button" class="secondary">
+                zip から読み込む
+              </button>
+              <input id="project-zip-input" type="file" accept=".zip,application/zip" hidden />
+            </div>
           </aside>
 
           <section class="editor-pane" aria-labelledby="editor-heading">
@@ -174,11 +191,22 @@
                 <dt>書き込み先</dt>
                 <dd id="board-target">SRAM</dd>
               </dl>
+              <p
+                id="board-constraint-warning"
+                class="caution"
+                role="status"
+                aria-live="polite"
+                hidden
+              ></p>
             </section>
 
             <section class="writer-controls" aria-labelledby="writer-heading">
               <h2 id="writer-heading">書き込み</h2>
-              <label class="field" for="bitstream-file">
+              <label class="field" for="fs-source">
+                <span>ビットストリームの場所</span>
+                <select id="fs-source"></select>
+              </label>
+              <label id="local-fs-field" class="field" for="bitstream-file">
                 <span>ビットストリーム (.fs)</span>
                 <input
                   id="bitstream-file"
@@ -366,10 +394,38 @@
           <span>相対パス</span>
           <input id="file-path-input" type="text" autocomplete="off" />
         </label>
+        <label id="file-upload-field" class="field" for="file-content-input" hidden>
+          <span>.fs ファイルを選ぶ</span>
+          <input id="file-content-input" type="file" accept=".fs,application/octet-stream" />
+        </label>
         <p id="file-path-error" role="status" aria-live="polite"></p>
         <div class="dialog-actions">
           <button id="file-path-cancel" type="button" class="secondary">キャンセル</button>
           <button id="file-path-save" type="button">追加する</button>
+        </div>
+      </dialog>
+
+      <dialog id="new-project-dialog" aria-labelledby="new-project-heading">
+        <h2 id="new-project-heading">新しいプロジェクト</h2>
+        <label class="field" for="new-project-name">
+          <span>プロジェクト名</span>
+          <input id="new-project-name" type="text" autocomplete="off" />
+        </label>
+        <label class="field" for="new-project-board">
+          <span>ボード</span>
+          <select id="new-project-board"></select>
+        </label>
+        <label class="field" for="new-project-language">
+          <span>HDL</span>
+          <select id="new-project-language">
+            <option value="verilog">Verilog</option>
+            <option value="vhdl">VHDL</option>
+          </select>
+        </label>
+        <p id="new-project-error" role="status" aria-live="polite"></p>
+        <div class="dialog-actions">
+          <button id="new-project-cancel" type="button" class="secondary">キャンセル</button>
+          <button id="new-project-create" type="button">作成する</button>
         </div>
       </dialog>
 
