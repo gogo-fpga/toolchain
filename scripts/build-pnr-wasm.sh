@@ -182,13 +182,9 @@ EOF
     wasi_sdk="$root/$sdk_dir"
     wasi_jam="$root/$deps_dir/boost-wasi-config.jam"
     {
-      printf 'using clang : wasi : %s/bin/clang++ :\n' "$wasi_sdk"
+      printf 'using clang : : %s/bin/clang++ --target=wasm32-wasip1 --sysroot=%s/share/wasi-sysroot -D_WASI_EMULATED_MMAN -ffile-prefix-map=%s=/src :\n' "$wasi_sdk" "$wasi_sdk" "$root"
       printf '  <archiver>%s/bin/llvm-ar\n' "$wasi_sdk"
       printf '  <ranlib>%s/bin/llvm-ranlib\n' "$wasi_sdk"
-      printf '  <cxxflags>--target=wasm32-wasip1\n'
-      printf '  <cxxflags>--sysroot=%s/share/wasi-sysroot\n' "$wasi_sdk"
-      printf '  <cxxflags>-D_WASI_EMULATED_MMAN\n'
-      printf '  <cxxflags>-ffile-prefix-map=%s=/src\n' "$root"
       printf '  <linkflags>--target=wasm32-wasip1\n'
       printf '  <linkflags>--sysroot=%s/share/wasi-sysroot\n' "$wasi_sdk"
       printf '  <linkflags>-lwasi-emulated-mman\n'
@@ -196,7 +192,7 @@ EOF
     } > "$wasi_jam"
     (
       cd "$boost_source"
-      "$boost_b2" --user-config="$wasi_jam" toolset=clang-wasi \
+      "$boost_b2" --user-config="$wasi_jam" toolset=clang \
         variant=release link=static threading=single runtime-link=static \
         -sNO_COMPRESSION=1 -sNO_ZLIB=1 -sNO_BZIP2=1 \
         --with-program_options --with-iostreams \
