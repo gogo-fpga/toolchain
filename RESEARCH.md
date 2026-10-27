@@ -95,7 +95,27 @@ S2 の P&R テストは各ボードの Verilog テンプレートを WASI Yosys 
 
 nextpnr は ISC、Boost は Boost Software License 1.0、Eigen は主に MPL-2.0 で、一部に BSD など互換ライセンスのコードがあります。Apycula は MIT のライセンスです。Apycula と実行時依存の Python コードはビルド時の chipdb 生成にだけ使い、WASM や Release には含めません。配布するのは生成済みの chipdb です。ライセンス本文は `licenses/` と配布 zip に含めます。
 
-Apycula 0.35 を先に試します。chipdb 生成または P&R が失敗した場合に限り、試行版とエラーを記録して動作する最新の版を選びます。nextpnr、Boost、Eigen、Apycula の release notes と変更履歴を調べ、採否とビルド結果をこの節に記録します。
+Apycula 0.35 と `requirements-nextpnr.txt` の固定依存で、4 family の chipdb 生成と P&R が成功しました。他の Apycula 版は試していません。native と WASI で別々に生成した `.bba` と chipdb は一致しなかったため、native build の `.bba` を WASI build に取り込みます。これにより、両実行形式が同じ chipdb を使うことをテストで byte 単位に確認します。
+
+Boost 1.92.0 は `-fwasm-exceptions` と `libunwind` を使って WASI 向けにビルドできました。別の Boost 版は試していません。nextpnr WASM は 34,141,610 bytes、native binary は 55,324,696 bytes です。ビルド時間は初回の WASI が 5 分 5.890 秒、native が 2 分 44.644 秒でした。chipdb 生成を共有する変更後の再ビルドは、既存のビルドを再利用して WASI が 10.957 秒、native が 4.575 秒でした。
+
+| Family | Native / WASI chipdb bytes |
+|---|---:|
+| GW1N-9C | 12,846,661 |
+| GW1NS-4 | 10,193,030 |
+| GW1NZ-1 | 5,922,288 |
+| GW2A-18C | 17,493,847 |
+
+固定 seed を使った P&R JSON の比較は4ボードすべて成功しました。以下の時間は native / WASI の順です。ピーク RSS は各ボードのテスト時に計測したプロセスの最大値です。
+
+| Board | P&R time (ms) | Peak RSS (KiB) |
+|---|---:|---:|
+| Tang Nano 1K | 161.0 / 433.6 | 410,628 |
+| Tang Nano 4K | 189.6 / 299.3 | 427,336 |
+| Tang Nano 9K | 244.2 / 405.9 | 429,188 |
+| Tang Nano 20K | 441.5 / 813.2 | 453,740 |
+
+存在しない pin の負例は native と WASI の両方で有用なエラーと非ゼロ終了を返し、chipdb を欠落させた WASI 実行も非ゼロで終了しました。
 
 Yosys v0.69 から v0.70 では `alumacc -macc-only`、`optbarriers`、`flatten` と `prep` の `-barriers`、`mcm`、`rmports -purge`、`ltp -select`、色付きログが追加され、`read_xaiger2` が削除されました。`vendor/yosys/CHANGELOG` の該当節を確認しました。今回の `read_verilog` と `synth_gowin` を使う経路ではどの変更も必要ないため、追加のオプションやパスは採用しません。WASI SDK 34 の release notes では CMake toolchain の調整、wasi-libc の更新、WASI Preview 3 対応の作業が挙げられています。Preview 1 の同期実行を使う本段階では追加の対応を行いません。
 
