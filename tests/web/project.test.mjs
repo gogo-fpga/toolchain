@@ -39,7 +39,10 @@ test("project schema rejects unknown boards and duplicate paths", () => {
 
 test("validatePath accepts relative supported files", () => {
   assert.deepEqual(validatePath("src/top.v"), { ok: true, errors: [] });
-  assert.deepEqual(validatePath("docs/readme.md"), { ok: true, errors: [] });
+  assert.deepEqual(validatePath("docs/research/oss-survey.md"), {
+    ok: true,
+    errors: [],
+  });
 });
 
 test("validatePath rejects traversal, empty segments, drive paths, and extensions", () => {

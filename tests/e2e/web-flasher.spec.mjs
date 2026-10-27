@@ -204,6 +204,7 @@ async function openSupportedPage(page) {
   await expect(page.locator("#support-status")).toHaveText(
     "このブラウザーを利用できます。",
   );
+  await expect(page.locator("#project-status")).toHaveText("保存しました。");
 }
 
 test("built distribution matches sources and the build-root WASM", () => {
