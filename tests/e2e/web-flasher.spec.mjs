@@ -1,6 +1,13 @@
+import assert from "node:assert/strict";
 import { expect, test } from "@playwright/test";
-import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, readdirSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import {
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { relative, resolve } from "node:path";
 
 const repoRoot = resolve(import.meta.dirname, "../..");
@@ -34,6 +41,45 @@ function sha256(contents) {
   return createHash("sha256").update(contents).digest("hex");
 }
 
+function assertPackMatchesBuild() {
+  const buildPackRoot = resolve(repoRoot, "build/pack");
+  const distRoot = resolve(repoRoot, "dist");
+  const distPackRoot = resolve(distRoot, "pack");
+  const buildPackPaths = new Set(
+    listFiles(buildPackRoot).map((path) => relative(buildPackRoot, path)),
+  );
+  const distPackPaths = new Set(
+    listFiles(distPackRoot).map((path) => relative(distPackRoot, path)),
+  );
+
+  for (const path of distPackPaths) {
+    if (!buildPackPaths.has(path)) {
+      throw new Error(`Playwright preflight: unexpected dist/pack/${path}`);
+    }
+  }
+
+  for (const path of buildPackPaths) {
+    if (!distPackPaths.has(path)) {
+      throw new Error(`Playwright preflight: dist/pack/${path} is missing`);
+    }
+    if (
+      !readFileSync(resolve(buildPackRoot, path)).equals(
+        readFileSync(resolve(distPackRoot, path)),
+      )
+    ) {
+      throw new Error(
+        `Playwright preflight: dist/pack/${path} differs from build/pack/${path}`,
+      );
+    }
+  }
+
+  return new Set(
+    [...distPackPaths].map((path) =>
+      relative(distRoot, resolve(distPackRoot, path)),
+    ),
+  );
+}
+
 function assertDistributionMatchesSources() {
   const webRoot = resolve(repoRoot, "web");
   const distRoot = resolve(repoRoot, "dist");
@@ -64,18 +110,25 @@ function assertDistributionMatchesSources() {
     "openFPGALoader.mjs",
     "openFPGALoader.wasm",
   ]);
+  const packPaths = assertPackMatchesBuild();
   const distPaths = new Set(
     listFiles(distRoot).map((path) => relative(distRoot, path)),
   );
   for (const path of distPaths) {
     if (sourcePaths.has(path) || runtimeFiles.has(path)) continue;
     if (generatedFileAllowlist.delete(path)) continue;
+    if (packPaths.delete(path)) continue;
     throw new Error(`Playwright preflight: unexpected dist/${path}`);
   }
   if (generatedFileAllowlist.size > 0) {
     throw new Error(
       `Playwright preflight: generated-file allowlist was unused: ` +
         [...generatedFileAllowlist].join(", "),
+    );
+  }
+  if (packPaths.size > 0) {
+    throw new Error(
+      `Playwright preflight: dist/${packPaths.values().next().value} is missing`,
     );
   }
   for (const path of runtimeFiles) {
@@ -212,6 +265,32 @@ async function openSupportedPage(page) {
 
 test("built distribution matches sources and the build-root WASM", () => {
   assertDistributionMatchesSources();
+
+  const packRoot = resolve(repoRoot, "dist/pack");
+  const extraPath = resolve(packRoot, `.preflight-extra-${randomUUID()}`);
+  try {
+    writeFileSync(extraPath, "unexpected");
+    assert.throws(
+      () => assertDistributionMatchesSources(),
+      /unexpected dist\/pack\/\.preflight-extra-/,
+    );
+  } finally {
+    rmSync(extraPath, { force: true });
+  }
+
+  const lockPath = resolve(packRoot, "pyodide/pyodide-lock.json");
+  const originalLock = readFileSync(lockPath);
+  const alteredLock = Buffer.from(originalLock);
+  alteredLock[0] ^= 1;
+  try {
+    writeFileSync(lockPath, alteredLock);
+    assert.throws(
+      () => assertDistributionMatchesSources(),
+      /dist\/pack\/pyodide\/pyodide-lock\.json differs from build\/pack\/pyodide\/pyodide-lock\.json/,
+    );
+  } finally {
+    writeFileSync(lockPath, originalLock);
+  }
 });
 
 test("support check passes and the page renders", async ({ page }) => {
