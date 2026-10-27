@@ -9,6 +9,7 @@ mkdirSync(screenshots, { recursive: true });
 async function openIde(page) {
   await page.goto("/");
   await expect(page.locator("#project-name")).toHaveText("blink");
+  await expect(page.locator("#project-status")).toHaveText("保存しました。");
   await expect(page.locator("#support-status")).toBeVisible();
 }
 
@@ -47,6 +48,18 @@ test("IDE loads without console errors and highlights Verilog keywords", async (
       .evaluate((log) => getComputedStyle(log, "::before").content),
   ).toBe('"ログはまだありません。"');
   expect(errors).toEqual([]);
+});
+
+test("new project dialog shows board and HDL choices", async ({ page }) => {
+  await openIde(page);
+  await page.locator("#new-project-button").click();
+  const dialog = page.locator("#new-project-dialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator("#new-project-board option")).toHaveCount(4);
+  await expect(dialog.locator("#new-project-language option")).toHaveCount(2);
+  await page.screenshot({
+    path: resolve(screenshots, "ide-new-project.png"),
+  });
 });
 
 test("Verilog autocomplete includes always", async ({ page }) => {

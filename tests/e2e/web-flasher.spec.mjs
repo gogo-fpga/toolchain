@@ -55,7 +55,10 @@ function assertDistributionMatchesSources() {
     }
   }
 
-  const generatedFileAllowlist = new Set(["editor/editor.bundle.mjs"]);
+  const generatedFileAllowlist = new Set([
+    "editor/editor.bundle.mjs",
+    "lib/project-zip.bundle.mjs",
+  ]);
   const runtimeFiles = new Set([
     "build-info.json",
     "openFPGALoader.mjs",
@@ -215,6 +218,7 @@ test("support check passes and the page renders", async ({ page }) => {
   await openSupportedPage(page);
   await expect(page.locator("#board-select option")).toHaveCount(4);
   await expect(page.getByRole("button", { name: "書き込む" })).toBeDisabled();
+  await expect(page.locator("#fs-source")).toHaveValue("local");
   await expect(page.locator("#command-preview")).toHaveText(
     "openFPGALoader -b tangnano1k /input.fs",
   );
@@ -580,4 +584,217 @@ test("unsupported browser shows a message and keeps the button disabled", async 
     path: resolve(screenshots, "unsupported.png"),
     fullPage: true,
   });
+});
+
+const templateWriteCases = [
+  { board: "tangnano1k", idcode: 0x0100681b },
+  { board: "tangnano4k", idcode: 0x0100981b },
+  { board: "tangnano9k", idcode: 0x1100481b },
+  { board: "tangnano20k", idcode: 0x0000081b },
+];
+
+async function createTemplateProject(page, name, board, language = "verilog") {
+  await page.locator("#new-project-button").click();
+  await page.locator("#new-project-name").fill(name);
+  await page.locator("#new-project-board").selectOption(board);
+  await page.locator("#new-project-language").selectOption(language);
+  await page.locator("#new-project-create").click();
+  await expect(page.locator("#project-name")).toHaveText(name);
+  await expect(page.locator("#project-status")).toHaveText("保存しました。");
+}
+
+async function uploadProjectBitstream(page, fixturePath, board) {
+  const path = `artifacts/${board}.fs`;
+  await page.locator("#add-file-button").click();
+  await page.locator("#file-path-input").fill(path);
+  await page.locator("#file-content-input").setInputFiles(fixturePath);
+  await page.locator("#file-path-save").click();
+  await expect(page.locator("#fs-source")).toHaveValue(path);
+  await expect(page.locator("#fs-file-info")).toContainText("読み取り専用");
+  await expect(page.locator("#fs-file-info")).toContainText("サイズ:");
+  await expect(page.locator(".cm-content")).toContainText("module top");
+  await expect(page.locator("#project-status")).toHaveText("保存しました。", {
+    timeout: 10_000,
+  });
+  await expect(page.getByRole("button", { name: "書き込む" })).toBeEnabled({
+    timeout: 10_000,
+  });
+}
+
+for (const { board, idcode } of templateWriteCases) {
+  test(`${board} template writes a project .fs through the existing path`, async ({
+    page,
+  }) => {
+    const fixturePath = resolve(repoRoot, `build/fixtures/${board}.fs`);
+    await routeWorkerWithFakeUsb(page, { idcode });
+    await openSupportedPage(page);
+    await createTemplateProject(page, `template-${board}`, board);
+    await uploadProjectBitstream(page, fixturePath, board);
+    await expect(page.locator("#local-fs-field")).toBeHidden();
+    await page.locator('input[name="target"][value="sram"]').check();
+    await page.getByRole("button", { name: "書き込む" }).click();
+
+    await expect(page.locator("#result-status")).toHaveText("成功", {
+      timeout: 30_000,
+    });
+    await expect(page.locator("#command-preview")).toContainText(
+      `-b ${board} /input.fs`,
+    );
+  });
+}
+
+test("a project .fs for another board is rejected by IDCODE validation", async ({
+  page,
+}) => {
+  let workerRequests = 0;
+  await routeWorkerWithFakeUsb(page, {
+    idcode: 0x0100681b,
+    onWorkerRequest: () => {
+      workerRequests += 1;
+    },
+  });
+  await openSupportedPage(page);
+  await createTemplateProject(page, "wrong-board", "tangnano1k");
+  await uploadProjectBitstream(page, fixture, "tangnano9k");
+  await page.getByRole("button", { name: "書き込む" }).click();
+
+  await expect(page.locator("#idcode-dialog")).toBeVisible();
+  await expect(page.locator("#idcode-dialog")).toContainText("一致しません");
+  expect(workerRequests).toBe(0);
+});
+
+test("project ZIP export and import preserve all project file bytes", async ({
+  page,
+}) => {
+  const projectName = "zip-roundtrip";
+  await openSupportedPage(page);
+  await createTemplateProject(page, projectName, "tangnano9k");
+  await uploadProjectBitstream(page, fixture, "tangnano9k");
+
+  const readProject = () =>
+    page.evaluate(async (name) => {
+      const { createOpfsStore } = await import("/lib/project-store.mjs");
+      const { project, files } = await createOpfsStore(
+        navigator.storage,
+      ).load(name);
+      return {
+        project,
+        files: [...files]
+          .map(([path, content]) => [
+            path,
+            Array.from(
+              typeof content === "string"
+                ? new TextEncoder().encode(content)
+                : content,
+            ),
+          ])
+          .sort(([left], [right]) => left.localeCompare(right)),
+      };
+    }, projectName);
+
+  const before = await readProject();
+  const downloadPromise = page.waitForEvent("download");
+  await page.locator("#export-project-button").click();
+  const download = await downloadPromise;
+  const zipPath = await download.path();
+  await page.locator("#import-project-button").click();
+  await page.locator("#project-zip-input").setInputFiles(zipPath);
+  await expect(page.locator("#project-action-status")).toHaveText(
+    "同じ名前のプロジェクトがすでにあります。",
+    { timeout: 10_000 },
+  );
+  expect(await readProject()).toEqual(before);
+
+  await page.evaluate(async (name) => {
+    const { createOpfsStore } = await import("/lib/project-store.mjs");
+    await createOpfsStore(navigator.storage).remove(name);
+  }, projectName);
+
+  await page.locator("#import-project-button").click();
+  await page.locator("#project-zip-input").setInputFiles([]);
+  await page.locator("#project-zip-input").setInputFiles(zipPath);
+  await expect(page.locator("#project-name")).toHaveText(projectName);
+  await expect(page.locator("#project-action-status")).toHaveText(
+    "ZIP ファイルを読み込みました。",
+    { timeout: 10_000 },
+  );
+  expect(await readProject()).toEqual(before);
+});
+
+test("project switcher opens another saved project", async ({ page }) => {
+  await openSupportedPage(page);
+  await createTemplateProject(page, "switch-target", "tangnano4k");
+  await expect(page.locator('#project-select option[value="blink"]')).toBeAttached();
+  await page.locator("#project-select").selectOption("blink");
+  await expect(page.locator("#project-name")).toHaveText("blink");
+  await page.locator("#project-select").selectOption("switch-target");
+  await expect(page.locator("#project-name")).toHaveText("switch-target");
+  await expect(page.locator("#board-select")).toHaveValue("tangnano4k");
+});
+
+test("creating a project with an existing name does not overwrite it", async ({
+  page,
+}) => {
+  await openSupportedPage(page);
+  const originalText = await page.locator(".cm-content").innerText();
+  await page.locator("#new-project-button").click();
+  await page.locator("#new-project-name").fill("blink");
+  await page.locator("#new-project-create").click();
+  await expect(page.locator("#new-project-error")).toHaveText(
+    "同じ名前のプロジェクトがすでにあります。",
+  );
+  await page.locator("#new-project-cancel").click();
+  await expect(page.locator("#project-name")).toHaveText("blink");
+  expect(await page.locator(".cm-content").innerText()).toBe(originalText);
+});
+
+test("projects with multiple .fs files default to the local file source", async ({
+  page,
+}) => {
+  await openSupportedPage(page);
+  await createTemplateProject(page, "multiple-fs", "tangnano9k");
+  await uploadProjectBitstream(page, fixture, "tangnano9k");
+  await page.locator("#add-file-button").click();
+  await page.locator("#file-path-input").fill("artifacts/second.fs");
+  await page.locator("#file-content-input").setInputFiles(fixture);
+  await page.locator("#file-path-save").click();
+  await expect(page.locator("#fs-source")).toHaveValue("local");
+  await expect(page.locator("#local-fs-field")).toBeVisible();
+});
+
+test("changing a project's board preserves its generated constraints", async ({
+  page,
+}) => {
+  await openSupportedPage(page);
+  await createTemplateProject(page, "board-change", "tangnano1k");
+  const originalConstraints = await page.evaluate(async () => {
+    const { createOpfsStore } = await import("/lib/project-store.mjs");
+    const { files } = await createOpfsStore(navigator.storage).load("board-change");
+    return files.get("constraints/tangnano1k.cst");
+  });
+  await page.locator("#board-select").selectOption("tangnano4k");
+  await expect(page.locator("#project-status")).toHaveText("保存しました。", {
+    timeout: 10_000,
+  });
+  const updatedProject = await page.evaluate(async () => {
+    const { createOpfsStore } = await import("/lib/project-store.mjs");
+    const { project, files } = await createOpfsStore(
+      navigator.storage,
+    ).load("board-change");
+    return {
+      board: project.board,
+      constraints: files.get("constraints/tangnano1k.cst"),
+    };
+  });
+  expect(updatedProject.board).toBe("tangnano4k");
+  expect(updatedProject.constraints).toEqual(originalConstraints);
+});
+
+test("VHDL project creation opens the generated VHDL source", async ({ page }) => {
+  await openSupportedPage(page);
+  await createTemplateProject(page, "vhdl-project", "tangnano9k", "vhdl");
+  await expect(page.locator("#editor-tabs")).toContainText("top.vhd");
+  await expect(page.locator(".cm-content")).toContainText(
+    "library ieee;",
+  );
 });

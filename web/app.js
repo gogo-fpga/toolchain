@@ -18,6 +18,7 @@ import { initializeIde } from "./ide.mjs";
 const form = document.querySelector("#program-form");
 const boardSelect = document.querySelector("#board-select");
 const fileInput = document.querySelector("#bitstream-file");
+const fsSourceSelect = document.querySelector("#fs-source");
 const targetOptions = document.querySelector("#target-options");
 const flashWriteWarning = document.querySelector("#flash-write-warning");
 const flashEraseWarning = document.querySelector("#flash-erase-warning");
@@ -64,6 +65,7 @@ let fileReadVersion = 0;
 let verifySelection = defaultOptions().verify;
 let terminalState = { text: "" };
 let downloadUrl = null;
+let projectFsSource = null;
 
 for (const board of BOARDS) {
   const option = document.createElement("option");
@@ -134,11 +136,20 @@ function formatIdcode(idcode) {
 }
 
 function fileSizes() {
+  const source = selectedFsSource();
   return {
-    fs: fileInput.files[0]?.size,
+    fs: source?.bytes?.byteLength ?? source?.file?.size,
     mcufw: mcufwFileInput.files[0]?.size,
     userFlash: userFlashFileInput.files[0]?.size,
   };
+}
+
+function selectedFsSource() {
+  if (fsSourceSelect.value !== "local") {
+    return projectFsSource;
+  }
+  const file = fileInput.files[0];
+  return file ? { name: file.name, file } : null;
 }
 
 function updateForm() {
@@ -179,8 +190,10 @@ function updateForm() {
   targetOptions.querySelectorAll("input").forEach((input) => {
     input.disabled = options.operation !== "write";
   });
-  fileInput.disabled = options.operation !== "write";
-  fileInput.required = options.operation === "write";
+  fsSourceSelect.disabled = options.operation !== "write";
+  const localSource = fsSourceSelect.value === "local";
+  fileInput.disabled = options.operation !== "write" || !localSource;
+  fileInput.required = options.operation === "write" && localSource;
 
   flashTypeOptions.hidden =
     options.operation === "write" && options.target !== "flash";
@@ -353,19 +366,20 @@ function confirmErase(board) {
 }
 
 async function readSelectedFileIdcode() {
-  const file = fileInput.files[0];
+  const source = selectedFsSource();
   const version = ++fileReadVersion;
   selectedFileIdcode = null;
-  fileIdcodeReady = !file || selected("operation") !== "write";
+  fileIdcodeReady = !source || selected("operation") !== "write";
   updateForm();
-  if (!file || selected("operation") !== "write") {
+  if (!source || selected("operation") !== "write") {
     return;
   }
 
   fileIdcodeReady = false;
   updateForm();
   try {
-    const idcode = fsIdcode(await file.text());
+    const bytes = source.bytes ?? new Uint8Array(await source.file.arrayBuffer());
+    const idcode = fsIdcode(new TextDecoder().decode(bytes));
     if (version === fileReadVersion) {
       selectedFileIdcode = idcode;
     }
@@ -490,9 +504,10 @@ async function startRun(board, options, file, fileIdcode) {
   const args = buildArgs({ board: board.id, options });
   const files = [];
   if (options.operation === "write") {
+    const inputBytes = file.bytes ?? new Uint8Array(await file.file.arrayBuffer());
     files.push({
       path: "/input.fs",
-      bytes: new Uint8Array(await file.arrayBuffer()),
+      bytes: inputBytes,
     });
     if (options.mcufw) {
       files.push({
@@ -579,6 +594,10 @@ form.addEventListener("change", (event) => {
   if (event.target === verifyOption) {
     verifySelection = verifyOption.checked;
   }
+  if (event.target.name === "operation") {
+    void readSelectedFileIdcode();
+    return;
+  }
   updateForm();
 });
 boardSelect.addEventListener("change", updateForm);
@@ -594,7 +613,7 @@ form.addEventListener("submit", async (event) => {
 
   const board = getBoard(boardSelect.value);
   const options = readOptions();
-  const file = fileInput.files[0];
+  const file = selectedFsSource();
   const errors = board
     ? validateOptions(board.id, options, { fileSizes: fileSizes() })
     : ["ボードを選択してください。"];
@@ -626,4 +645,13 @@ form.addEventListener("submit", async (event) => {
 
 updateForm();
 initialize();
-initializeIde({ form, boardSelect, programLog, BOARDS });
+initializeIde({
+  form,
+  boardSelect,
+  programLog,
+  BOARDS,
+  onFsSourceChange: (source) => {
+    projectFsSource = source;
+    void readSelectedFileIdcode();
+  },
+});
