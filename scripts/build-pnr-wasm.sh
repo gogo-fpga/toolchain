@@ -62,6 +62,7 @@ gowin_devices=$(printf '%s' "$families" | tr ' ' ';')
 
 cache_dir=build/cache
 deps_dir=build/deps
+wasi_boost_stage="$deps_dir/boost-stage-wasi-wasm-exceptions"
 mkdir -p "$cache_dir" "$deps_dir"
 
 download_verified() {
@@ -160,7 +161,7 @@ build_boost() {
   source_dir=$boost_source
   b2=$boost_b2
   if [ "$boost_mode" = wasi ]; then
-    stage_dir="$stage_dir-wasm-exceptions"
+    stage_dir=$wasi_boost_stage
     source_dir="$deps_dir/boost-wasi-$boost_version"
     if [ ! -f "$source_dir/boost/version.hpp" ]; then
       if [ -e "$source_dir" ]; then
@@ -347,7 +348,7 @@ cmake -S vendor/nextpnr -B "$wasi_build" \
   -DBoost_NO_BOOST_CMAKE=ON \
   -DBoost_USE_STATIC_LIBS=ON \
   -DBOOST_ROOT="$root/$boost_source" \
-  -DBOOST_LIBRARYDIR="$root/$deps_dir/boost-stage-wasi/lib" \
+  -DBOOST_LIBRARYDIR="$root/$wasi_boost_stage/lib" \
   -DEigen3_DIR="$root/$eigen_build" \
   -DAPYCULA_INSTALL_PREFIX="$root/$apycula_venv"
 cmake --build "$wasi_build" --target nextpnr-himbaechel-gowin --parallel "$jobs"
