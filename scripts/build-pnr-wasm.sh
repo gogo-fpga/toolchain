@@ -331,6 +331,17 @@ esac
 c_flags="-I$root/$boost_source -ffile-prefix-map=$root=/src -ffile-prefix-map=$root/$wasi_build=/build -ffile-prefix-map=$root/$sdk_dir=/wasi-sdk -ffile-prefix-map=$boost_source=/boost -ffile-prefix-map=$eigen_source=/eigen -DNPNR_DISABLE_THREADS"
 cxx_flags="$c_flags -fwasm-exceptions"
 linker_flags="-fwasm-exceptions -Wl,-z,stack-size=8388608 -lwasi-emulated-mman -Wl,--whole-archive -lunwind -Wl,--no-whole-archive"
+set --
+if [ -n "${WASI_USE_IPO:-}" ]; then
+  case "$WASI_USE_IPO" in
+    ON|OFF) ;;
+    *)
+      printf 'WASI_USE_IPO must be ON or OFF: %s\n' "$WASI_USE_IPO" >&2
+      exit 1
+      ;;
+  esac
+  set -- "-DUSE_IPO=$WASI_USE_IPO"
+fi
 if [ -n "${WASI_EXTRA_CFLAGS:-}" ]; then
   c_flags="$c_flags $WASI_EXTRA_CFLAGS"
 fi
@@ -355,6 +366,7 @@ run_cmake -S vendor/nextpnr -B "$wasi_build" \
   -DCMAKE_C_FLAGS="$c_flags" \
   -DCMAKE_CXX_FLAGS="$cxx_flags" \
   -DCMAKE_EXE_LINKER_FLAGS="$linker_flags" \
+  "$@" \
   -DCMAKE_DISABLE_FIND_PACKAGE_Threads=ON \
   -DBUILD_GUI=OFF \
   -DBUILD_PYTHON=OFF \

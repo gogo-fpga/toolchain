@@ -26,15 +26,16 @@ BOARDS = ("tangnano1k", "tangnano4k", "tangnano9k", "tangnano20k")
 VARIANTS = {
     "B": {"opt": "", "expected_opt": "-O3", "c": "", "cxx": "", "ld": ""},
     "B2": {"opt": "", "expected_opt": "-O3", "c": "", "cxx": "", "ld": ""},
-    "O2": {"opt": "-O2 -DNDEBUG", "expected_opt": "-O2", "c": "", "cxx": "", "ld": ""},
-    "Os": {"opt": "-Os -DNDEBUG", "expected_opt": "-Os", "c": "", "cxx": "", "ld": ""},
-    "Oz": {"opt": "-Oz -DNDEBUG", "expected_opt": "-Oz", "c": "", "cxx": "", "ld": ""},
+    "O2": {"opt": "-O2", "expected_opt": "-O2", "c": "", "cxx": "", "ld": ""},
+    "Os": {"opt": "-Os", "expected_opt": "-Os", "c": "", "cxx": "", "ld": ""},
+    "Oz": {"opt": "-Oz", "expected_opt": "-Oz", "c": "", "cxx": "", "ld": ""},
     "LTO": {
         "opt": "",
         "expected_opt": "-O3",
         "c": "-flto",
         "cxx": "-flto",
         "ld": "-flto",
+        "use_ipo": "OFF",
     },
     "TLTO": {
         "opt": "",
@@ -63,6 +64,7 @@ ENV_KEYS = (
     "WASI_EXTRA_CFLAGS",
     "WASI_EXTRA_CXXFLAGS",
     "WASI_EXTRA_LDFLAGS",
+    "WASI_USE_IPO",
 )
 CSV_FIELDS = (
     "run_id",
@@ -243,9 +245,9 @@ def check_build_flags(variant, tool, directory):
     if not found_flags:
         raise RuntimeError(f"No optimization flags found under {directory.relative_to(ROOT)}")
     for flags_path, line, found in found_flags:
-        if found != [expected_opt]:
+        if found.count(expected_opt) != 1 or found[-1] != expected_opt:
             raise RuntimeError(
-                f"Expected one {expected_opt} in {flags_path.relative_to(ROOT)}; "
+                f"Expected one final {expected_opt} in {flags_path.relative_to(ROOT)}; "
                 f"found {found}: {line}"
             )
 
@@ -253,21 +255,73 @@ def check_build_flags(variant, tool, directory):
     for field, token in (("c", "C_FLAGS"), ("cxx", "CXX_FLAGS")):
         required = shlex.split(config[field])
         if required:
-            evidence = "\n".join(
+            evidence_lines = [
                 line
                 for flags_path in directory.rglob("flags.make")
                 for line in flags_path.read_text(errors="replace").splitlines()
                 if re.match(rf"\s*{token}\s*=", line)
+            ]
+            cache_key = (
+                "CMAKE_C_FLAGS" if token == "C_FLAGS" else "CMAKE_CXX_FLAGS"
             )
-            missing = [flag for flag in required if flag not in evidence]
+            cache_path = directory / "CMakeCache.txt"
+            if cache_path.is_file():
+                evidence_lines.extend(
+                    line.split("=", 1)[1]
+                    for line in cache_path.read_text(errors="replace").splitlines()
+                    if line.startswith(f"{cache_key}:STRING=")
+                )
+            if token == "C_FLAGS" and not evidence_lines:
+                continue
+            evidence = "\n".join(evidence_lines)
+            missing = [
+                flag
+                for flag in required
+                if not re.search(rf"(?<!\S){re.escape(flag)}(?=\s|$)", evidence)
+            ]
             if missing:
                 raise RuntimeError(f"{tool} {token} is missing flags: {', '.join(missing)}")
     if config["ld"]:
         link_files = list(directory.rglob("link.txt"))
         link_text = "\n".join(path.read_text(errors="replace") for path in link_files)
-        missing = [flag for flag in shlex.split(config["ld"]) if flag not in link_text]
+        missing = [
+            flag
+            for flag in shlex.split(config["ld"])
+            if not re.search(rf"(?<!\S){re.escape(flag)}(?=\s|$)", link_text)
+        ]
         if missing:
             raise RuntimeError(f"{tool} link command is missing flags: {', '.join(missing)}")
+    if variant == "LTO" and tool == "nextpnr":
+        cache_path = directory / "CMakeCache.txt"
+        cache = cache_path.read_text(errors="replace") if cache_path.is_file() else ""
+        if "USE_IPO:BOOL=OFF" not in cache:
+            raise RuntimeError("nextpnr LTO build did not configure USE_IPO=OFF")
+        target_dir = (
+            directory
+            / "himbaechel/uarch/gowin/CMakeFiles/nextpnr-himbaechel-gowin.dir"
+        )
+        flags_path = target_dir / "flags.make"
+        flags = flags_path.read_text(errors="replace") if flags_path.is_file() else ""
+        if "-flto" not in flags or "-flto=thin" in flags:
+            raise RuntimeError(
+                f"nextpnr LTO compile flags must contain -flto and no -flto=thin: "
+                f"{flags_path.relative_to(ROOT)}"
+            )
+        link_path = target_dir / "link.txt"
+        link = link_path.read_text(errors="replace") if link_path.is_file() else ""
+        if "-flto" not in link or "-flto=thin" in link:
+            raise RuntimeError(
+                f"nextpnr LTO link command must contain -flto and no -flto=thin: "
+                f"{link_path.relative_to(ROOT)}"
+            )
+        objects = list(directory.rglob("*.obj"))
+        if not objects or any(
+            path.read_bytes()[:4] != b"BC\xc0\xde" for path in objects
+        ):
+            raise RuntimeError(
+                f"nextpnr LTO objects are not all LLVM bitcode: "
+                f"found {len(objects)} .obj files"
+            )
     return len(found_flags)
 
 
@@ -288,6 +342,8 @@ def build_environment(variant, tool, jobs):
         environment["WASI_EXTRA_CXXFLAGS"] = config["cxx"]
     if config["ld"]:
         environment["WASI_EXTRA_LDFLAGS"] = config["ld"]
+    if config.get("use_ipo"):
+        environment["WASI_USE_IPO"] = config["use_ipo"]
     build_directory, _ = tool_paths(variant, tool)
     environment["WASI_BUILD_DIR"] = build_directory.relative_to(ROOT).as_posix()
     environment["JOBS"] = str(jobs)
@@ -344,6 +400,17 @@ def build_tool(variant, tool, jobs, sink):
             compressed_bytes = zstd19_size(artifact)
             digest = sha256_file(artifact)
             details += f"; optimization flag entries={flags_count}"
+            if variant == "LTO" and tool == "nextpnr":
+                _, baseline_artifact = tool_paths("B", "nextpnr")
+                baseline_digest = sha256_file(baseline_artifact)
+                if digest == baseline_digest:
+                    raise RuntimeError(
+                        "nextpnr LTO WASM SHA-256 matches B despite full-LTO flags"
+                    )
+                details += (
+                    f"; full-LTO SHA differs from B={baseline_digest}; "
+                    f"sha256={digest}"
+                )
         except (RuntimeError, OSError) as error:
             status = "invalid-build"
             details += f"; {error}"
@@ -375,21 +442,27 @@ def build_tool(variant, tool, jobs, sink):
     }
 
 
-def build_variant(variant, jobs, sink):
+def build_variant(variant, jobs, sink, tools=("yosys", "nextpnr")):
     output = variant_root(variant)
-    if output.exists() or output.is_symlink():
-        raise SystemExit(f"Refusing to overwrite build output: {output.relative_to(ROOT)}")
-    output.mkdir(parents=True)
-    tools = {}
-    for tool in ("yosys", "nextpnr"):
-        tools[tool] = build_tool(variant, tool, jobs, sink)
-    passed = all(metrics["status"] == "pass" for metrics in tools.values())
-    if passed:
+    if output.is_symlink():
+        raise SystemExit(f"Refusing symlink build output: {output.relative_to(ROOT)}")
+    output.mkdir(parents=True, exist_ok=True)
+    selected_tools = tools
+    tool_metrics = {}
+    for tool in selected_tools:
+        directory, _ = tool_paths(variant, tool)
+        if directory.exists() or directory.is_symlink():
+            raise SystemExit(
+                f"Refusing to overwrite tool build: {directory.relative_to(ROOT)}"
+            )
+        tool_metrics[tool] = build_tool(variant, tool, jobs, sink)
+    passed = all(metrics["status"] == "pass" for metrics in tool_metrics.values())
+    if passed and set(tool_metrics) == {"yosys", "nextpnr"}:
         metadata = {
             "format_version": 1,
             "variant": variant,
             "jobs": jobs,
-            "tools": tools,
+            "tools": tool_metrics,
         }
         metadata_path = output / "s5-build-metrics.json"
         metadata_path.write_text(f"{json.dumps(metadata, indent=2, sort_keys=True)}\n")
@@ -434,6 +507,30 @@ def write_reused_build_rows(variant, sink):
             ),
         )
     return all(metadata["tools"][tool]["status"] == "pass" for tool in ("yosys", "nextpnr"))
+
+
+def write_tlto_nextpnr_reuse_row(sink):
+    _, artifact = tool_paths("TLTO", "nextpnr")
+    _, baseline_artifact = tool_paths("B", "nextpnr")
+    digest = sha256_file(artifact)
+    baseline_digest = sha256_file(baseline_artifact)
+    if digest != baseline_digest:
+        raise SystemExit("TLTO nextpnr must reuse the B artifact byte-for-byte")
+    sink.write(
+        run_id="build-TLTO-nextpnr-reuse-B",
+        phase="build",
+        variant="TLTO",
+        tool="nextpnr",
+        status="pass",
+        wasm_bytes=artifact.stat().st_size,
+        zstd19_bytes=zstd19_size(artifact),
+        wasm_sha256=digest,
+        output_dir=variant_root("B").relative_to(ROOT).as_posix(),
+        details=(
+            "reused B nextpnr artifact; "
+            "効果なし（B は upstream の USE_IPO で ThinLTO 済み）"
+        ),
+    )
 
 
 def record_default_identity(variants, build_statuses, sink):
@@ -855,19 +952,30 @@ def main():
     )
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--jobs", type=int, default=10)
+    parser.add_argument("--build-root", type=Path)
+    parser.add_argument(
+        "--tool",
+        action="append",
+        choices=("yosys", "nextpnr"),
+        help="Select a tool for --phase build; repeat to select both.",
+    )
     parser.add_argument("--output-csv", type=Path)
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--reuse-builds", action="store_true")
     parser.add_argument(
         "--append",
         action="store_true",
-        help="Append node or Chromium rows to an existing S5 CSV after validating its header.",
+        help="Append rows to an existing S5 CSV after validating its header.",
     )
     parser.add_argument("--playwright-port", type=int, default=8123)
     args = parser.parse_args()
 
+    if args.build_root:
+        global BUILD_ROOT
+        BUILD_ROOT = absolute_path(args.build_root)
     variants = selected_variants(args)
     boards = args.board or list(BOARDS)
+    build_tools = args.tool or ["yosys", "nextpnr"]
     if args.repeats < 1 or args.jobs < 1:
         parser.error("--repeats and --jobs must be positive")
     if args.phase == "chromium" and args.board:
@@ -879,8 +987,10 @@ def main():
             parser.error("Chromium phase requires B plus up to two finalists; do not select B2")
         if not args.append:
             parser.error("Chromium phase appends to the existing Node matrix CSV; pass --append")
-    if args.phase not in ("node", "chromium") and args.append:
-        parser.error("--append is only valid for --phase node or chromium")
+    if args.tool and args.phase != "build":
+        parser.error("--tool is only valid for --phase build")
+    if args.append and args.phase not in ("build", "node", "chromium"):
+        parser.error("--append is only valid for --phase build, node, or chromium")
     if args.phase == "build" and args.reuse_builds:
         parser.error("--reuse-builds is only valid for --phase matrix")
     if args.phase == "chromium" and args.repeats != 5:
@@ -919,17 +1029,36 @@ def main():
         prepare_output_directory(output_directory, variants)
     elif args.phase == "build":
         for variant in variants:
-            if variant_root(variant).exists() or variant_root(variant).is_symlink():
+            if variant_root(variant).is_symlink():
                 raise SystemExit(
-                    f"Refusing to overwrite build output: {variant_root(variant).relative_to(ROOT)}"
+                    f"Refusing symlink build output: {variant_root(variant).relative_to(ROOT)}"
                 )
+            if not args.tool and variant_root(variant).exists():
+                raise SystemExit(
+                    f"Refusing to overwrite build output: "
+                    f"{variant_root(variant).relative_to(ROOT)}"
+                )
+            for tool in build_tools:
+                directory, _ = tool_paths(variant, tool)
+                if directory.exists() or directory.is_symlink():
+                    raise SystemExit(
+                        f"Refusing to overwrite tool build: {directory.relative_to(ROOT)}"
+                    )
 
     sink = ResultWriter(csv_path, append=args.append)
 
     ok = True
     try:
         build_statuses = {}
-        if args.phase in ("build", "matrix"):
+        if args.phase == "build":
+            require_pinned_zstd_version(ROOT)
+            for variant in variants:
+                build_statuses[variant] = build_variant(
+                    variant, args.jobs, sink, tools=build_tools
+                )
+                if not build_statuses[variant]:
+                    ok = False
+        if args.phase == "matrix":
             require_pinned_zstd_version(ROOT)
             for variant in variants:
                 directory = variant_root(variant)
@@ -950,6 +1079,8 @@ def main():
                     check_variant_artifacts(variant)
             if "B" not in variants:
                 raise SystemExit("Node phase requires B for per-board output identity comparisons")
+            if args.phase == "node" and "TLTO" in variants:
+                write_tlto_nextpnr_reuse_row(sink)
             if not run_node_trials(
                 variants,
                 boards,

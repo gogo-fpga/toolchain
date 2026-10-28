@@ -101,6 +101,13 @@ Apycula 0.35 と `requirements-nextpnr.txt` の固定依存で、4 family の ch
 
 Boost 1.92.0 は `-fwasm-exceptions` と `libunwind` を使って WASI 向けにビルドできました。別の Boost 版は試していません。nextpnr WASM は 34,141,610 bytes、native binary は 55,324,696 bytes です。ビルド時間は初回の WASI が 5 分 5.890 秒、native が 2 分 44.644 秒でした。chipdb 生成を共有する変更後の再ビルドは、既存のビルドを再利用して WASI が 10.957 秒、native が 4.575 秒でした。
 
+### S5: WASI ビルドオプション比較
+
+S5 の事前登録基準では LTO を採用します。Chromium の Tang Nano 20K は 2,296.095 ms で B より 10.5% 速く、zstd -19 の合計は 11.6% 小さく、ビルド時間は 1.81 倍でした。
+B の nextpnr は upstream の `USE_IPO=ON` で ThinLTO 済みです。Yosys の O2/Os/Oz は `-DNDEBUG` を付けず、B と assert の状態をそろえました。
+Os は Node 20K で 2,048.583 ms、zstd 合計 13,235,553 bytes でしたが、Chromium では測定していません。
+詳細は [S5 WASI SDK ビルドオプション比較](docs/experiments/S5-wasi-build-options.md) を参照してください。LTO を既定ビルドに反映する変更は別 PR で行います。
+
 ### Pyodide 上の Apicula `gowin_pack`
 
 S3 では Apicula 0.35 の Python wheel を配布物に含め、Node.js の Pyodide 314.0.7 から実行します。Pyodide の lock は Python 3.14.2、micropip 0.11.1、NumPy 2.4.6（SHA-256 `a292c1f5d7d8a2208cd5e94fc467604c131cabcd2fc14fed6eefde121e7fabdf`）、msgspec 0.20.0（SHA-256 `2a4075cee8afc2c0424c63ae1a9b0655e727478df7fa2eb78f86f846fc5fb4bd`）を指定します。これらの wheel hash はビルド時に Pyodide の lock から読み、Apicula wheel の hash は `requirements-nextpnr.txt` の固定値を使います。
