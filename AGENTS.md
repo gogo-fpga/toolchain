@@ -20,7 +20,11 @@
 
 ## 3. 対応範囲
 
-- 作るのは Web 版だけです。CLI やネイティブのバイナリーは作りません。GitHub Pages にも公開しません。配布は CI の成果物と Release の zip で行います。
+- 作るのは Web 版だけです。CLI やネイティブのバイナリーは作りません。
+- 配信先は Cloudflare Pages です。公開は、人間が実機の Tang Nano で動作を確かめてから行います。エージェントはデプロイせず、Cloudflare の設定も変えません。
+- GitHub Pages は応答ヘッダー（COOP/COEP）を設定できないため使いません。
+- 配信のヘッダーは `web/_headers` に書き、`dist/serve.py` と同じにします。1 ファイルは 25 MiB 未満にします（ビルドで検査します）。
+- CI の成果物と Release の zip でも配布します。
 - 対象は Sipeed Tang Nano 1K・4K・9K・20K です。FPGA の内蔵 SRAM に構成を書き込めることを選定理由とします。ボードを増やすときは、upstream の対応、IDCODE、フラッシュの構成を公式の資料とソースで確かめてから計画します。
 - HDL は VHDL と Verilog を最初から対象にします。SystemVerilog と Verilator は将来の段階です。
 - openFPGALoader、Yosys + ABC、GHDL、nextpnr-himbaechel、Apicula、NVC、Icarus Verilog、形式検証ソルバーは、upstream のソースを WASM にビルドして使います。機能を手作業で移植しません。upstream へのパッチが避けられない場合は `patches/` に置き、理由を RESEARCH.md に記録します。
