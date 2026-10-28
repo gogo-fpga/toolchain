@@ -153,7 +153,7 @@ Yosys v0.69 から v0.70 では `alumacc -macc-only`、`optbarriers`、`flatten`
 
 ### 配信の大きさと配信先
 
-初回に読み込む資材は、ボードにより約 104〜115 MB（圧縮前）です。配信先の候補の制限を、2026-10-27 に公式の資料で確かめました。
+開発初期には初回に読み込む資材を約 104〜115 MB（圧縮前）と見積もりました。この値は当時の未計測の概算として残し、2026-10-28 に Playwright の冷たい browser context で初回ビルド・書き込み時の成功 GET 応答本文を実測しています。配信先の候補の制限については、2026-10-27 に公式資料で確認しました。
 
 | 配信先 | 1 ファイルの上限 | ヘッダーの設定 | 根拠 |
 |---|---|---|---|
@@ -167,9 +167,20 @@ Yosys v0.69 から v0.70 では `alumacc -macc-only`、`optbarriers`、`flatten`
 
 `yosys.wasm`（52,926,660 bytes）と `nextpnr-himbaechel-gowin.wasm`（34,172,028 bytes）は、圧縮しないと Cloudflare Pages の 25 MiB を超えます。Cloudflare の自動圧縮は gzip、Brotli、zstd を返せ、`application/wasm` も対象です（[Compression](https://developers.cloudflare.com/speed/optimization/content/compression/)）。ただし対象は決まった Content-Type だけで、chipdb の `.bin` と tar は入りません。zstd は Compression Rules で有効にする必要があります。2026-10-27 に応答ヘッダーを確かめたところ、Cloudflare で配信している fpga.moe は zstd を優先して要求しても br を返し、GitHub Pages で配信している muromi.moe は gzip だけを返しました。GitHub Pages はヘッダーを設定できないため、書き込み部に必要な COOP/COEP は Service Worker で付けることになります。
 
-配信先の自動圧縮に任せず、圧縮した資材を配ってブラウザーで展開する方式を [S4B](docs/experiments/S4B-compressed-assets.md) で比べました。gzip と互換の高圧縮では、libdeflate の最高レベルでも gzip -9 より約 5% 小さいだけでした。Zopfli も同じくらいの大きさで、圧縮に時間がかかります。zstd -19 は 20K の大きい 5 つの資材を 28.5 MB（gzip -9）から 19.2 MB に縮めます。Chromium 156 での展開は合計 359 ms で、gzip の `DecompressionStream`（673 ms）より速くなりました。xz -9e は zstd より 10% 小さいものの、展開に 2.2 秒かかります。50 Mbps での推定時間は gzip 5.23 秒、xz 4.98 秒、zstd 3.43 秒で、事前に決めた基準により zstd を採ります。Brotli は Chromium 156 の `DecompressionStream` で展開できないため、配信時の `Content-Encoding` にしか使えません。配信先は未定です。
+配信先の自動圧縮に任せず、圧縮した資材を配ってブラウザーで展開する方式を [S4B](docs/experiments/S4B-compressed-assets.md) で比べました。gzip と互換の高圧縮では、libdeflate の最高レベルでも gzip -9 より約 5% 小さいだけでした。Zopfli も同じくらいの大きさで、圧縮に時間がかかります。zstd -19 は 20K の大きい 5 つの資材を 28.5 MB（gzip -9）から 19.2 MB に縮めます。Chromium 156 での展開は合計 359 ms で、gzip の `DecompressionStream`（673 ms）より速くなりました。xz -9e は zstd より 10% 小さいものの、展開に 2.2 秒かかります。50 Mbps での推定時間は gzip 5.23 秒、xz 4.98 秒、zstd 3.43 秒で、事前に決めた基準により zstd を採ります。Brotli は Chromium 156 の `DecompressionStream` で展開できないため、配信時の `Content-Encoding` にしか使えません。S4B の時点では配信先は未定でしたが、後続の S4C では Cloudflare Pages を目標にします。
 
 この実装では `manifest.json` を除く `dist/synth/` の資材を zstd 形式で配信する構成にしました。manifest の各項目には展開後の `size` と `sha256` に加えて `encoding: "zstd"`、`compressed_size`、`compressed_sha256` を記録します。ビルド Worker は圧縮前後のサイズと SHA-256 を検証し、展開後のデータを Cache Storage `gogo-fpga-synth-v1` に `new URL(path + "?sha256=" + sha256, synthURL)` のキーで保存します。実際のビルドで得た圧縮サイズの合計は、共有する 3 資材と各ボードの chipdb を合わせて Tang Nano 1K が 16,003,246 bytes、4K が 16,155,020 bytes、9K が 16,164,593 bytes、20K が 16,256,883 bytes です。最大の圧縮ファイルは `yosys.wasm.zst` の 9,448,361 bytes でした。
+
+冷たい browser context で初回のビルドと fake USB 書き込みを行う Playwright 計測では、同一 origin の成功 GET 応答本文を集計しました。各ボードで 43 個の異なる要求パスがあり、合計は Tang Nano 1K が 33,408,160 bytes、4K が 33,559,934 bytes、9K が 33,569,507 bytes、20K が 33,661,797 bytes でした。内訳は次のとおりです。
+
+| ボード | 要求パス数 | synth (bytes) | pack (bytes) | その他 (bytes) | 合計 (bytes) |
+|---|---:|---:|---:|---:|---:|
+| Tang Nano 1K | 43 | 16,016,710 | 14,219,198 | 3,172,252 | 33,408,160 |
+| Tang Nano 4K | 43 | 16,168,484 | 14,219,198 | 3,172,252 | 33,559,934 |
+| Tang Nano 9K | 43 | 16,178,057 | 14,219,198 | 3,172,252 | 33,569,507 |
+| Tang Nano 20K | 43 | 16,270,347 | 14,219,198 | 3,172,252 | 33,661,797 |
+
+合計にはページ、ビルド Worker、書き込み用資材とライブラリーも含みます。分類別の内訳は synth が manifest と zstd 資材、pack が manifest・圧縮資材・raw 資材、その他が画面と書き込み資材です。pack の配信では Pyodide の WASM と lock JSON を zstd にし、その他は raw のままにします。pack も shared verified loader で検証し、展開後の資材を Cache Storage `gogo-fpga-pack-v1` に SHA-256 を含むキーで保存します。実機では未確認で、配信先の目標は Cloudflare Pages です。ユーザーによる実機確認後に公開します。計測の詳細と集計値は [S4C](docs/experiments/S4C-cold-load-bytes.md) に記録しました。デプロイは行っていません。
 
 NVC の確認元は[configure.ac](https://github.com/nickg/nvc/blob/058be4ccd39abefe3bcff455eb3964f4731a4a05/configure.ac)です。そこから確認できるのは LLVM の有効化条件と pthread、zlib、libffi、libzstd の検出です。LLVM を無効にした実行経路や WASM での動作は、まだ検証していません。
 

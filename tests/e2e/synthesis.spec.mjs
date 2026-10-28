@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { expect, test } from "@playwright/test";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { BOARDS } from "../../web/lib/boards.mjs";
 import { fsIdcode, fsIdcodeMatchesBoard } from "../../web/lib/fs-idcode.mjs";
@@ -42,10 +42,48 @@ async function storedFsDigest(page, projectName) {
   }, projectName);
 }
 
+async function captureNetworkResponses(context) {
+  const responses = [];
+  await context.route("**/*", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const response = await route.fetch();
+    const body = await response.body();
+    if (
+      request.method() === "GET" &&
+      ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname) &&
+      response.status() >= 200 &&
+      response.status() < 300
+    ) {
+      responses.push({ path: url.pathname, bytes: body.byteLength });
+    }
+    await route.fulfill({ response, body });
+  });
+  return responses;
+}
+
+function summarizeResponses(responses) {
+  const fileSizes = new Map();
+  for (const { path, bytes } of responses) {
+    fileSizes.set(path, (fileSizes.get(path) ?? 0) + bytes);
+  }
+  const files = [...fileSizes]
+    .map(([path, bytes]) => ({ path, bytes }))
+    .sort((left, right) => left.path.localeCompare(right.path));
+  return {
+    files,
+    totalBytes: files.reduce((total, file) => total + file.bytes, 0),
+  };
+}
+
 for (const board of BOARDS) {
   test(`browser build matches native .fs for ${board.id}`, async ({ page }) => {
+    const networkResponses = await captureNetworkResponses(page.context());
     await stubPageUsb(page);
     const projectName = await createProject(page, board);
+    const initialCacheNames = await page.evaluate(() => caches.keys());
+    expect(initialCacheNames).not.toContain("gogo-fpga-synth-v1");
+    expect(initialCacheNames).not.toContain("gogo-fpga-pack-v1");
     await page.evaluate(() => {
       window.__s4BuildResults = [];
       window.addEventListener("toolchain:build-complete", ({ detail }) => {
@@ -56,6 +94,7 @@ for (const board of BOARDS) {
     const expectedHash = createHash("sha256").update(expectedBytes).digest("hex");
     const expectedIdcode = fsIdcode(expectedBytes.toString("utf8"));
     assert.ok(fsIdcodeMatchesBoard(expectedIdcode, board));
+    let coldBuildResponses;
     for (let repeat = 0; repeat < 5; repeat += 1) {
       if (repeat > 0) await expect(page.locator("#program-button")).toBeEnabled();
       await page.locator("#synthesis-button").click();
@@ -71,6 +110,7 @@ for (const board of BOARDS) {
         sha256: expectedHash,
       });
       if (repeat === 0) {
+        coldBuildResponses = [...networkResponses];
         await page.locator("#bottom-tab-log").click();
         await page.screenshot({
           path: resolve(screenshots, `${board.id}-success-log.png`),
@@ -100,12 +140,45 @@ for (const board of BOARDS) {
       },
     });
     await expect(page.locator("#program-button")).toBeEnabled();
+    const flashRequestStart = networkResponses.length;
     await page.locator("#program-button").click();
     await expect(page.locator("#result-status")).toHaveText("成功", {
       timeout: 30_000,
     });
     await expect(page.locator("#program-log")).toContainText("Load SRAM");
     expect(writeWorkerRequests).toBe(1);
+    const coldLoad = summarizeResponses([
+      ...(coldBuildResponses ?? []),
+      ...networkResponses.slice(flashRequestStart),
+    ]);
+    const coldLoadPaths = new Set(coldLoad.files.map(({ path }) => path));
+    for (const path of [
+      "/build-worker.js",
+      "/pack-worker.js",
+      "/pack/pyodide/pyodide.asm.wasm.zst",
+      "/synth/yosys.wasm.zst",
+      "/openFPGALoader.mjs",
+      "/openFPGALoader.wasm",
+    ]) {
+      expect(coldLoadPaths, `missing cold-load request ${path}`).toContain(path);
+    }
+    console.log(
+      `S4_FIRST_LOAD_BYTES ${JSON.stringify({
+        board: board.id,
+        node: process.version,
+        chromium: page.context().browser().version(),
+        ...coldLoad,
+      })}`,
+    );
+    writeFileSync(
+      resolve(root, `build/s4-first-load-${board.id}.json`),
+      `${JSON.stringify({
+        board: board.id,
+        node: process.version,
+        chromium: page.context().browser().version(),
+        ...coldLoad,
+      }, null, 2)}\n`,
+    );
   });
 }
 
@@ -174,7 +247,10 @@ test("corrupted cached synthesis asset is discarded and refetched", async ({
   }, asset.sha256);
   let compressedRequests = 0;
   page.on("request", (request) => {
-    if (request.url().endsWith(".zst")) compressedRequests += 1;
+    const url = new URL(request.url());
+    if (url.pathname.startsWith("/synth/") && url.pathname.endsWith(".zst")) {
+      compressedRequests += 1;
+    }
   });
   await page.locator("#synthesis-button").click();
   await expect(page.locator("#synthesis-stage")).toHaveText("ビルド完了", {
@@ -210,6 +286,100 @@ test("cached synthesis assets survive a page reload", async ({ page }) => {
   expect(await storedFsDigest(page, projectName)).toEqual(firstResult);
   expect(firstResult.size).toBe(expectedBytes.length);
   expect(compressedRequests).toBe(0);
+});
+
+test("cached pack assets survive a page reload", async ({ page }) => {
+  const board = BOARDS[0];
+  const projectName = await createProject(page, board);
+  await page.locator("#synthesis-button").click();
+  await expect(page.locator("#synthesis-stage")).toHaveText("ビルド完了", {
+    timeout: 140_000,
+  });
+  const firstResult = await storedFsDigest(page, projectName);
+  await page.reload();
+  await expect(
+    page.locator(`#project-select option[value="${projectName}"]`),
+  ).toBeAttached();
+  await page.locator("#project-select").selectOption(projectName);
+  await expect(page.locator("#project-name")).toHaveText(projectName);
+
+  const networkResponses = await captureNetworkResponses(page.context());
+  await page.locator("#synthesis-button").click();
+  await expect(page.locator("#synthesis-stage")).toHaveText("ビルド完了", {
+    timeout: 140_000,
+  });
+  expect(await storedFsDigest(page, projectName)).toEqual(firstResult);
+  const packAssetRequests = networkResponses.filter(
+    ({ path }) =>
+      path.startsWith("/pack/") &&
+      path !== "/pack/manifest.json" &&
+      !path.endsWith(".mjs"),
+  );
+  expect(packAssetRequests).toEqual([]);
+  expect(networkResponses.some(({ path }) => path === "/pack/pyodide/pyodide.mjs")).toBe(
+    true,
+  );
+});
+
+test("corrupt compressed pack asset fails, then a corrupt cache entry is refetched", async ({
+  page,
+}) => {
+  await createProject(page, BOARDS[0]);
+  const manifest = JSON.parse(
+    readFileSync(resolve(root, "dist/pack/manifest.json"), "utf8"),
+  );
+  const asset = manifest.assets.find(
+    ({ path }) => path === "pyodide/pyodide.asm.wasm",
+  );
+  const compressed = Buffer.from(
+    readFileSync(resolve(root, "dist/pack/pyodide/pyodide.asm.wasm.zst")),
+  );
+  compressed[Math.floor(compressed.byteLength / 2)] ^= 1;
+  const compressedRoute = (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/octet-stream",
+      body: compressed,
+    });
+  await page.route(
+    "**/pack/pyodide/pyodide.asm.wasm.zst",
+    compressedRoute,
+  );
+  await page.locator("#synthesis-button").click();
+  await expect(page.locator("#synthesis-stage")).toHaveText("ビルド失敗", {
+    timeout: 30_000,
+  });
+  await expect(page.locator("#program-log")).toContainText(
+    "Pack asset compressed SHA-256 mismatch for pyodide/pyodide.asm.wasm",
+  );
+  await page.unroute(
+    "**/pack/pyodide/pyodide.asm.wasm.zst",
+    compressedRoute,
+  );
+  await page.evaluate(async (sha256) => {
+    const cache = await caches.open("gogo-fpga-pack-v1");
+    const key = new URL(
+      `pack/pyodide/pyodide.asm.wasm?sha256=${sha256}`,
+      location.href,
+    );
+    await cache.put(
+      key,
+      new Response("corrupt cached content", {
+        headers: { "Content-Type": "application/octet-stream" },
+      }),
+    );
+  }, asset.sha256);
+
+  const networkResponses = await captureNetworkResponses(page.context());
+  await page.locator("#synthesis-button").click();
+  await expect(page.locator("#synthesis-stage")).toHaveText("ビルド完了", {
+    timeout: 140_000,
+  });
+  expect(
+    networkResponses.some(
+      ({ path }) => path === "/pack/pyodide/pyodide.asm.wasm.zst",
+    ),
+  ).toBe(true);
 });
 
 test("cancelled browser build can be followed by a successful build", async ({
