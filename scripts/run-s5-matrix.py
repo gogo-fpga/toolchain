@@ -464,7 +464,8 @@ def record_default_identity(variants, build_statuses, sink):
             "B2": sha256_file(b2_artifact),
             "current": sha256_file(current),
         }
-        matched = len(set(hashes.values())) == 1
+        matched = hashes["B"] == hashes["B2"]
+        current_matches = hashes["B"] == hashes["current"]
         passed = passed and matched
         sink.write(
             run_id=f"default-identity-{tool}",
@@ -474,7 +475,10 @@ def record_default_identity(variants, build_statuses, sink):
             status="pass" if matched else "identity-mismatch",
             wasm_sha256=hashes["B"],
             identity_vs_B=str(matched).lower(),
-            details=f"sha256 B={hashes['B']} B2={hashes['B2']} current={hashes['current']}",
+            details=(
+                f"sha256 B={hashes['B']} B2={hashes['B2']} current={hashes['current']}; "
+                f"B/B2 match={matched}; current matches B={current_matches}"
+            ),
         )
     return passed
 
@@ -850,7 +854,7 @@ def main():
         help="Select a Node WASI smoke board; default: all four boards.",
     )
     parser.add_argument("--repeats", type=int, default=5)
-    parser.add_argument("--jobs", type=int, default=2)
+    parser.add_argument("--jobs", type=int, default=10)
     parser.add_argument("--output-csv", type=Path)
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--reuse-builds", action="store_true")

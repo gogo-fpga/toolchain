@@ -48,6 +48,10 @@ if [ "$checked_out_commit" != "$yosys_commit" ]; then
   printf 'Yosys pin mismatch: expected %s, found %s\n' "$yosys_commit" "$checked_out_commit" >&2
   exit 1
 fi
+if [ -z "${SOURCE_DATE_EPOCH:-}" ]; then
+  SOURCE_DATE_EPOCH=$(git -C vendor/yosys log -1 --format=%ct)
+fi
+export SOURCE_DATE_EPOCH
 
 for required_path in \
   vendor/yosys/abc/CMakeLists.txt \
