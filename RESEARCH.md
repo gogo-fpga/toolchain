@@ -151,6 +151,24 @@ Yosys v0.69 から v0.70 では `alumacc -macc-only`、`optbarriers`、`flatten`
 
 `gzip` は `DecompressionStream` で処理し、`zstd` と `xz` は WASI reactor の decoder を使います。decoder は `dist/lib/decoders/` に配置しますが、この段階では既存の資材取得経路を変更しません。
 
+### 配信の大きさと配信先
+
+初回に読み込む資材は、ボードにより約 104〜115 MB（圧縮前）です。配信先の候補の制限を、2026-10-27 に公式の資料で確かめました。
+
+| 配信先 | 1 ファイルの上限 | ヘッダーの設定 | 根拠 |
+|---|---|---|---|
+| Cloudflare Pages | 25 MiB（Free は 20,000 ファイル） | `_headers` で可 | [Limits](https://developers.cloudflare.com/pages/platform/limits/) |
+| Cloudflare Workers Static Assets | 25 MiB | Worker で可 | [Limits](https://developers.cloudflare.com/workers/platform/limits/) |
+| Cloudflare R2 | 5 TiB（`r2.dev` は試験用で、本番はカスタムドメイン） | Transform Rules など | [Limits](https://developers.cloudflare.com/r2/platform/limits/) |
+| GitHub Pages | 資料に記載なし。サイト全体は 1 GB、帯域は月 100 GB（目安） | 不可 | [GitHub Pages limits](https://docs.github.com/en/pages/getting-started-with-github-pages/github-pages-limits) |
+| Vercel | 静的ファイルのアップロード合計が Hobby 100 MB、Pro 1 GB | `vercel.json` で可 | [Limits](https://vercel.com/docs/limits) |
+| Firebase Hosting | 2 GB | `firebase.json` で可 | [FAQ](https://firebase.google.com/docs/hosting/faq-and-troubleshooting) |
+| Netlify | 公式資料に記載なし（サポートの回答では 10 MB 以下を推奨） | `_headers` で可 | 未確認 |
+
+`yosys.wasm`（52,926,660 bytes）と `nextpnr-himbaechel-gowin.wasm`（34,172,028 bytes）は、圧縮しないと Cloudflare Pages の 25 MiB を超えます。Cloudflare の自動圧縮は gzip、Brotli、zstd を返せ、`application/wasm` も対象です（[Compression](https://developers.cloudflare.com/speed/optimization/content/compression/)）。ただし対象は決まった Content-Type だけで、chipdb の `.bin` と tar は入りません。zstd は Compression Rules で有効にする必要があります。2026-10-27 に応答ヘッダーを確かめたところ、Cloudflare で配信している fpga.moe は zstd を優先して要求しても br を返し、GitHub Pages で配信している muromi.moe は gzip だけを返しました。GitHub Pages はヘッダーを設定できないため、書き込み部に必要な COOP/COEP は Service Worker で付けることになります。
+
+配信先の自動圧縮に任せず、圧縮した資材を配ってブラウザーで展開する方式を [S4B](docs/experiments/S4B-compressed-assets.md) で比べました。gzip と互換の高圧縮では、libdeflate の最高レベルでも gzip -9 より約 5% 小さいだけでした。Zopfli も同じくらいの大きさで、圧縮に時間がかかります。zstd -19 は 20K の大きい 5 つの資材を 28.5 MB（gzip -9）から 19.2 MB に縮めます。Chromium 156 での展開は合計 359 ms で、gzip の `DecompressionStream`（673 ms）より速くなりました。xz -9e は zstd より 10% 小さいものの、展開に 2.2 秒かかります。50 Mbps での推定時間は gzip 5.23 秒、xz 4.98 秒、zstd 3.43 秒で、事前に決めた基準により zstd を採ります。Brotli は Chromium 156 の `DecompressionStream` で展開できないため、配信時の `Content-Encoding` にしか使えません。配信先は未定です。
+
 NVC の確認元は[configure.ac](https://github.com/nickg/nvc/blob/058be4ccd39abefe3bcff455eb3964f4731a4a05/configure.ac)です。そこから確認できるのは LLVM の有効化条件と pthread、zlib、libffi、libzstd の検出です。LLVM を無効にした実行経路や WASM での動作は、まだ検証していません。
 
 ## 4. Emscripten のオプション

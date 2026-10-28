@@ -105,6 +105,8 @@ node --test tests/synth/*.test.mjs       # WASM とネイティブの合成結�
 scripts/build-pnr-wasm.sh                # nextpnr と Gowin chipdb を WASI SDK でビルドする
 scripts/build-pnr-wasm.sh --native       # nextpnr のネイティブ参照版をビルドする
 scripts/build-decoders.sh                # zstd と xz の decoder を WASI SDK でビルドする
+sh scripts/prepare-compressed-assets.sh dist # 圧縮比較用資材を dist/bench/ に作る
+node scripts/bench-decompress.mjs --base-url http://127.0.0.1:8000 --repeats 5 --out build/S4B.csv # Chromium で圧縮資材の展開時間を測る
 node --test tests/synth/nextpnr.test.mjs # nextpnr の WASI/native 結果と負の対照を検証する
 node --test tests/synth/wasi-p1.test.mjs # WASI Preview 1 shim と nextpnr/Yosys の一致を検証する
 scripts/build-pack-assets.sh             # Pyodide、Apicula、NumPy、msgspec を検証して build/pack/ に配置する
