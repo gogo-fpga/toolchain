@@ -9,6 +9,9 @@ const baseURL = `http://127.0.0.1:${playwrightPort}`;
 export default defineConfig({
   testDir: "./tests/e2e",
   globalSetup: "./tests/e2e/synthesis-setup.mjs",
+  ...(process.env.S5_PLAYWRIGHT_OUTPUT_DIR
+    ? { outputDir: process.env.S5_PLAYWRIGHT_OUTPUT_DIR }
+    : {}),
   timeout: 150_000,
   expect: {
     timeout: 30_000,

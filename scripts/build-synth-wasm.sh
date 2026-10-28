@@ -65,7 +65,6 @@ done
 build_dir=
 start_time=$(date +%s)
 if [ "$mode" = wasi ]; then
-  cmake_binary=build/wasi/yosys/yosys
   for tool in curl tar; do
     if ! command -v "$tool" >/dev/null 2>&1; then
       printf 'Required command not found: %s\n' "$tool" >&2
@@ -111,14 +110,42 @@ EOF
     printf 'WASI SDK installation is incomplete: %s\n' "$sdk_dir" >&2
     exit 1
   fi
-  build_dir=build/wasi/yosys
+  build_dir=${WASI_BUILD_DIR:-build/wasi/yosys}
+  case "$build_dir" in
+    /*)
+      printf 'WASI_BUILD_DIR must be relative to the repository root: %s\n' "$build_dir" >&2
+      exit 1
+      ;;
+  esac
+  cmake_binary="$build_dir/yosys"
   prefix_flags="-ffile-prefix-map=$root=/src -ffile-prefix-map=$root/$build_dir=/build -ffile-prefix-map=$root/$sdk_dir=/wasi-sdk"
-  cmake -S vendor/yosys -B "$build_dir" \
+  c_flags=$prefix_flags
+  cxx_flags=$prefix_flags
+  linker_flags="-Wl,-z,stack-size=8388608"
+  if [ -n "${WASI_EXTRA_CFLAGS:-}" ]; then
+    c_flags="$c_flags $WASI_EXTRA_CFLAGS"
+  fi
+  if [ -n "${WASI_EXTRA_CXXFLAGS:-}" ]; then
+    cxx_flags="$cxx_flags $WASI_EXTRA_CXXFLAGS"
+  fi
+  if [ -n "${WASI_EXTRA_LDFLAGS:-}" ]; then
+    linker_flags="$linker_flags $WASI_EXTRA_LDFLAGS"
+  fi
+  run_cmake() {
+    if [ -n "${WASI_OPT_FLAGS:-}" ]; then
+      cmake "$@" \
+        -DCMAKE_PROJECT_INCLUDE="$root/scripts/s5-wasi-opt-flags.cmake" \
+        -DWASI_OPT_FLAGS="$WASI_OPT_FLAGS"
+    else
+      cmake "$@"
+    fi
+  }
+  run_cmake -S vendor/yosys -B "$build_dir" \
     -DCMAKE_TOOLCHAIN_FILE="$toolchain_file" \
     -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_C_FLAGS="$prefix_flags" \
-    -DCMAKE_CXX_FLAGS="$prefix_flags" \
-    -DCMAKE_EXE_LINKER_FLAGS="-Wl,-z,stack-size=8388608" \
+    -DCMAKE_C_FLAGS="$c_flags" \
+    -DCMAKE_CXX_FLAGS="$cxx_flags" \
+    -DCMAKE_EXE_LINKER_FLAGS="$linker_flags" \
     -DYOSYS_WITHOUT_SLANG=ON \
     -DYOSYS_WITHOUT_TCL=ON \
     -DYOSYS_WITHOUT_READLINE=ON \
