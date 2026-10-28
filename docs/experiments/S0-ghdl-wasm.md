@@ -85,11 +85,14 @@ build script は native GHDL の library tree を staging copy に複製し、12
 
 全て GHDL 6.0.0 を使った。v5.0.1 への切り替えは行っていない。
 
-| 試行 | 失敗内容 | 記録 |
-|---|---|---|
-| 1 | v5.0.1 向け dynamic table patch が v6 の `dyn_htables.ads` に適用できず、`Hunk #1 FAILED at 71.` | `build/ghdl-wasm-v6-attempt1-build.log` |
-| 2 | 同じ patch mismatch。`dyn_htables.ads` の hunk が失敗 | `build/ghdl-wasm-v6-attempt2-build.log` |
-| 3 | AdaWebPack tree に `llvm-ar` がなく、archive step が失敗。WASI SDK の `llvm-ar` に変更 | `build/ghdl-wasm-v6-attempt3-build.log` |
-| v6 full frontend | `verilog-allocates.adb` compile 中に GNAT LLVM assertion failure。VHDL synthesis に不要な Verilog frontend を build copy から外した | `build/ghdl-wasm-work/ghdl-browser/build/ghdl-wasm-full/gprbuild-gnatd-n.log` |
-| runtime analysis | AdaWebPack calendar が 1970 年を返し、GHDL の `Filesystem.Year_Range` 2000..2099 に反して `Constraint_Error` (`filesystem.adb:93`) | `build/ghdl-wasm/runtime-analysis-attempt1.log` |
-| 初回 A/A archive | `.cf` catalog の wall-clock timestamp が fresh roots で異なり、archive hash が不一致。timestamp 正規化を追加して解消 | `build/ghdl-wasm-aa1/ghdl-wasm/build.log`, `build/ghdl-wasm-aa2/ghdl-wasm/build.log` |
+| GHDL | 試行 | 失敗内容（抜粋） | 記録 |
+|---|---|---|---|
+| 6.0.0 | v6 attempt 1 | `Hunk #1 FAILED at 71.` | `build/ghdl-wasm-v6-attempt1-build.log` |
+| 6.0.0 | v6 attempt 2 | `Hunk #1 FAILED at 71.` | `build/ghdl-wasm-v6-attempt2-build.log` |
+| 6.0.0 | v6 attempt 3 | `env: '.../adawebpack/bin/llvm-ar': No such file or directory` | `build/ghdl-wasm-v6-attempt3-build.log` |
+| 6.0.0 | full Verilog frontend | `dyn_htables.ads:75:07: error: unmatched actual "Table_Initial"`; `Assert_Failure predicate failed at gnatllvm-glvalue.adb:84` while compiling `verilog-allocates.adb` | `build/ghdl-wasm-work/ghdl-browser/build/ghdl-wasm-full/gprbuild-gnatd-n.log` |
+| 6.0.0 | runtime analysis | `error: unreachable`; `Predefined exception raised at filesystem.adb:93` | `build/ghdl-wasm/runtime-analysis-attempt1.log` |
+| 6.0.0 | 初回 A/A archive | SHA-256 が一致せず: main `163154f1…`, aa1 `e20bba6f…`, aa2 `4cde6d25…` | `build/ghdl-wasm-aa-initial-mismatch.log` |
+| 6.0.0 | 手動 archive 再梱包 | timestamp `20260308024740.000` での hash は不一致。manifest の値 `20260307174740.000` に合わせて解消 | `build/ghdl-wasm-aa-manual-repack-attempt.log` |
+
+attempt 1/2 は v5.0.1 向け dynamic table patch を v6 の `dyn_htables.ads` に適用した失敗である。full frontend は default flags、`-O0`、`-O0 -gnatd.n` の各条件で再現し、VHDL synthesis に不要な Verilog frontend を build copy から外して解消した。attempt 3 は WASI SDK の `llvm-ar` に切り替えて解消した。runtime failure は AdaWebPack calendar stub が 1970 年を返し、GHDL の `Filesystem.Year_Range` 2000..2099 に反したためで、stub を展開コピー上で固定年に変更した。初回 archive の差は `.cf` catalog の wall-clock timestamp で、staging copy の正規化により解消した。手動再梱包の誤った timestamp と修正後の manifest 値も記録した。
