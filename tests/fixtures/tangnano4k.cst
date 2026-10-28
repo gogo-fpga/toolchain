@@ -1,5 +1,5 @@
-// Clock and red LED pins from YosysHQ/apicula examples/tangnano4k.cst.
+// Clock and LED pins from sipeed/TangNano-4K-example@317743fd94e22e5ff053dad86359a3561e5a2181 led_test/project/src/led_test.cst, the same source as web/lib/templates.mjs.
 IO_LOC "clk" 45;
-IO_PORT "clk" IO_TYPE=LVCMOS33 PULL_MODE=UP;
-IO_LOC "led" 34;
-IO_PORT "led" IO_TYPE=LVCMOS25;
+IO_PORT "clk" PULL_MODE=UP;
+IO_LOC "led" 10;
+IO_PORT "led" PULL_MODE=NONE DRIVE=8;
