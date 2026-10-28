@@ -30,3 +30,11 @@
 	path = vendor/nextpnr
 	url = https://github.com/YosysHQ/nextpnr.git
 	shallow = true
+[submodule "vendor/zstd"]
+	path = vendor/zstd
+	url = https://github.com/facebook/zstd.git
+	shallow = true
+[submodule "vendor/xz-embedded"]
+	path = vendor/xz-embedded
+	url = https://github.com/tukaani-project/xz-embedded.git
+	shallow = true

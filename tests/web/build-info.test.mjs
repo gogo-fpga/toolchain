@@ -22,6 +22,11 @@ test("build-web rejects missing or tampered build metadata", async (t) => {
   mkdirSync(testArtifacts);
 
   try {
+    cpSync(
+      resolve(buildRoot, "wasi/decoders"),
+      resolve(temporaryRoot, "wasi/decoders"),
+      { recursive: true },
+    );
     for (const name of [
       "openFPGALoader.mjs",
       "openFPGALoader.wasm",

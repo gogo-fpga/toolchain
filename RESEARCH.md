@@ -36,6 +36,8 @@ vendor submodule の commit は次のとおりです。pin checker がこの表�
 | libusb | v1.0.30 | `87a55632db62c9bdc58cd31d3ccfa673f1bb017f` | `https://github.com/libusb/libusb.git` |
 | libftdi | 1.6rc1 | `92d657bcb543a9622947d984d4a8e725fb680e8c` | `git://developer.intra2net.com/libftdi` |
 | zlib | v1.3.2 | `da607da739fa6047df13e66a2af6b8bec7c2a498` | `https://github.com/madler/zlib.git` |
+| zstd | v1.5.7 | `f8745da6ff1ad1e7bab384bd1f9d742439278e99` | `https://github.com/facebook/zstd.git` |
+| xz-embedded | v20240322 | `62d5603b5114c5aa8bb5f6bb461efbe0e3b51891` | `https://github.com/tukaani-project/xz-embedded.git` |
 | emsdk | 6.0.13 | `35659964bc2762fffec0d257997fb61475f765b7` | `https://github.com/emscripten-core/emsdk.git` |
 | yomiyasu | 未確認 | `552c12c472ddfb79e2ee7a15219847782686a945` | `https://github.com/nanaism/yomiyasu.git` |
 | yosys | v0.70 | `28ba3cb926fe376fa05ebfc1b921747d011d4557` | `https://github.com/YosysHQ/yosys.git` |
@@ -140,6 +142,14 @@ Playwright の preflight は `build/synth` と `dist/synth` の相対 file set �
 存在しない pin の負例は native と WASI の両方で有用なエラーと非ゼロ終了を返し、chipdb を欠落させた WASI 実行も非ゼロで終了しました。
 
 Yosys v0.69 から v0.70 では `alumacc -macc-only`、`optbarriers`、`flatten` と `prep` の `-barriers`、`mcm`、`rmports -purge`、`ltp -select`、色付きログが追加され、`read_xaiger2` が削除されました。`vendor/yosys/CHANGELOG` の該当節を確認しました。今回の `read_verilog` と `synth_gowin` を使う経路ではどの変更も必要ないため、追加のオプションやパスは採用しません。WASI SDK 34 の release notes では CMake toolchain の調整、wasi-libc の更新、WASI Preview 3 対応の作業が挙げられています。Preview 1 の同期実行を使う本段階では追加の対応を行いません。
+
+### 圧縮した WASM 資材の復号
+
+`zstd` v1.5.7 の `CHANGELOG` では圧縮 API の追加、圧縮速度の改善、32-bit 圧縮処理の修正などを確認しました。今回使うのは standalone decoder の `ZSTD_decompress` だけで、複数 frame を連結した入力も扱えます。生成 C はビルド時に `combine.py` で作り、BSD-3-Clause の条件を選びます。
+
+`xz-embedded` v20240322 では、v20240124 以降の decoder、CRC、build 設定の変更と、0BSD への切り替えを確認しました。採用する `linux/lib/xz/` の CRC32、CRC64、stream、LZMA2 decoder は 0BSD です。CRC64 を有効にし、`XZ_SINGLE` で一つの stream を復号します。BCJ decoder は使いません。変更履歴は [v20240124 から v20240322 の比較](https://github.com/tukaani-project/xz-embedded/compare/v20240124...v20240322)を参照してください。
+
+`gzip` は `DecompressionStream` で処理し、`zstd` と `xz` は WASI reactor の decoder を使います。decoder は `dist/lib/decoders/` に配置しますが、この段階では既存の資材取得経路を変更しません。
 
 NVC の確認元は[configure.ac](https://github.com/nickg/nvc/blob/058be4ccd39abefe3bcff455eb3964f4731a4a05/configure.ac)です。そこから確認できるのは LLVM の有効化条件と pthread、zlib、libffi、libzstd の検出です。LLVM を無効にした実行経路や WASM での動作は、まだ検証していません。
 
