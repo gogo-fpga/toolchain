@@ -1,0 +1,15 @@
+# Adapted from ghdl-browser/patches/dyn_htables.patch for GHDL 6.0.0.
+# GHDL and ghdl-browser source is GPL-2.0; this build patch is GPL-2.0-or-later.
+# SPDX-License-Identifier: GPL-2.0-or-later
+#
+--- dyn_htables.ads
++++ dyn_htables.ads
+@@ -74,2 +74,1 @@
+-      Table_Low_Bound => No_Index + 1,
+-      Table_Initial => 128);
++      Table_Low_Bound => No_Index + 1);
+--- dyn_htables.adb
++++ dyn_htables.adb
+@@ -27,1 +27,1 @@
+-      Wrapper_Tables.Init (HT.Els);
++      Wrapper_Tables.Init (HT.Els, 128);

@@ -33,10 +33,11 @@ TAGGED_SUBMODULES = (
     "emsdk",
     "yosys",
     "nextpnr",
+    "ghdl",
     "zstd",
     "xz-embedded",
 )
-BRANCH_SUBMODULES = ("libftdi",)
+BRANCH_SUBMODULES = ("libftdi", "ghdl-browser")
 ARCHIVE_TAG_SOURCES = {
     "boost": "https://github.com/boostorg/boost.git",
     "eigen": "https://gitlab.com/libeigen/eigen.git",
