@@ -99,7 +99,12 @@ function wheelFilename(url) {
   return filename;
 }
 
-async function initializeRuntime(loadPyodide, indexURL, wheelURL) {
+async function initializeRuntime(
+  loadPyodide,
+  indexURL,
+  wheelURL,
+  lockFileContents,
+) {
   const localWheelURL = normalizeWheelURL(wheelURL);
   const wheel = await readWheel(localWheelURL);
   if (wheel.byteLength === 0) {
@@ -114,11 +119,16 @@ async function initializeRuntime(loadPyodide, indexURL, wheelURL) {
   const packageBaseUrl = builtins
     ? `${builtins.path.resolve(pyodideIndexURL, "../wheels")}${builtins.path.sep}`
     : new URL("../wheels/", pyodideIndexURL).href;
-  const pyodide = await loadPyodide({
+  const loadOptions = {
     indexURL: pyodideIndexURL,
-    lockFileURL,
     packageBaseUrl,
-  });
+  };
+  if (lockFileContents === undefined) {
+    loadOptions.lockFileURL = lockFileURL;
+  } else {
+    loadOptions.lockFileContents = lockFileContents;
+  }
+  const pyodide = await loadPyodide(loadOptions);
   await pyodide.loadPackage(["micropip", "numpy", "msgspec"]);
   pyodide.FS.mkdir("/work");
   await pyodide.runPythonAsync(
@@ -128,16 +138,23 @@ async function initializeRuntime(loadPyodide, indexURL, wheelURL) {
   return pyodide;
 }
 
-function getRuntime(loadPyodide, indexURL, wheelURL) {
+function getRuntime(loadPyodide, indexURL, wheelURL, lockFileContents) {
   let runtimes = runtimeCache.get(loadPyodide);
   if (!runtimes) {
     runtimes = new Map();
     runtimeCache.set(loadPyodide, runtimes);
   }
-  const key = `${indexURL}\u0000${wheelURL}`;
+  const lockKey =
+    lockFileContents === undefined ? "" : JSON.stringify(lockFileContents);
+  const key = `${indexURL}\u0000${wheelURL}\u0000${lockKey}`;
   let runtime = runtimes.get(key);
   if (!runtime) {
-    runtime = initializeRuntime(loadPyodide, indexURL, wheelURL);
+    runtime = initializeRuntime(
+      loadPyodide,
+      indexURL,
+      wheelURL,
+      lockFileContents,
+    );
     runtimes.set(key, runtime);
     runtime.catch(() => runtimes.delete(key));
   }
@@ -186,17 +203,23 @@ function packError(message, result = {}) {
   return error;
 }
 
-export async function prepareGowinPackRuntime({ loadPyodide, indexURL, apyculaWheelURL }) {
+export async function prepareGowinPackRuntime({
+  loadPyodide,
+  indexURL,
+  apyculaWheelURL,
+  lockFileContents,
+}) {
   if (typeof loadPyodide !== "function") {
     throw new TypeError("loadPyodide must be a function");
   }
-  await getRuntime(loadPyodide, indexURL, apyculaWheelURL);
+  await getRuntime(loadPyodide, indexURL, apyculaWheelURL, lockFileContents);
 }
 
 export async function runGowinPack({
   loadPyodide,
   indexURL,
   apyculaWheelURL,
+  lockFileContents,
   netlistJson,
   device,
   extraArgs = [],
@@ -214,7 +237,12 @@ export async function runGowinPack({
     throw new TypeError("extraArgs must be an array of strings");
   }
 
-  const pyodide = await getRuntime(loadPyodide, indexURL, apyculaWheelURL);
+  const pyodide = await getRuntime(
+    loadPyodide,
+    indexURL,
+    apyculaWheelURL,
+    lockFileContents,
+  );
   const input =
     typeof netlistJson === "string" ? new TextEncoder().encode(netlistJson) : netlistJson;
   const outputPath = "/work/top.fs";

@@ -33,38 +33,92 @@ function assertPackMatchesBuild() {
   const distRoot = resolve(repoRoot, "dist");
   const distPackRoot = resolve(distRoot, "pack");
   const buildPackPaths = new Set(
-    listFiles(buildPackRoot).map((path) => relative(buildPackRoot, path)),
+    listFiles(buildPackRoot).map((path) =>
+      relative(buildPackRoot, path).replaceAll("\\", "/"),
+    ),
   );
   const distPackPaths = new Set(
-    listFiles(distPackRoot).map((path) => relative(distPackRoot, path)),
+    listFiles(distPackRoot).map((path) =>
+      relative(distPackRoot, path).replaceAll("\\", "/"),
+    ),
   );
+  const manifestPath = resolve(distPackRoot, "manifest.json");
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  if (manifest.format_version !== 1 || !Array.isArray(manifest.assets)) {
+    throw new Error("Playwright preflight: invalid dist/pack/manifest.json");
+  }
+  const manifestPaths = manifest.assets.map((asset) => asset.path);
+  if (
+    manifestPaths.length !== buildPackPaths.size ||
+    new Set(manifestPaths).size !== manifestPaths.length ||
+    manifestPaths.some((path) => !buildPackPaths.has(path))
+  ) {
+    throw new Error(
+      "Playwright preflight: dist/pack/manifest.json does not match build/pack",
+    );
+  }
+  const expectedDistPaths = new Set(["manifest.json"]);
+  for (const asset of manifest.assets) {
+    const compressed =
+      asset.path === "pyodide/pyodide.asm.wasm" ||
+      asset.path === "pyodide/pyodide-lock.json";
+    const source = readFileSync(resolve(buildPackRoot, asset.path));
+    if (
+      source.byteLength !== asset.size ||
+      sha256(source) !== asset.sha256
+    ) {
+      throw new Error(
+        `Playwright preflight: build/pack/${asset.path} differs from its manifest`,
+      );
+    }
+    if (compressed) {
+      const compressedPath = `${asset.path}.zst`;
+      const compressedBytes = readFileSync(resolve(distPackRoot, compressedPath));
+      if (
+        asset.encoding !== "zstd" ||
+        !Number.isSafeInteger(asset.compressed_size) ||
+        !/^[0-9a-f]{64}$/.test(asset.compressed_sha256) ||
+        compressedBytes.byteLength !== asset.compressed_size ||
+        sha256(compressedBytes) !== asset.compressed_sha256
+      ) {
+        throw new Error(
+          `Playwright preflight: dist/pack/${compressedPath} differs from its manifest`,
+        );
+      }
+      expectedDistPaths.add(compressedPath);
+    } else {
+      if (
+        asset.encoding !== undefined ||
+        asset.compressed_size !== undefined ||
+        asset.compressed_sha256 !== undefined
+      ) {
+        throw new Error(
+          `Playwright preflight: raw pack asset has compression metadata: ${asset.path}`,
+        );
+      }
+      const distPath = resolve(distPackRoot, asset.path);
+      if (!source.equals(readFileSync(distPath))) {
+        throw new Error(
+          `Playwright preflight: dist/pack/${asset.path} differs from build/pack/${asset.path}`,
+        );
+      }
+      expectedDistPaths.add(asset.path);
+    }
+  }
 
   for (const path of distPackPaths) {
-    if (!buildPackPaths.has(path)) {
+    if (!expectedDistPaths.has(path)) {
       throw new Error(`Playwright preflight: unexpected dist/pack/${path}`);
     }
   }
 
-  for (const path of buildPackPaths) {
+  for (const path of expectedDistPaths) {
     if (!distPackPaths.has(path)) {
       throw new Error(`Playwright preflight: dist/pack/${path} is missing`);
     }
-    if (
-      !readFileSync(resolve(buildPackRoot, path)).equals(
-        readFileSync(resolve(distPackRoot, path)),
-      )
-    ) {
-      throw new Error(
-        `Playwright preflight: dist/pack/${path} differs from build/pack/${path}`,
-      );
-    }
   }
 
-  return new Set(
-    [...distPackPaths].map((path) =>
-      relative(distRoot, resolve(distPackRoot, path)),
-    ),
-  );
+  return new Set([...distPackPaths].map((path) => `pack/${path}`));
 }
 
 function assertSynthMatchesBuild() {
@@ -241,6 +295,13 @@ async function openSupportedPage(page) {
 
 test("built distribution matches sources and the build-root WASM", () => {
   assertDistributionMatchesSources();
+  assert.equal(
+    readFileSync(resolve(repoRoot, "web/_headers"), "utf8"),
+    "/*\n" +
+      "  Cross-Origin-Opener-Policy: same-origin\n" +
+      "  Cross-Origin-Embedder-Policy: require-corp\n" +
+      "  Cross-Origin-Resource-Policy: same-origin\n",
+  );
 
   const packRoot = resolve(repoRoot, "dist/pack");
   const extraPath = resolve(packRoot, `.preflight-extra-${randomUUID()}`);
@@ -254,7 +315,7 @@ test("built distribution matches sources and the build-root WASM", () => {
     rmSync(extraPath, { force: true });
   }
 
-  const lockPath = resolve(packRoot, "pyodide/pyodide-lock.json");
+  const lockPath = resolve(packRoot, "pyodide/pyodide-lock.json.zst");
   const originalLock = readFileSync(lockPath);
   const alteredLock = Buffer.from(originalLock);
   alteredLock[0] ^= 1;
@@ -262,7 +323,7 @@ test("built distribution matches sources and the build-root WASM", () => {
     writeFileSync(lockPath, alteredLock);
     assert.throws(
       () => assertDistributionMatchesSources(),
-      /dist\/pack\/pyodide\/pyodide-lock\.json differs from build\/pack\/pyodide\/pyodide-lock\.json/,
+      /dist\/pack\/pyodide\/pyodide-lock\.json\.zst differs from its manifest/,
     );
   } finally {
     writeFileSync(lockPath, originalLock);

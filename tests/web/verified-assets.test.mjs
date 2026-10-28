@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { verifyManifest } from "../../web/lib/synth-manifest.mjs";
+import {
+  createVerifiedAssetLoader,
+  verifyManifest,
+} from "../../web/lib/verified-assets.mjs";
 
 const digest = "a".repeat(64);
 const legacyAsset = {
@@ -70,5 +73,32 @@ test("manifest validation rejects unsafe and repeated paths", () => {
         assets: [legacyAsset, legacyAsset],
       }),
     /Synthesis asset manifest repeats yosys\.wasm/,
+  );
+});
+
+test("manifest validation supports pack-specific error labels", () => {
+  assert.throws(
+    () => verifyManifest({ format_version: 2, assets: [] }, "Pack asset"),
+    /Pack asset manifest is invalid/,
+  );
+  assert.throws(
+    () =>
+      verifyManifest(
+        { format_version: 1, assets: [{ ...legacyAsset, encoding: "gzip" }] },
+        "Pack asset",
+      ),
+    /Pack asset manifest contains an invalid entry/,
+  );
+});
+
+test("verified asset loader derives cache keys from its base URL", () => {
+  const loader = createVerifiedAssetLoader({
+    baseURL: new URL("https://example.test/pack/"),
+    cacheName: "gogo-fpga-pack-v1",
+    label: "Pack asset",
+  });
+  assert.equal(
+    loader.cacheKey("pyodide/pyodide.asm.wasm", digest).href,
+    `https://example.test/pack/pyodide/pyodide.asm.wasm?sha256=${digest}`,
   );
 });
