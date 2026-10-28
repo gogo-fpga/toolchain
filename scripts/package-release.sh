@@ -25,6 +25,8 @@ submodules=(
   vendor/zlib
   vendor/yosys
   vendor/nextpnr
+  vendor/zstd
+  vendor/xz-embedded
 )
 yosys_nested_submodules=(
   abc
@@ -50,6 +52,8 @@ required_files=(
   "$root/dist/synth/manifest.json"
   "$root/dist/synth/yosys.wasm"
   "$root/dist/synth/nextpnr-himbaechel-gowin.wasm"
+  "$root/dist/lib/decoders/zstd-decoder.wasm"
+  "$root/dist/lib/decoders/xz-decoder.wasm"
   "$root/dist/synth/yosys-share.tar"
   "$root/dist/synth/chipdb/chipdb-GW1NZ-1.bin"
   "$root/dist/synth/chipdb/chipdb-GW1NS-4.bin"
@@ -121,6 +125,8 @@ license_copies=(
   "$root/vendor/libusb/COPYING:libusb-COPYING"
   "$root/vendor/libftdi/COPYING.LIB:libftdi-COPYING.LIB"
   "$root/vendor/zlib/LICENSE:zlib-LICENSE"
+  "$root/vendor/zstd/LICENSE:zstd-LICENSE"
+  "$root/vendor/xz-embedded/COPYING:xz-embedded-COPYING"
   "$root/vendor/yosys/COPYING:yosys-COPYING"
   "$root/vendor/yosys/abc/copyright.txt:abc-copyright.txt"
   "$root/vendor/yosys/libs/cxxopts/LICENSE:cxxopts-LICENSE"
@@ -225,31 +231,16 @@ for path in "${yosys_nested_submodules[@]}"; do
   fi
 done
 
-python3 - "$root" "$source_root/RELEASE-SOURCE.json" "$version" "$commit" \
-  "$source_date_epoch" "$emsdk_version" "${submodules[@]}" <<'PY'
+python3 - "$source_root/RELEASE-SOURCE.json" "$version" "$commit" \
+  "$source_date_epoch" "$emsdk_version" "$root/dist/build-info.json" <<'PY'
 import json
-import subprocess
 import sys
 from pathlib import Path
 
-root = Path(sys.argv[1])
-output = Path(sys.argv[2])
-version, commit, source_date_epoch, emsdk_version = sys.argv[3:7]
-submodules = sys.argv[7:]
-submodule_shas = {}
-for path in submodules:
-    result = subprocess.run(
-        ["git", "-C", str(root), "ls-tree", "HEAD", "--", path],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    line = result.stdout.strip()
-    metadata, actual_path = line.split("\t", 1)
-    mode, object_type, sha = metadata.split()
-    if mode != "160000" or object_type != "commit" or actual_path != path:
-        raise SystemExit(f"Expected a gitlink for {path}")
-    submodule_shas[path] = sha
+output = Path(sys.argv[1])
+version, commit, source_date_epoch, emsdk_version, build_info_path = sys.argv[2:]
+build_info = json.loads(Path(build_info_path).read_text(encoding="utf-8"))
+submodule_shas = build_info["submodule_shas"]
 
 data = {
     "version": version,
@@ -306,6 +297,8 @@ labels = {
     "vendor/yomiyasu": "yomiyasu",
     "vendor/yosys": "Yosys",
     "vendor/nextpnr": "nextpnr",
+    "vendor/zstd": "zstd",
+    "vendor/xz-embedded": "xz-embedded",
 }
 rows = []
 for path in submodules:

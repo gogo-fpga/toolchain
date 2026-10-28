@@ -279,6 +279,19 @@ class CheckPinsTests(unittest.TestCase):
         self.assertEqual("6.0.13", check_pins.latest_stable_tag(tags))
         self.assertGreater(check_pins.parse_version("6.0.13"), check_pins.parse_version("6.0.9"))
 
+    def test_compact_and_dashed_date_tags_are_ordered_as_dates(self):
+        tags = "\n".join(
+            (
+                "a" * 40 + "\trefs/tags/v20240124",
+                "b" * 40 + "\trefs/tags/v20240322",
+                "c" * 40 + "\trefs/tags/v2024-04-05",
+                "d" * 40 + "\trefs/tags/v2024-12-30",
+            )
+        )
+        self.assertEqual("v2024-12-30", check_pins.latest_stable_tag(tags))
+        self.assertEqual("v20240322", check_pins.fixed_stable_tag("b" * 40, tags))
+        self.assertEqual("更新あり", check_pins.compare_status("v20240322", "v2024-12-30"))
+
     def prepare_upstream_fixture(self, libftdi_branch=None):
         names = (*check_pins.TAGGED_SUBMODULES, *check_pins.BRANCH_SUBMODULES)
         self.pinned = {
@@ -408,6 +421,14 @@ class CheckPinsTests(unittest.TestCase):
         self.assertEqual(
             ("nextpnr", "v1.0.0", "v1.0.0", "最新"),
             next(row for row in rows if row[0] == "nextpnr"),
+        )
+        self.assertEqual(
+            ("zstd", "v1.0.0", "v1.0.0", "最新"),
+            next(row for row in rows if row[0] == "zstd"),
+        )
+        self.assertEqual(
+            ("xz-embedded", "v1.0.0", "v1.0.0", "最新"),
+            next(row for row in rows if row[0] == "xz-embedded"),
         )
         self.assertEqual(
             ("boost archive", "1.92.0 (" + "a" * 12 + ")", "boost-1.92.0", "最新"),

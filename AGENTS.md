@@ -46,7 +46,7 @@
 
 ## 6. 依存関係の管理
 
-`.github/dependabot.yml` では、branch を追う submodule（yomiyasu）、GitHub Actions、npm、pip を週次で更新対象にします。`libftdi` は Dependabot から取得元 `developer.intra2net.com` に接続できません。そのため、「固定版の更新確認」ワークフローが `vendor/libftdi` の branch 先端を調べ、差があれば Issue で知らせます。タグで固定した submodule（openFPGALoader、libusb、zlib、emsdk、Yosys、nextpnr）、WASI SDK、Boost・Eigen のアーカイブ、Apycula、Node.js、actionlint、runner も同じワークフローの対象です。
+`.github/dependabot.yml` では、branch を追う submodule（yomiyasu）、GitHub Actions、npm、pip を週次で更新対象にします。`libftdi` は Dependabot から取得元 `developer.intra2net.com` に接続できません。そのため、「固定版の更新確認」ワークフローが `vendor/libftdi` の branch 先端を調べ、差があれば Issue で知らせます。タグで固定した submodule（openFPGALoader、libusb、zlib、emsdk、Yosys、nextpnr、zstd、xz-embedded）、WASI SDK、Boost・Eigen のアーカイブ、Apycula、Node.js、actionlint、runner も同じワークフローの対象です。
 
 Pyodide に同梱する NumPy、msgspec、micropip は、npm の `pyodide` パッケージに含まれる `pyodide-lock.json` の版と SHA-256 に従います。Dependabot が `pyodide` を更新すれば、この 3 つも一緒に更新されます。`tests/fixtures/requirements.txt` の Apicula は、`yowasp-nextpnr-himbaechel-gowin` が版を固定しているため Dependabot の対象から外しています。
 
@@ -104,6 +104,9 @@ scripts/build-synth-wasm.sh --native     # Yosys のネイティブ参照版を�
 node --test tests/synth/*.test.mjs       # WASM とネイティブの合成結果を比較する
 scripts/build-pnr-wasm.sh                # nextpnr と Gowin chipdb を WASI SDK でビルドする
 scripts/build-pnr-wasm.sh --native       # nextpnr のネイティブ参照版をビルドする
+scripts/build-decoders.sh                # zstd と xz の decoder を WASI SDK でビルドする
+sh scripts/prepare-compressed-assets.sh dist # 圧縮比較用資材を dist/bench/ に作る
+node scripts/bench-decompress.mjs --base-url http://127.0.0.1:8000 --repeats 5 --out build/S4B.csv # Chromium で圧縮資材の展開時間を測る
 node --test tests/synth/nextpnr.test.mjs # nextpnr の WASI/native 結果と負の対照を検証する
 node --test tests/synth/wasi-p1.test.mjs # WASI Preview 1 shim と nextpnr/Yosys の一致を検証する
 scripts/build-pack-assets.sh             # Pyodide、Apicula、NumPy、msgspec を検証して build/pack/ に配置する

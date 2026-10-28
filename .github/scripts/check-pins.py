@@ -26,7 +26,16 @@ ACTIONLINT_ENV = re.compile(r"^\s*ACTIONLINT_(VERSION|SHA256):\s*['\"]?([^'\"#\s
 GITMODULE_SECTION = re.compile(r"^\s*\[submodule\s+['\"]([^'\"]+)['\"]\]\s*$")
 GITMODULE_KEY = re.compile(r"^\s*(path|url|shallow|branch)\s*=\s*(.*?)\s*$")
 
-TAGGED_SUBMODULES = ("openFPGALoader", "libusb", "zlib", "emsdk", "yosys", "nextpnr")
+TAGGED_SUBMODULES = (
+    "openFPGALoader",
+    "libusb",
+    "zlib",
+    "emsdk",
+    "yosys",
+    "nextpnr",
+    "zstd",
+    "xz-embedded",
+)
 BRANCH_SUBMODULES = ("libftdi",)
 ARCHIVE_TAG_SOURCES = {
     "boost": "https://github.com/boostorg/boost.git",
@@ -246,6 +255,18 @@ def parse_node_major(value: str) -> int | None:
 
 
 def parse_version(value: str) -> tuple[int, ...] | None:
+    dashed_date = re.search(
+        r"(?<![A-Za-z0-9])v?(\d{4})-(\d{2})-(\d{2})(?![A-Za-z0-9])",
+        value,
+    )
+    if dashed_date:
+        return tuple(int(part) for part in dashed_date.groups())
+    compact_date = re.search(
+        r"(?<![A-Za-z0-9])v?(\d{4})(\d{2})(\d{2})(?![A-Za-z0-9])",
+        value,
+    )
+    if compact_date:
+        return tuple(int(part) for part in compact_date.groups())
     match = VERSION_RE.search(value)
     if not match:
         return None

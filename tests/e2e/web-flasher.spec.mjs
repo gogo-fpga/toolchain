@@ -135,7 +135,9 @@ function assertDistributionMatchesSources() {
 
   const generatedFileAllowlist = new Set([
     "editor/editor.bundle.mjs",
+    "lib/decoders/xz-decoder.wasm",
     "lib/project-zip.bundle.mjs",
+    "lib/decoders/zstd-decoder.wasm",
   ]);
   const runtimeFiles = new Set([
     "build-info.json",

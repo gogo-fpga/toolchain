@@ -10,6 +10,8 @@
 | libusb | v1.0.30 / `87a55632db62c9bdc58cd31d3ccfa673f1bb017f` | LGPL-2.1-or-later | WASM に静的リンク | `licenses/libusb-COPYING` |
 | libftdi | 1.6rc1 / `92d657bcb543a9622947d984d4a8e725fb680e8c` | LGPL-2.1（ライブラリ部分） | WASM に静的リンク | `licenses/libftdi-COPYING.LIB` |
 | zlib | v1.3.2 / `da607da739fa6047df13e66a2af6b8bec7c2a498` | zlib | WASM に静的リンク | `licenses/zlib-LICENSE` |
+| zstd | v1.5.7 / `f8745da6ff1ad1e7bab384bd1f9d742439278e99` | BSD-3-Clause OR GPL-2.0（dual license、BSD を選択） | WASI decoder に静的リンク | `licenses/zstd-LICENSE` |
+| xz-embedded | v20240322 / `62d5603b5114c5aa8bb5f6bb461efbe0e3b51891` | 0BSD | WASI decoder に静的リンク | `licenses/xz-embedded-COPYING` |
 | Yosys | v0.70 / `28ba3cb926fe376fa05ebfc1b921747d011d4557` | ISC | WASI WASM に静的リンク | `licenses/yosys-COPYING` |
 | ABC | `6c5104934c90eb3cdef9ea063318f7588908a185` | Regents of the University of California の許諾条件 | Yosys WASM に静的リンク | `licenses/abc-copyright.txt` |
 | cxxopts | `4bf61f08697b110d9e3991864650a405b3dd515d` | MIT | Yosys WASM に静的リンク | `licenses/cxxopts-LICENSE` |

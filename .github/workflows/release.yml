@@ -34,7 +34,8 @@ jobs:
         run: |
           git submodule update --init --depth 1 -- \
             vendor/emsdk vendor/libftdi vendor/libusb vendor/openFPGALoader \
-            vendor/yomiyasu vendor/zlib vendor/yosys vendor/nextpnr
+            vendor/yomiyasu vendor/zlib vendor/yosys vendor/nextpnr \
+            vendor/zstd vendor/xz-embedded
           git -C vendor/yosys submodule update --init --depth 1 -- \
             abc libs/cxxopts libs/fmt libs/tomlplusplus libs/boost_regex libs/symfpu
 
@@ -70,6 +71,9 @@ jobs:
         run: |
           scripts/build-pnr-wasm.sh
           scripts/build-pnr-wasm.sh --native
+
+      - name: WASI decoder をビルド
+        run: scripts/build-decoders.sh
 
       - name: Native Apicula と Pyodide 資材を準備
         run: |
@@ -108,6 +112,7 @@ jobs:
             build/fixtures/*.fs
             build/wasi/yosys/
             build/wasi/nextpnr/
+            build/wasi/decoders/
             build/native/
             build/pack/
           retention-days: 1
@@ -214,6 +219,7 @@ jobs:
           scripts/build-synth-wasm.sh --native
           scripts/build-pnr-wasm.sh
           scripts/build-pnr-wasm.sh --native
+          scripts/build-decoders.sh
           python3 -m venv build/deps/apycula-venv
           build/deps/apycula-venv/bin/pip install --require-hashes -r requirements-nextpnr.txt
           scripts/build-pack-assets.sh

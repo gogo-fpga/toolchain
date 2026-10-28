@@ -33,6 +33,12 @@ for artifact in openFPGALoader.mjs openFPGALoader.wasm; do
     exit 1
   fi
 done
+for decoder in zstd-decoder.wasm xz-decoder.wasm; do
+  if [[ ! -s "$build_root/wasi/decoders/$decoder" ]]; then
+    printf 'Missing required WASI decoder: %s\n' "$build_root/wasi/decoders/$decoder" >&2
+    exit 1
+  fi
+done
 
 python3 "$root/scripts/build-info.py" "$build_info_action" \
   --root "$root" \
@@ -54,6 +60,9 @@ node_modules/.bin/esbuild web/lib/project-zip.mjs --bundle --minify --format=esm
 cp "$artifacts/openFPGALoader.mjs" "$dist/openFPGALoader.mjs"
 cp "$artifacts/openFPGALoader.wasm" "$dist/openFPGALoader.wasm"
 cp "$artifacts/build-info.json" "$dist/build-info.json"
+mkdir -p "$dist/lib/decoders"
+cp "$build_root/wasi/decoders/zstd-decoder.wasm" "$dist/lib/decoders/"
+cp "$build_root/wasi/decoders/xz-decoder.wasm" "$dist/lib/decoders/"
 mkdir -p "$dist/pack"
 cp -R "$root/build/pack/." "$dist/pack/"
 mkdir -p "$dist/synth"
