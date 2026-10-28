@@ -30,6 +30,6 @@ export default defineConfig({
     url: baseURL,
     reuseExistingServer: false,
     stdout: "pipe",
-    timeout: 30_000,
+    timeout: 120_000,
   },
 });

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import {
   mkdtempSync,
   mkdirSync,
@@ -15,6 +15,8 @@ import test from "node:test";
 const repoRoot = resolve(import.meta.dirname, "../..");
 const buildInfoScript = resolve(repoRoot, "scripts/build-info.py");
 const buildWebScript = resolve(repoRoot, "scripts/build-web.sh");
+const zstdVersion = execFileSync("zstd", ["--version"], { encoding: "utf8" })
+  .match(/\bv(\d+\.\d+\.\d+)\b/)?.[1];
 const submodules = [
   "vendor/emsdk",
   "vendor/libftdi",
@@ -62,6 +64,7 @@ function createFixture() {
     build_script_sha256: sha256(buildScript),
     submodule_shas: submoduleShas,
     emcc_version: "emcc test version",
+    zstd_version: zstdVersion,
     artifacts: {
       "openFPGALoader.mjs": sha256(readFileSync(join(artifacts, "openFPGALoader.mjs"))),
       "openFPGALoader.wasm": sha256(readFileSync(join(artifacts, "openFPGALoader.wasm"))),
@@ -185,6 +188,14 @@ testFailure(
   /emcc_version must be a non-empty string/,
   ({ infoPath, metadata }) => {
     metadata.emcc_version = "";
+    writeFileSync(infoPath, `${JSON.stringify(metadata)}\n`);
+  },
+);
+testFailure(
+  "check-artifacts rejects a mismatched zstd_version",
+  /zstd_version does not match the current CLI/,
+  ({ infoPath, metadata }) => {
+    metadata.zstd_version = "0.0.0";
     writeFileSync(infoPath, `${JSON.stringify(metadata)}\n`);
   },
 );

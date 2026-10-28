@@ -5,8 +5,11 @@ import hashlib
 import io
 import json
 import shutil
+import subprocess
 import tarfile
 from pathlib import Path
+
+from zstd_cli import require_pinned_zstd_version
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,6 +29,22 @@ def sha256_file(path):
 def require_file(path):
     if path.is_symlink() or not path.is_file() or path.stat().st_size == 0:
         raise SystemExit(f"Required synthesis asset is missing or empty: {path}")
+
+
+def compress_file(source, output):
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with output.open("wb") as compressed:
+        result = subprocess.run(
+            ["zstd", "-19", "-q", "--no-progress", "-c", str(source)],
+            check=False,
+            stdout=compressed,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+    if result.returncode != 0:
+        output.unlink(missing_ok=True)
+        detail = result.stderr.strip()
+        raise SystemExit(f"Could not compress synthesis asset {source}: {detail}")
 
 
 def create_share_tar(output):
@@ -67,7 +86,13 @@ def create_share_tar(output):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--dist-output", type=Path)
     args = parser.parse_args()
+    try:
+        require_pinned_zstd_version(ROOT)
+    except RuntimeError as error:
+        raise SystemExit(str(error)) from error
+
     requested_output = args.output.absolute()
     if requested_output.is_symlink():
         raise SystemExit(f"Refusing symlink synthesis asset output path: {requested_output}")
@@ -97,24 +122,61 @@ def main():
             output / "chipdb" / f"chipdb-{family}.bin",
         )
 
-    assets = []
-    for path in sorted(
-        output.rglob("*"),
+    asset_paths = sorted(
+        (path for path in output.rglob("*") if path.is_file()),
         key=lambda entry: entry.relative_to(output).as_posix(),
-    ):
-        if path.is_file():
-            assets.append(
-                {
-                    "path": path.relative_to(output).as_posix(),
-                    "size": path.stat().st_size,
-                    "sha256": sha256_file(path),
-                }
-            )
+    )
+    assets = []
+    for path in asset_paths:
+        relative_path = path.relative_to(output).as_posix()
+        compressed_path = output / f"{relative_path}.zst"
+        compress_file(path, compressed_path)
+        assets.append(
+            {
+                "path": relative_path,
+                "size": path.stat().st_size,
+                "sha256": sha256_file(path),
+                "encoding": "zstd",
+                "compressed_size": compressed_path.stat().st_size,
+                "compressed_sha256": sha256_file(compressed_path),
+            }
+        )
     manifest = {"format_version": 1, "assets": assets}
-    (output / "manifest.json").write_text(
+    manifest_path = output / "manifest.json"
+    manifest_path.write_text(
         f"{json.dumps(manifest, indent=2, sort_keys=True)}\n",
         encoding="utf-8",
     )
+
+    if args.dist_output:
+        requested_dist_output = args.dist_output.absolute()
+        if requested_dist_output.is_symlink():
+            raise SystemExit(
+                f"Refusing symlink synthesis distribution output path: {requested_dist_output}"
+            )
+        dist_output = requested_dist_output.resolve()
+        if (
+            dist_output in (Path(dist_output.anchor), ROOT, output)
+            or dist_output in output.parents
+            or output in dist_output.parents
+        ):
+            raise SystemExit(
+                f"Refusing unsafe synthesis distribution output path: {dist_output}"
+            )
+        if dist_output.exists():
+            if dist_output.is_dir():
+                shutil.rmtree(dist_output)
+            else:
+                dist_output.unlink()
+        dist_output.mkdir(parents=True)
+        shutil.copyfile(manifest_path, dist_output / "manifest.json")
+        for asset in assets:
+            relative_path = Path(f"{asset['path']}.zst")
+            source = output / relative_path
+            destination = dist_output / relative_path
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, destination)
+
     print(json.dumps({"output": str(output), "assets": len(assets)}, sort_keys=True))
 
 

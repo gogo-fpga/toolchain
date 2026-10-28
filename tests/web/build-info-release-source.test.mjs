@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import {
   chmodSync,
   mkdtempSync,
@@ -101,6 +101,12 @@ test("release-source metadata supports write, check, and artifact checks without
     const info = JSON.parse(readFileSync(fixture.infoPath, "utf8"));
     assert.deepEqual(info.submodule_shas, fixture.releaseSource.submodule_shas);
     assert.equal(info.emcc_version, "emcc release-source test");
+    assert.equal(
+      info.zstd_version,
+      execFileSync("zstd", ["--version"], { encoding: "utf8" }).match(
+        /\bv(\d+\.\d+\.\d+)\b/,
+      )?.[1],
+    );
 
     for (const action of ["check", "check-artifacts"]) {
       const result = runBuildInfo(fixture, action);

@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { gzipSync } from "node:zlib";
 import test from "node:test";
 
-import { decompress } from "../../web/lib/decompress.mjs";
+import { decompress, releaseDecoders } from "../../web/lib/decompress.mjs";
 
 const repoRoot = resolve(import.meta.dirname, "../..");
 const decoderBytes = {
@@ -86,4 +86,18 @@ test("zstd decodes concatenated frames", async () => {
     { decoderBytes: decoderBytes.zstd },
   );
   assert.deepEqual(output, synthetic);
+});
+
+test("releaseDecoders drops cached decoder instances", async () => {
+  const compressed = compress("zstd", synthetic);
+  const injection = { decoderBytes: decoderBytes.zstd };
+  assert.deepEqual(
+    await decompress("zstd", compressed, synthetic.byteLength, injection),
+    synthetic,
+  );
+  releaseDecoders();
+  assert.deepEqual(
+    await decompress("zstd", compressed, synthetic.byteLength, injection),
+    synthetic,
+  );
 });

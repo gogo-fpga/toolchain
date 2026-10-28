@@ -114,7 +114,7 @@ test("missing chipdb fails asset integrity before placement and routing", async 
 }) => {
   const board = BOARDS[0];
   await createProject(page, board);
-  await page.route("**/synth/chipdb/chipdb-GW1NZ-1.bin", (route) =>
+  await page.route("**/synth/chipdb/chipdb-GW1NZ-1.bin.zst", (route) =>
     route.fulfill({
       status: 404,
       contentType: "application/octet-stream",
@@ -128,6 +128,88 @@ test("missing chipdb fails asset integrity before placement and routing", async 
   await expect(page.locator("#program-log")).toContainText(
     "Could not load synthesis asset chipdb/chipdb-GW1NZ-1.bin (404)",
   );
+});
+
+test("corrupted compressed synthesis asset fails its SHA-256 check", async ({
+  page,
+}) => {
+  await createProject(page, BOARDS[0]);
+  const compressed = Buffer.from(
+    readFileSync(resolve(root, "dist/synth/yosys.wasm.zst")),
+  );
+  compressed[Math.floor(compressed.byteLength / 2)] ^= 1;
+  await page.route("**/synth/yosys.wasm.zst", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/octet-stream",
+      body: compressed,
+    }),
+  );
+  await page.locator("#synthesis-button").click();
+  await expect(page.locator("#synthesis-stage")).toHaveText("ビルド失敗", {
+    timeout: 30_000,
+  });
+  await expect(page.locator("#program-log")).toContainText(
+    "Synthesis asset compressed SHA-256 mismatch for yosys.wasm",
+  );
+});
+
+test("corrupted cached synthesis asset is discarded and refetched", async ({
+  page,
+}) => {
+  await createProject(page, BOARDS[0]);
+  const manifest = JSON.parse(
+    readFileSync(resolve(root, "dist/synth/manifest.json"), "utf8"),
+  );
+  const asset = manifest.assets.find(({ path }) => path === "yosys.wasm");
+  await page.evaluate(async (sha256) => {
+    const cache = await caches.open("gogo-fpga-synth-v1");
+    const key = new URL(`synth/yosys.wasm?sha256=${sha256}`, location.href);
+    await cache.put(
+      key,
+      new Response("corrupt cached content", {
+        headers: { "Content-Type": "application/octet-stream" },
+      }),
+    );
+  }, asset.sha256);
+  let compressedRequests = 0;
+  page.on("request", (request) => {
+    if (request.url().endsWith(".zst")) compressedRequests += 1;
+  });
+  await page.locator("#synthesis-button").click();
+  await expect(page.locator("#synthesis-stage")).toHaveText("ビルド完了", {
+    timeout: 140_000,
+  });
+  expect(compressedRequests).toBe(4);
+});
+
+test("cached synthesis assets survive a page reload", async ({ page }) => {
+  const board = BOARDS[0];
+  const projectName = await createProject(page, board);
+  const expectedBytes = readFileSync(resolve(expectedRoot, `${board.id}.fs`));
+  await page.locator("#synthesis-button").click();
+  await expect(page.locator("#synthesis-stage")).toHaveText("ビルド完了", {
+    timeout: 140_000,
+  });
+  const firstResult = await storedFsDigest(page, projectName);
+  await page.reload();
+  await expect(
+    page.locator(`#project-select option[value="${projectName}"]`),
+  ).toBeAttached();
+  await page.locator("#project-select").selectOption(projectName);
+  await expect(page.locator("#project-name")).toHaveText(projectName);
+
+  let compressedRequests = 0;
+  page.on("request", (request) => {
+    if (request.url().endsWith(".zst")) compressedRequests += 1;
+  });
+  await page.locator("#synthesis-button").click();
+  await expect(page.locator("#synthesis-stage")).toHaveText("ビルド完了", {
+    timeout: 140_000,
+  });
+  expect(await storedFsDigest(page, projectName)).toEqual(firstResult);
+  expect(firstResult.size).toBe(expectedBytes.length);
+  expect(compressedRequests).toBe(0);
 });
 
 test("cancelled browser build can be followed by a successful build", async ({
