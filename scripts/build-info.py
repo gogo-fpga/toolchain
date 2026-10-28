@@ -7,6 +7,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from zstd_cli import zstd_version
+
 
 SUBMODULES = (
     "vendor/emsdk",
@@ -150,6 +152,7 @@ def collect_build_info(root, artifacts, variant, async_mode):
         "build_script_sha256": sha256_file(root / "scripts/build-wasm.sh"),
         "submodule_shas": submodule_shas(root),
         "emcc_version": emcc_version(root),
+        "zstd_version": zstd_version(),
         "artifacts": {
             name: sha256_file(artifacts / name)
             for name in ("openFPGALoader.mjs", "openFPGALoader.wasm")
@@ -233,6 +236,7 @@ def check_artifacts(root, artifacts):
         "build_script_sha256",
         "submodule_shas",
         "emcc_version",
+        "zstd_version",
         "artifacts",
     }
     if set(actual) != expected_keys:
@@ -252,6 +256,8 @@ def check_artifacts(root, artifacts):
         raise RuntimeError("Build metadata submodule_shas does not match superproject gitlinks")
     if not isinstance(actual["emcc_version"], str) or not actual["emcc_version"].strip():
         raise RuntimeError("Build metadata emcc_version must be a non-empty string")
+    if actual["zstd_version"] != zstd_version():
+        raise RuntimeError("Build metadata zstd_version does not match the current CLI")
     expected_artifacts = {
         name: sha256_file(artifacts / name)
         for name in ("openFPGALoader.mjs", "openFPGALoader.wasm")

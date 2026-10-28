@@ -169,6 +169,8 @@ Yosys v0.69 から v0.70 では `alumacc -macc-only`、`optbarriers`、`flatten`
 
 配信先の自動圧縮に任せず、圧縮した資材を配ってブラウザーで展開する方式を [S4B](docs/experiments/S4B-compressed-assets.md) で比べました。gzip と互換の高圧縮では、libdeflate の最高レベルでも gzip -9 より約 5% 小さいだけでした。Zopfli も同じくらいの大きさで、圧縮に時間がかかります。zstd -19 は 20K の大きい 5 つの資材を 28.5 MB（gzip -9）から 19.2 MB に縮めます。Chromium 156 での展開は合計 359 ms で、gzip の `DecompressionStream`（673 ms）より速くなりました。xz -9e は zstd より 10% 小さいものの、展開に 2.2 秒かかります。50 Mbps での推定時間は gzip 5.23 秒、xz 4.98 秒、zstd 3.43 秒で、事前に決めた基準により zstd を採ります。Brotli は Chromium 156 の `DecompressionStream` で展開できないため、配信時の `Content-Encoding` にしか使えません。配信先は未定です。
 
+この実装では `manifest.json` を除く `dist/synth/` の資材を zstd 形式で配信する構成にしました。manifest の各項目には展開後の `size` と `sha256` に加えて `encoding: "zstd"`、`compressed_size`、`compressed_sha256` を記録します。ビルド Worker は圧縮前後のサイズと SHA-256 を検証し、展開後のデータを Cache Storage `gogo-fpga-synth-v1` に `new URL(path + "?sha256=" + sha256, synthURL)` のキーで保存します。実際のビルドで得た圧縮サイズの合計は、共有する 3 資材と各ボードの chipdb を合わせて Tang Nano 1K が 16,003,246 bytes、4K が 16,155,020 bytes、9K が 16,164,593 bytes、20K が 16,256,883 bytes です。最大の圧縮ファイルは `yosys.wasm.zst` の 9,448,361 bytes でした。
+
 NVC の確認元は[configure.ac](https://github.com/nickg/nvc/blob/058be4ccd39abefe3bcff455eb3964f4731a4a05/configure.ac)です。そこから確認できるのは LLVM の有効化条件と pthread、zlib、libffi、libzstd の検出です。LLVM を無効にした実行経路や WASM での動作は、まだ検証していません。
 
 ## 4. Emscripten のオプション

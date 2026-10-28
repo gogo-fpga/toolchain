@@ -4,7 +4,7 @@ const decoderPaths = {
 };
 
 const decoderPromises = new Map();
-const injectedDecoderPromises = new WeakMap();
+let injectedDecoderPromises = new WeakMap();
 const wasmPageSize = 65536;
 const wasm32MaxBytes = 0xffff_ffff;
 
@@ -176,4 +176,9 @@ export async function decompress(format, bytes, expectedSize, { decoderBytes } =
     throw new TypeError(`Unsupported compression format: ${format}`);
   }
   return decompressWasm(format, source, expectedSize, decoderBytes);
+}
+
+export function releaseDecoders() {
+  decoderPromises.clear();
+  injectedDecoderPromises = new WeakMap();
 }

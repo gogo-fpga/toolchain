@@ -1,64 +1,38 @@
 import { getBoard } from "./lib/boards.mjs";
+import { decompress, releaseDecoders } from "./lib/decompress.mjs";
+import { safePath, verifyManifest } from "./lib/synth-manifest.mjs";
 import { createMemoryTree, runWasiP1 } from "./lib/wasi-p1.mjs";
 import { readUstar } from "./lib/ustar.mjs";
 
 const synthURL = new URL("./synth/", import.meta.url);
+const synthCacheName = "gogo-fpga-synth-v1";
 const requiredAssetPaths = [
   "yosys.wasm",
   "nextpnr-himbaechel-gowin.wasm",
   "yosys-share.tar",
 ];
 
-function safePath(path) {
-  return typeof path === "string" &&
-    !path.startsWith("/") &&
-    !path.includes("\\") &&
-    path.split("/").every(
-      (part) => part.length > 0 && part !== "." && part !== "..",
-    );
-}
-
-function verifyManifest(manifest) {
-  if (
-    manifest?.format_version !== 1 ||
-    !Array.isArray(manifest.assets)
-  ) {
-    throw new Error("Synthesis asset manifest is invalid");
-  }
-  const assets = new Map();
-  for (const asset of manifest.assets) {
-    if (
-      !safePath(asset?.path) ||
-      !Number.isSafeInteger(asset.size) ||
-      asset.size <= 0 ||
-      !/^[0-9a-f]{64}$/.test(asset.sha256)
-    ) {
-      throw new Error("Synthesis asset manifest contains an invalid entry");
-    }
-    if (assets.has(asset.path)) {
-      throw new Error(`Synthesis asset manifest repeats ${asset.path}`);
-    }
-    assets.set(asset.path, asset);
-  }
-  return assets;
-}
-
 function hex(bytes) {
   return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-async function fetchVerifiedAsset(assets, path) {
-  const metadata = assets.get(path);
-  if (!metadata) throw new Error(`Synthesis asset is missing from manifest: ${path}`);
-  const url = new URL(
-    path.split("/").map(encodeURIComponent).join("/"),
-    synthURL,
-  );
-  const response = await fetch(url, { cache: "no-cache" });
-  if (!response.ok) {
-    throw new Error(`Could not load synthesis asset ${path} (${response.status})`);
+function cacheKey(path, sha256) {
+  return new URL(`${path}?sha256=${sha256}`, synthURL);
+}
+
+async function openSynthCache() {
+  try {
+    if (!globalThis.caches?.open) {
+      throw new Error("Cache Storage is unavailable");
+    }
+    return await globalThis.caches.open(synthCacheName);
+  } catch (error) {
+    console.warn("Could not open synthesis asset cache", error);
+    return null;
   }
-  const bytes = new Uint8Array(await response.arrayBuffer());
+}
+
+async function verifyAssetBytes(bytes, metadata, path) {
   if (bytes.byteLength !== metadata.size) {
     throw new Error(
       `Synthesis asset size mismatch for ${path}: expected ${metadata.size}, received ${bytes.byteLength}`,
@@ -69,6 +43,95 @@ async function fetchVerifiedAsset(assets, path) {
     throw new Error(`Synthesis asset SHA-256 mismatch for ${path}`);
   }
   return bytes;
+}
+
+async function fetchVerifiedAsset(assets, path, cache) {
+  const metadata = assets.get(path);
+  if (!metadata) throw new Error(`Synthesis asset is missing from manifest: ${path}`);
+  const key = cacheKey(path, metadata.sha256);
+  if (metadata.encoding === "zstd" && cache) {
+    try {
+      const cached = await cache.match(key);
+      if (cached) {
+        try {
+          const bytes = new Uint8Array(await cached.arrayBuffer());
+          return await verifyAssetBytes(bytes, metadata, path);
+        } catch (error) {
+          console.warn(`Discarding invalid cached synthesis asset ${path}`, error);
+          await cache.delete(key).catch((deleteError) => {
+            console.warn(`Could not delete cached synthesis asset ${path}`, deleteError);
+          });
+        }
+      }
+    } catch (error) {
+      console.warn(`Could not read cached synthesis asset ${path}`, error);
+    }
+  }
+
+  const encodedPath = path.split("/").map(encodeURIComponent).join("/");
+  const url = new URL(
+    metadata.encoding === "zstd" ? `${encodedPath}.zst` : encodedPath,
+    synthURL,
+  );
+  const response = await fetch(url, { cache: "no-cache" });
+  if (!response.ok) {
+    throw new Error(`Could not load synthesis asset ${path} (${response.status})`);
+  }
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  let output = bytes;
+  if (metadata.encoding === "zstd") {
+    if (bytes.byteLength !== metadata.compressed_size) {
+      throw new Error(
+        `Synthesis asset compressed size mismatch for ${path}: expected ${metadata.compressed_size}, received ${bytes.byteLength}`,
+      );
+    }
+    const compressedDigest = hex(
+      new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)),
+    );
+    if (compressedDigest !== metadata.compressed_sha256) {
+      throw new Error(`Synthesis asset compressed SHA-256 mismatch for ${path}`);
+    }
+    output = await decompress("zstd", bytes, metadata.size);
+  }
+  await verifyAssetBytes(output, metadata, path);
+  if (metadata.encoding === "zstd" && cache) {
+    try {
+      await cache.put(
+        key,
+        new Response(output, {
+          headers: { "Content-Type": "application/octet-stream" },
+        }),
+      );
+    } catch (error) {
+      console.warn(`Could not cache synthesis asset ${path}`, error);
+    }
+  }
+  return output;
+}
+
+async function pruneSynthCache(cache, assets) {
+  if (!cache) return;
+  const currentKeys = new Set(
+    [...assets.values()]
+      .filter((asset) => asset.encoding === "zstd")
+      .map((asset) => cacheKey(asset.path, asset.sha256).href),
+  );
+  let requests;
+  try {
+    requests = await cache.keys();
+  } catch (error) {
+    console.warn("Could not inspect synthesis asset cache", error);
+    return;
+  }
+  for (const request of requests) {
+    if (!currentKeys.has(request.url)) {
+      try {
+        await cache.delete(request);
+      } catch (error) {
+        console.warn("Could not remove stale synthesis asset cache entry", error);
+      }
+    }
+  }
 }
 
 async function loadManifest() {
@@ -225,12 +288,20 @@ self.addEventListener("message", async ({ data }) => {
         throw new Error(`Synthesis asset is missing from manifest: ${path}`);
       }
     }
-    const [yosysBytes, nextpnrBytes, shareTar, chipdbBytes] = await Promise.all([
-      fetchVerifiedAsset(assets, "yosys.wasm"),
-      fetchVerifiedAsset(assets, "nextpnr-himbaechel-gowin.wasm"),
-      fetchVerifiedAsset(assets, "yosys-share.tar"),
-      fetchVerifiedAsset(assets, chipdbPath),
-    ]);
+    const cache = await openSynthCache();
+    let loadedAssets;
+    try {
+      loadedAssets = await Promise.all([
+        fetchVerifiedAsset(assets, "yosys.wasm", cache),
+        fetchVerifiedAsset(assets, "nextpnr-himbaechel-gowin.wasm", cache),
+        fetchVerifiedAsset(assets, "yosys-share.tar", cache),
+        fetchVerifiedAsset(assets, chipdbPath, cache),
+      ]);
+    } finally {
+      releaseDecoders();
+    }
+    await pruneSynthCache(cache, assets);
+    const [yosysBytes, nextpnrBytes, shareTar, chipdbBytes] = loadedAssets;
     const [yosysModule, nextpnrModule] = await Promise.all([
       WebAssembly.compile(yosysBytes),
       WebAssembly.compile(nextpnrBytes),

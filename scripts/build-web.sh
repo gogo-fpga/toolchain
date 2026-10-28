@@ -45,7 +45,6 @@ python3 "$root/scripts/build-info.py" "$build_info_action" \
   --artifacts "$artifacts"
 
 scripts/build-pack-assets.sh
-python3 "$root/scripts/build-synth-assets.py" --output "$build_root/synth"
 
 if [[ ! -f "$root/web/index.html" || ! -f "$root/web/serve.py" ]]; then
   printf 'Missing web application sources under %s/web\n' "$root" >&2
@@ -65,7 +64,8 @@ cp "$build_root/wasi/decoders/zstd-decoder.wasm" "$dist/lib/decoders/"
 cp "$build_root/wasi/decoders/xz-decoder.wasm" "$dist/lib/decoders/"
 mkdir -p "$dist/pack"
 cp -R "$root/build/pack/." "$dist/pack/"
-mkdir -p "$dist/synth"
-cp -R "$build_root/synth/." "$dist/synth/"
+python3 "$root/scripts/build-synth-assets.py" \
+  --output "$build_root/synth" \
+  --dist-output "$dist/synth"
 
 printf 'Assembled web app in %s from %s\n' "$dist" "$artifacts"

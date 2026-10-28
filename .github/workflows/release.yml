@@ -171,7 +171,7 @@ jobs:
           BUILD_INFO_CHECK: artifacts
         run: |
           npx playwright test | tee "$RUNNER_TEMP/playwright.log"
-          grep -Eq '45 passed' "$RUNNER_TEMP/playwright.log"
+          grep -Eq '48 passed' "$RUNNER_TEMP/playwright.log"
 
   source-rebuild:
     name: Rebuild from source archive

@@ -72,37 +72,76 @@ function assertSynthMatchesBuild() {
   const buildSynthRoot = resolve(buildRoot, "synth");
   const distRoot = resolve(repoRoot, "dist");
   const distSynthRoot = resolve(distRoot, "synth");
-  const buildSynthPaths = new Set(
-    listFiles(buildSynthRoot).map((path) =>
-      relative(buildSynthRoot, path),
-    ),
-  );
   const distSynthPaths = new Set(
     listFiles(distSynthRoot).map((path) =>
       relative(distSynthRoot, path),
     ),
   );
+  const buildManifest = readFileSync(resolve(buildSynthRoot, "manifest.json"));
+  const manifest = JSON.parse(buildManifest.toString("utf8"));
+  const expectedPaths = new Set([
+    "manifest.json",
+    ...manifest.assets.map((asset) => `${asset.path}.zst`),
+  ]);
 
   for (const path of distSynthPaths) {
-    if (!buildSynthPaths.has(path)) {
+    if (!expectedPaths.has(path)) {
       throw new Error(`Playwright preflight: unexpected dist/synth/${path}`);
     }
   }
 
-  for (const path of buildSynthPaths) {
+  for (const path of expectedPaths) {
     if (!distSynthPaths.has(path)) {
       throw new Error(`Playwright preflight: dist/synth/${path} is missing`);
     }
-    if (
-      !readFileSync(resolve(buildSynthRoot, path)).equals(
-        readFileSync(resolve(distSynthRoot, path)),
-      )
-    ) {
+    const buildPath = resolve(buildSynthRoot, path);
+    const distPath = resolve(distSynthRoot, path);
+    if (!readFileSync(buildPath).equals(readFileSync(distPath))) {
       throw new Error(
         `Playwright preflight: dist/synth/${path} differs from ` +
           `${relative(repoRoot, buildSynthRoot)}/${path}`,
       );
     }
+  }
+
+  for (const asset of manifest.assets) {
+    if (
+      asset.encoding !== "zstd" ||
+      !Number.isSafeInteger(asset.compressed_size) ||
+      !/^[0-9a-f]{64}$/.test(asset.compressed_sha256)
+    ) {
+      throw new Error(
+        `Playwright preflight: invalid compressed metadata for ${asset.path}`,
+      );
+    }
+    const compressedPath = `${asset.path}.zst`;
+    const buildCompressed = readFileSync(
+      resolve(buildSynthRoot, compressedPath),
+    );
+    if (
+      buildCompressed.byteLength !== asset.compressed_size ||
+      sha256(buildCompressed) !== asset.compressed_sha256
+    ) {
+      throw new Error(
+        `Playwright preflight: build/synth/${compressedPath} differs from its manifest`,
+      );
+    }
+    const sourceBytes = readFileSync(resolve(buildSynthRoot, asset.path));
+    if (
+      sourceBytes.byteLength !== asset.size ||
+      sha256(sourceBytes) !== asset.sha256
+    ) {
+      throw new Error(
+        `Playwright preflight: build/synth/${asset.path} differs from its manifest`,
+      );
+    }
+  }
+  if (
+    !readFileSync(resolve(distSynthRoot, "manifest.json")).equals(buildManifest)
+  ) {
+    throw new Error(
+      "Playwright preflight: dist/synth/manifest.json differs from build/synth/manifest.json",
+    );
   }
 
   return new Set(
