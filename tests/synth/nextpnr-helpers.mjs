@@ -16,11 +16,12 @@ import { performance } from "node:perf_hooks";
 import { WASI } from "node:wasi";
 
 export const root = path.resolve(import.meta.dirname, "../..");
-export const yosysWasmPath = path.join(root, "build/wasi/yosys/yosys.wasm");
-export const yosysSharePath = path.join(root, "build/wasi/yosys/share");
-export const nextpnrWasmPath = path.join(root, "build/wasi/nextpnr/nextpnr-himbaechel-gowin.wasm");
+const wasiBuildRoot = path.resolve(root, process.env.S5_WASI_ROOT ?? "build/wasi");
+export const yosysWasmPath = path.join(wasiBuildRoot, "yosys/yosys.wasm");
+export const yosysSharePath = path.join(wasiBuildRoot, "yosys/share");
+export const nextpnrWasmPath = path.join(wasiBuildRoot, "nextpnr/nextpnr-himbaechel-gowin.wasm");
 export const nextpnrNativePath = path.join(root, "build/native/nextpnr/nextpnr-himbaechel-gowin");
-export const wasiSharePath = path.join(root, "build/wasi/nextpnr/share");
+export const wasiSharePath = path.join(wasiBuildRoot, "nextpnr/share");
 export const nativeSharePath = path.join(root, "build/native/nextpnr/share");
 export const chipdbPath = path.join(wasiSharePath, "himbaechel/gowin");
 export const nativeChipdbPath = path.join(nativeSharePath, "himbaechel/gowin");

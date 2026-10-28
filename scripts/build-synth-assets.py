@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import io
 import json
+import os
 import shutil
 import subprocess
 import tarfile
@@ -13,8 +14,6 @@ from zstd_cli import require_pinned_zstd_version
 
 
 ROOT = Path(__file__).resolve().parents[1]
-YOSYS_SHARE = ROOT / "build/wasi/yosys/share"
-CHIPDB_SOURCE = ROOT / "build/wasi/nextpnr/share/himbaechel/gowin"
 CHIPDB_FAMILIES = ("GW1N-9C", "GW1NS-4", "GW1NZ-1", "GW2A-18C")
 
 
@@ -47,16 +46,16 @@ def compress_file(source, output):
         raise SystemExit(f"Could not compress synthesis asset {source}: {detail}")
 
 
-def create_share_tar(output):
-    if YOSYS_SHARE.is_symlink() or not YOSYS_SHARE.is_dir():
-        raise SystemExit(f"Yosys share directory is missing: {YOSYS_SHARE}")
+def create_share_tar(output, yosys_share):
+    if yosys_share.is_symlink() or not yosys_share.is_dir():
+        raise SystemExit(f"Yosys share directory is missing: {yosys_share}")
 
     entries = sorted(
-        YOSYS_SHARE.rglob("*"),
-        key=lambda path: path.relative_to(YOSYS_SHARE).as_posix(),
+        yosys_share.rglob("*"),
+        key=lambda path: path.relative_to(yosys_share).as_posix(),
     )
     if not entries:
-        raise SystemExit(f"Yosys share directory is empty: {YOSYS_SHARE}")
+        raise SystemExit(f"Yosys share directory is empty: {yosys_share}")
 
     with tarfile.open(output, mode="w", format=tarfile.USTAR_FORMAT) as archive:
         for path in entries:
@@ -64,7 +63,7 @@ def create_share_tar(output):
                 raise SystemExit(f"Symbolic links are not supported in Yosys share data: {path}")
             if not path.is_dir() and not path.is_file():
                 raise SystemExit(f"Unsupported Yosys share entry: {path}")
-            name = path.relative_to(YOSYS_SHARE).as_posix()
+            name = path.relative_to(yosys_share).as_posix()
             info = tarfile.TarInfo(name + ("/" if path.is_dir() else ""))
             info.uid = 0
             info.gid = 0
@@ -100,12 +99,19 @@ def main():
     if output == Path(output.anchor) or output == ROOT:
         raise SystemExit(f"Refusing unsafe synthesis asset output path: {output}")
 
-    yosys = ROOT / "build/wasi/yosys/yosys.wasm"
-    nextpnr = ROOT / "build/wasi/nextpnr/nextpnr-himbaechel-gowin.wasm"
+    asset_root = Path(os.environ.get("S5_ASSET_DIR", "build/wasi"))
+    if not asset_root.is_absolute():
+        asset_root = ROOT / asset_root
+    yosys_build = asset_root / "yosys"
+    nextpnr_build = asset_root / "nextpnr"
+    yosys_share = yosys_build / "share"
+    chipdb_source = nextpnr_build / "share/himbaechel/gowin"
+    yosys = yosys_build / "yosys.wasm"
+    nextpnr = nextpnr_build / "nextpnr-himbaechel-gowin.wasm"
     for path in (yosys, nextpnr):
         require_file(path)
     for family in CHIPDB_FAMILIES:
-        require_file(CHIPDB_SOURCE / f"chipdb-{family}.bin")
+        require_file(chipdb_source / f"chipdb-{family}.bin")
 
     if output.exists():
         if output.is_dir():
@@ -115,10 +121,10 @@ def main():
     (output / "chipdb").mkdir(parents=True)
     shutil.copyfile(yosys, output / "yosys.wasm")
     shutil.copyfile(nextpnr, output / "nextpnr-himbaechel-gowin.wasm")
-    create_share_tar(output / "yosys-share.tar")
+    create_share_tar(output / "yosys-share.tar", yosys_share)
     for family in CHIPDB_FAMILIES:
         shutil.copyfile(
-            CHIPDB_SOURCE / f"chipdb-{family}.bin",
+            chipdb_source / f"chipdb-{family}.bin",
             output / "chipdb" / f"chipdb-{family}.bin",
         )
 
