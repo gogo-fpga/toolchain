@@ -141,7 +141,7 @@ download_package() {
   done
   if [[ -z "$deb" ]]; then
     candidate_dir=$(mktemp -d "$host_package_cache/download-${package}.XXXXXX")
-    (cd "$candidate_dir" && apt-get download "$package")
+    (cd "$candidate_dir" && apt-get -o APT::Architecture=amd64 download "$package:amd64")
     deb=$(find "$candidate_dir" -maxdepth 1 -type f -name '*.deb' -print -quit)
     if [[ -z "$deb" ]]; then
       printf 'apt-get download did not produce a .deb for %s\n' "$package" >&2
