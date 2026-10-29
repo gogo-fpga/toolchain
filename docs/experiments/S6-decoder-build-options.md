@@ -55,7 +55,7 @@ zstd と xz の WASM 展開器について、現在の `-O2`、`-O3`、`-Os`、L
 1. `origin/main` の基準 commit から作業ブランチを作ります。
 2. `DECODER_OPT_LEVEL` と `DECODER_LTO` を未設定にしたビルドを行い、基準 commit の現行 `-O2` ビルドと zstd、xz それぞれの SHA-256 を比較します。既定動作を変えていないことを確認します。
 3. B、B2、O3、O3LTO、Os、OsLTO をそれぞれ別の `DECODER_OUT_DIR` にビルドします。各変種の zstd と xz の WASM SHA-256 を記録し、LTO 変種はリンクに `llvm-lto` sysroot library が使われた証拠を確認します。証拠がなければ、その変種を失敗として扱います。
-4. 各変種を 2 回ビルドして、展開器ごとの A/A SHA-256 を比較します。
+4. 各変種を 2 回ビルドして、展開器ごとの A/A SHA-256 を比較します。Node test は `node --import ./scripts/s6-wasi-random-get-preload.mjs --test tests/web/decompress.test.mjs` で各変種5回連続実行します。preload は WASM が `wasi_snapshot_preview1.random_get` を import し、呼び出し側に実装がない場合だけ `crypto.getRandomValues` を使う実装を補います。
 5. S4B 資材を用意し、headless Chromium で各展開器の compile 時間と資材ごとの展開時間を測ります。反復ごとに変種の順番を回し、新しいページを使います。展開後の SHA-256 を元の資材と照合します。
 6. 全変種について安定性の基準を確認し、B と B2 から `N` を求めて、上記の選定基準を適用します。
 7. B と選定候補で圧縮入力および WASM code section の負の対照を確認します。失敗した試行も含む全反復の生 CSV、絶対値、基準、WASI SDK、clang、Chromium、ホスト、CPU、submodule、コマンド、ログを記録します。ログは一時ディレクトリーではなく `build/s6/` に置きます。
@@ -104,7 +104,7 @@ Chromium の正式計測は同じホストで 5 回以上行う。各反復で�
 | Os | `e60f580fb0ed7cc245d3c8cc1806e1c8eb46b58bc1c184af179a20e780b3a514` | `c10057f92b0c0355223490ec661e43e256800d5f5a39cd59b707442db30c0176` |
 | OsLTO | `d42c6a2cdd3cc130179f7766f8316a0fdf08dffb235f394f6bde01282e8bfecd` | `f835d6a8c3dfdb46c4b2c79c4b0a73d17e9335d0bd99904381655719b18099ad` |
 
-`node --test tests/web/decompress.test.mjs` は各変種で5回連続、各回14/14 pass（合計30回、420 assertions）。LTO の4つの build log は WASI SDK の `llvm-lto/23.1.0-wasi-sdk/libc.a` を使った記録を含む。
+正式な Node test は各変種で5回連続、各回14/14 pass（合計30回、420 assertions）だった。5回実行では commit `ac4c3b892715becfe0eb36251640a6712452dffa` のテスト内 adapter を使用した。今回、同じ `random_get` 処理を実験用 preload `scripts/s6-wasi-random-get-preload.mjs` に移し、動作が同じであることを追試した。B と OsLTO の preload 付き実行コマンドは `node --import ./scripts/s6-wasi-random-get-preload.mjs --test tests/web/decompress.test.mjs` で、各14/14 passだった。OsLTO の preload なし実行 `node --test tests/web/decompress.test.mjs` は10 pass・4 failとなった。OsLTO の両 WASM が `wasi_snapshot_preview1.random_get` を import し、失敗時は `WebAssembly.instantiate` が imports object の不在を報告することを確認した。これは意図した負の対照であり、測定値と選定は変更しない。最後に B を復元し、zstd SHA-256 `c80c619579e0cbc5a3981fca7741b436b8f1de714ed91ac7e07259d18ea00f37` と xz SHA-256 `0486d7ae22a9601748588a953a0dbaae3ca6189a41bb1694b9d0b8217088a48e` を確認した。LTO の4つの build log は WASI SDK の `llvm-lto/23.1.0-wasi-sdk/libc.a` を使った記録を含む。
 
 WASI SDK の `llvm-objdump` で12個の WASM を調べた。`target_features` custom section は strip により存在せず、clang の target は `wasm32-unknown-wasip1`、CPU は generic で、明示的な target feature 指定はない。命令走査では全変種に bulk-memory の `memory.copy`／`memory.fill` と sign-extension の `i32.extend8_s`／`i32.extend16_s` があった。SIMD、atomic、reference、non-trapping float-to-int の命令は見つからなかった。
 
@@ -138,4 +138,5 @@ B では zstd・xz の圧縮入力を破損すると両方とも拒否され、W
 - Node test: `build/s6/formal-node-test-summary.csv`、`build/s6/formal-node-{variant}-{1..5}.log`
 - feature inspection: `build/s6/formal-wasm-objdump.txt`、`build/s6/formal-wasm-feature-scan.txt`
 - 負の対照: `build/s6/formal-node-B-1.log`、`build/s6/formal-negative-control-B-decoder.log`
+- random_get preload 追試: `build/s6/followup-preload-B-with.log`、`build/s6/followup-preload-OsLTO-with.log`、`build/s6/followup-preload-OsLTO-without.log`、`build/s6/followup-preload-OsLTO-imports.log`
 - 実行環境と server: `build/s6/formal-environment-before-chromium.txt`、`build/s6/formal-server.log`

@@ -6,14 +6,12 @@ import { gzipSync } from "node:zlib";
 import test from "node:test";
 
 import { decompress, releaseDecoders } from "../../web/lib/decompress.mjs";
-import { installWasiRandomGet } from "./wasi-random-get-helper.mjs";
 
 const repoRoot = resolve(import.meta.dirname, "../..");
 const decoderBytes = {
   zstd: readFileSync(resolve(repoRoot, "build/wasi/decoders/zstd-decoder.wasm")),
   xz: readFileSync(resolve(repoRoot, "build/wasi/decoders/xz-decoder.wasm")),
 };
-installWasiRandomGet(Object.values(decoderBytes));
 const synthetic = Uint8Array.from(
   { length: 12 * 1024 },
   (_, index) => (index * 31 + (index >>> 4)) & 0xff,
