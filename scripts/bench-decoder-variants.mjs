@@ -117,6 +117,39 @@ try {
           Array.from(new Uint8Array(bytes), (value) => value.toString(16).padStart(2, "0")).join("");
         const sha256 = async (bytes) => hex(await crypto.subtle.digest("SHA-256", bytes));
         const fromBase64 = (value) => Uint8Array.from(atob(value), (character) => character.charCodeAt(0));
+        const decoderBytesForWasiImports = new WeakSet();
+        const nativeInstantiate = WebAssembly.instantiate.bind(WebAssembly);
+        WebAssembly.instantiate = async (source, imports) => {
+          if (!decoderBytesForWasiImports.has(source)) {
+            return imports === undefined
+              ? nativeInstantiate(source)
+              : nativeInstantiate(source, imports);
+          }
+          let instance;
+          const randomGet = (pointer, length) => {
+            const memory = instance?.exports.memory;
+            if (!(memory instanceof WebAssembly.Memory)) return 21;
+            let view;
+            try {
+              view = new Uint8Array(memory.buffer, pointer >>> 0, length >>> 0);
+            } catch {
+              return 21;
+            }
+            for (let offset = 0; offset < view.length; offset += 65_536) {
+              crypto.getRandomValues(view.subarray(offset, Math.min(offset + 65_536, view.length)));
+            }
+            return 0;
+          };
+          const result = await nativeInstantiate(source, {
+            ...(imports ?? {}),
+            wasi_snapshot_preview1: {
+              ...(imports?.wasi_snapshot_preview1 ?? {}),
+              random_get: randomGet,
+            },
+          });
+          instance = result.instance;
+          return result;
+        };
         const indexResponse = await fetch("/bench/index.tsv", { cache: "no-store" });
         if (!indexResponse.ok) {
           throw new Error(`Could not load benchmark index: HTTP ${indexResponse.status}`);
@@ -160,6 +193,7 @@ try {
           for (const format of ["zstd", "xz"]) {
             const decoder = variant.wasm[format];
             const decoderBytes = fromBase64(decoder.base64);
+            decoderBytesForWasiImports.add(decoderBytes);
             if (payload.smoke) {
               for (const path of payload.assets) {
                 const { entry, bytes } = inputs.get(`${format}:${path}`);
