@@ -5,7 +5,7 @@
 - 担当: Devin
 - 関連: [S5 WASI ビルド最適化](S5-wasi-build-options.md)
 - 基準 commit: `f440ab04fdbe728edf9ac124e6af6221722495ef`
-- 事前登録 commit: 初回 commit 後に追記する。正式計測は SHA を記録した commit の後に始める。
+- 事前登録 commit: `153472d265eed41df8739744932221365425c574`
 
 ## 目的
 
