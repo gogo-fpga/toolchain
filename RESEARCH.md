@@ -109,7 +109,7 @@ Boost 1.92.0 は `-fwasm-exceptions` と `libunwind` を使って WASI 向けに
 S5 の事前登録基準では LTO を採用します。Chromium の Tang Nano 20K は 2,296.095 ms で B より 10.5% 速く、zstd -19 の合計は 11.6% 小さく、ビルド時間は 1.81 倍でした。
 B の nextpnr は upstream の `USE_IPO=ON` で ThinLTO 済みです。Yosys の O2/Os/Oz は `-DNDEBUG` を付けず、B と assert の状態をそろえました。
 Os は Node 20K で 2,048.583 ms、zstd 合計 13,235,553 bytes でしたが、Chromium では測定していません。
-詳細は [S5 WASI SDK ビルドオプション比較](docs/experiments/S5-wasi-build-options.md) を参照してください。LTO を既定ビルドに反映する変更は別 PR で行います。
+詳細は [S5 WASI SDK ビルドオプション比較](docs/experiments/S5-wasi-build-options.md) を参照してください。後続の S5B 比較では OsLTO（Yosys と nextpnr は `-Os`、C/C++/linker は `-flto`、nextpnr は `USE_IPO=OFF`）を選定しました（[計測記録 PR #23](https://github.com/gogo-fpga/toolchain/pull/23)）。本変更でこの条件を既定にします。S5 の B は、最適化フラグを明示的に空にし、nextpnr に `WASI_USE_IPO=ON` を指定して再現します。
 
 ### Pyodide 上の Apicula `gowin_pack`
 

@@ -328,6 +328,11 @@ case "$wasi_build" in
     exit 1
     ;;
 esac
+WASI_OPT_FLAGS=${WASI_OPT_FLAGS--Os}
+WASI_EXTRA_CFLAGS=${WASI_EXTRA_CFLAGS--flto}
+WASI_EXTRA_CXXFLAGS=${WASI_EXTRA_CXXFLAGS--flto}
+WASI_EXTRA_LDFLAGS=${WASI_EXTRA_LDFLAGS--flto}
+WASI_USE_IPO=${WASI_USE_IPO-OFF}
 c_flags="-I$root/$boost_source -ffile-prefix-map=$root=/src -ffile-prefix-map=$root/$wasi_build=/build -ffile-prefix-map=$root/$sdk_dir=/wasi-sdk -ffile-prefix-map=$boost_source=/boost -ffile-prefix-map=$eigen_source=/eigen -DNPNR_DISABLE_THREADS"
 cxx_flags="$c_flags -fwasm-exceptions"
 linker_flags="-fwasm-exceptions -Wl,-z,stack-size=8388608 -lwasi-emulated-mman -Wl,--whole-archive -lunwind -Wl,--no-whole-archive"
