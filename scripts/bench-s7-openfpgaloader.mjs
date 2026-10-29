@@ -302,37 +302,49 @@ async function runProgrammingCase(browser, baseUrl, variant, testCase) {
 async function runInstantiate(browser, baseUrl, variant) {
   const { context, page } = await setupPage(browser, baseUrl, variant);
   try {
+    await page.route("**/s7-instantiate-worker.js", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "text/javascript",
+        headers: {
+          "Cross-Origin-Opener-Policy": "same-origin",
+          "Cross-Origin-Embedder-Policy": "require-corp",
+          "Cross-Origin-Resource-Policy": "same-origin",
+        },
+        body: readFileSync(path.resolve(root, "scripts/s7-instantiate-worker.js")),
+      }),
+    );
     await page.goto(baseUrl, { waitUntil: "domcontentloaded" });
     const result = await page.evaluate(async (timeout) => {
-      const source = `
-        self.onmessage = async () => {
-          try {
-            const { default: instantiate } = await import("/openFPGALoader.mjs");
-            const wasmBinary = await (await fetch("/openFPGALoader.wasm")).arrayBuffer();
-            await instantiate({ wasmBinary, noInitialRun: true });
-            self.postMessage({ status: "ready" });
-          } catch (error) {
-            self.postMessage({ status: "error", message: String(error) });
-          }
-        };
-      `;
-      const worker = new Worker(
-        URL.createObjectURL(new Blob([source], { type: "text/javascript" })),
-        { type: "module" },
+      const appScript = [...document.scripts].find((script) =>
+        new URL(script.src, location.href).pathname.endsWith("/app.js"),
       );
+      if (!appScript) throw new Error("Could not locate the application module URL.");
+      const workerUrl = new URL("./s7-instantiate-worker.js", appScript.src);
+      const worker = new Worker(workerUrl, { type: "module" });
       const started = performance.now();
       return await new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error("Instantiate timeout.")), timeout);
+        const timer = setTimeout(() => {
+          worker.terminate();
+          reject(new Error("Instantiate timeout."));
+        }, timeout);
         worker.onmessage = ({ data }) => {
           clearTimeout(timer);
           worker.terminate();
-          if (data.status !== "ready") reject(new Error(data.message));
+          if (data.status !== "ready") reject(new Error(data.message ?? "Instantiate failed."));
           else resolve({ elapsedMs: performance.now() - started });
         };
         worker.onerror = (event) => {
           clearTimeout(timer);
           worker.terminate();
-          reject(new Error(event.message));
+          reject(new Error(JSON.stringify({
+            message: event.message,
+            filename: event.filename,
+            line: event.lineno,
+            column: event.colno,
+            error: event.error ? String(event.error) : null,
+            stack: event.error?.stack ?? null,
+          })));
         };
         worker.postMessage({});
       });
@@ -365,7 +377,11 @@ async function main() {
   if (options["tamper-fixture"] && options["tamper-wasm"]) {
     throw new Error("Only one negative control may run at a time.");
   }
-  if (options.mode === "smoke" && !programmingCases.some((item) => item.id === options.case)) {
+  if (
+    options.mode === "smoke"
+    && options.case !== "instantiate"
+    && !programmingCases.some((item) => item.id === options.case)
+  ) {
     throw new Error(`Unknown smoke case: ${options.case}`);
   }
   mkdirSync(path.dirname(outputPath), { recursive: true });
@@ -390,12 +406,14 @@ async function main() {
       const testCase = programmingCases.find((item) => item.id === options.case);
       for (const variant of variants) {
         try {
-          const result = await runProgrammingCase(browser, baseUrl, variant, testCase);
+          const result = options.case === "instantiate"
+            ? await runInstantiate(browser, baseUrl, variant)
+            : await runProgrammingCase(browser, baseUrl, variant, testCase);
           rows.push({
             phase: "smoke",
             variant: variant.name,
             repeat: 1,
-            case: testCase.id,
+            case: options.case,
             status: "pass",
             elapsed_ms: "",
             details: result.details,
@@ -406,7 +424,7 @@ async function main() {
             phase: "smoke",
             variant: variant.name,
             repeat: 1,
-            case: testCase.id,
+            case: options.case,
             status: "fail",
             elapsed_ms: "",
             details: error.stack ?? String(error),
