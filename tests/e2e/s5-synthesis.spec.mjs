@@ -11,6 +11,7 @@ const selectedAssetDir = process.env.S5_ASSET_DIR;
 const repeats = Number(process.env.S5_CHROMIUM_REPEATS ?? "5");
 const s5bVariants = process.env.S5_CHROMIUM_VARIANTS?.split(",") ?? [];
 const s5bAssetBundleRoot = process.env.S5_ASSET_BUNDLE_ROOT;
+const recordIntermediate = process.env.S5_RECORD_INTERMEDIATE === "1";
 
 async function createProject(page, board) {
   await page.goto("/");
@@ -38,6 +39,25 @@ async function storedFsDigest(page, projectName) {
     return {
       size: bytes.byteLength,
       sha256: [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join(""),
+    };
+  }, projectName);
+}
+
+async function storedIntermediateDigests(page, projectName) {
+  return page.evaluate(async (name) => {
+    const root = await navigator.storage.getDirectory();
+    const projects = await root.getDirectoryHandle("projects");
+    const project = await projects.getDirectoryHandle(name);
+    const build = await project.getDirectoryHandle("build");
+    const digest = async (fileName) => {
+      const file = await build.getFileHandle(fileName);
+      const bytes = await (await file.getFile()).arrayBuffer();
+      const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+      return [...hash].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    };
+    return {
+      netlist_sha256: await digest("top.json"),
+      pnr_sha256: await digest("top_pnr.json"),
     };
   }, projectName);
 }
@@ -78,6 +98,9 @@ if (s5bVariants.length > 0) {
             await expect(page.locator("#fs-source")).toHaveValue("build/top.fs");
             const actual = await storedFsDigest(page, projectName);
             expect(actual).toEqual({ size: expectedBytes.length, sha256: expectedHash });
+            const intermediate = recordIntermediate
+              ? await storedIntermediateDigests(page, projectName)
+              : {};
             const [measurement] = await page.evaluate(() =>
               window.__s5BuildResults.splice(0, 1),
             );
@@ -91,6 +114,7 @@ if (s5bVariants.length > 0) {
                 pnr_ms: measurement.timings.pnr,
                 fs_size: actual.size,
                 fs_sha256: actual.sha256,
+                ...intermediate,
               })}`,
             );
           },
@@ -128,6 +152,9 @@ if (s5bVariants.length > 0) {
         await expect(page.locator("#fs-source")).toHaveValue("build/top.fs");
         const actual = await storedFsDigest(page, projectName);
         expect(actual).toEqual({ size: expectedBytes.length, sha256: expectedHash });
+        const intermediate = recordIntermediate
+          ? await storedIntermediateDigests(page, projectName)
+          : {};
         const [measurement] = await page.evaluate(() =>
           window.__s5BuildResults.splice(0, 1),
         );
@@ -141,6 +168,7 @@ if (s5bVariants.length > 0) {
             pnr_ms: measurement.timings.pnr,
             fs_size: actual.size,
             fs_sha256: actual.sha256,
+            ...intermediate,
           })}`,
         );
       }
