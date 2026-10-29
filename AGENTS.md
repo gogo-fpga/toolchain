@@ -50,7 +50,7 @@
 
 ## 6. 依存関係の管理
 
-`.github/dependabot.yml` では、branch を追う submodule（yomiyasu）、GitHub Actions、npm、pip を週次で更新対象にします。`libftdi` は Dependabot から取得元 `developer.intra2net.com` に接続できません。そのため、「固定版の更新確認」ワークフローが `vendor/libftdi` の branch 先端を調べ、差があれば Issue で知らせます。タグで固定した submodule（openFPGALoader、libusb、zlib、emsdk、Yosys、nextpnr、zstd、xz-embedded）、WASI SDK、Boost・Eigen のアーカイブ、Apycula、Node.js、actionlint、runner も同じワークフローの対象です。
+`.github/dependabot.yml` では、branch を追う submodule（yomiyasu、ghdl-browser）、GitHub Actions、npm、pip を週次で更新対象にします。`libftdi` は Dependabot から取得元 `developer.intra2net.com` に接続できません。そのため、「固定版の更新確認」ワークフローが `vendor/libftdi` の branch 先端を調べ、差があれば Issue で知らせます。タグで固定した submodule（openFPGALoader、libusb、zlib、emsdk、Yosys、nextpnr、zstd、xz-embedded、GHDL）、WASI SDK、Boost・Eigen のアーカイブ、Apycula、Node.js、actionlint、runner も同じワークフローの対象です。AdaWebPack のリリースのアーカイブと、GCC の libgnat の commit も、同じワークフローの対象です。GHDL のビルドに使う Ubuntu のパッケージ（gprbuild などと libxml2）は、版と SHA-256 を固定し、照合だけを行います。
 
 Pyodide に同梱する NumPy、msgspec、micropip は、npm の `pyodide` パッケージに含まれる `pyodide-lock.json` の版と SHA-256 に従います。Dependabot が `pyodide` を更新すれば、この 3 つも一緒に更新されます。`tests/fixtures/requirements.txt` の Apicula は、`yowasp-nextpnr-himbaechel-gowin` が版を固定しているため Dependabot の対象から外しています。
 
