@@ -53,3 +53,7 @@ B を基準に、B+O3、B+O3+LTOA、B+LTOA のいずれかが、安定性の条�
 6. Chromium 上で、8 つの書き込みケースと instantiate を 5 回以上測る。反復ごとに変種順を回転し、毎回新しいページを使う。成功状態、ログ、fixture との一致を確かめ、失敗を含む全試行を記録する。
 7. B と、結果に基づいて選ぶ候補のそれぞれで、1 byte 壊した `.fs` と code section を 1 byte 壊した WASM の負の対照を行い、UI が失敗を検出することを確かめる。
 8. 安定性の各条件への適合を確認し、主指標から `N` を求めたうえで、固定した選定規則を機械的に適用する。結果と失敗試行を Markdown と CSV に記録し、ログは `build/s7/` に保存する。記録には VM 固有の絶対パスを含めない。
+
+### 手順への追記（2026-10-29、事前登録後・正式計測前）
+
+各 Chromium 書き込み試行では、`tests/e2e/fake-usb-helpers.mjs` の opt-in 状態取得を使って fake USB の最終状態を読み戻す。SRAM は `tests/sim/program.test.mjs` と同じ `parseFsPayload(..., true)` のバイト列、Tang Nano 20K の外付け NOR は `parseFsPayload(..., false)` のバイト列、その他の内蔵フラッシュは `GW1N`、20 バイトの `0xff`、`parseFsPayload(..., false)` を連結したバイト列と比較する。比較は各試行の UI 成功判定の後に行い、長さと全バイトが一致しなければ失敗とする。正式計測前の smoke では、期待値の先頭バイトを意図的に反転する負の対照も実行し、比較が不一致を検出することを確認する。fake USB のモデルと permanent test は変更しない。

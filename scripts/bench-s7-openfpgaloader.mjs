@@ -17,6 +17,8 @@ const options = parseArgs({
     out: { type: "string", default: "build/s7/chromium-smoke.csv" },
     repeats: { type: "string", default: "1" },
     case: { type: "string", default: "tangnano9k-sram" },
+    variant: { type: "string", default: "all" },
+    "tamper-expected": { type: "boolean", default: false },
   },
 }).values;
 
@@ -28,6 +30,53 @@ const programmingCases = BOARDS.flatMap((board) => [
   { id: `${board.id}-sram`, board, target: "sram" },
   { id: `${board.id}-flash`, board, target: "flash" },
 ]);
+
+function parseFsPayload(board, reverseByte = false) {
+  const records = readFileSync(
+    path.resolve(root, `build/fixtures/${board}.fs`),
+    "ascii",
+  )
+    .split(/\r?\n/)
+    .filter((line) => /^[01]+$/.test(line));
+  const bytes = [];
+  for (const record of records) {
+    for (let offset = 0; offset < record.length; offset += 8) {
+      let value = Number.parseInt(record.slice(offset, offset + 8), 2);
+      if (reverseByte) {
+        value = ((value & 0x55) << 1) | ((value >>> 1) & 0x55);
+        value = ((value & 0x33) << 2) | ((value >>> 2) & 0x33);
+        value = ((value & 0x0f) << 4) | ((value >>> 4) & 0x0f);
+      }
+      bytes.push(value);
+    }
+  }
+  return Buffer.from(bytes);
+}
+
+function contentExpectation(testCase) {
+  const payload = parseFsPayload(testCase.board.id, testCase.target === "sram");
+  let kind;
+  let bytes;
+  let captureState;
+  if (testCase.target === "sram") {
+    kind = "sram";
+    bytes = payload;
+    captureState = { sramLength: payload.length };
+  } else if (testCase.board.idcode === 0x0000081b) {
+    kind = "nor";
+    bytes = payload;
+    captureState = { norLength: payload.length };
+  } else {
+    kind = "eflash";
+    bytes = Buffer.concat([Buffer.from("GW1N"), Buffer.alloc(20, 0xff), payload]);
+    captureState = { eflashLength: bytes.length };
+  }
+  if (options["tamper-expected"]) {
+    bytes = Buffer.from(bytes);
+    bytes[0] ^= 1;
+  }
+  return { kind, bytes, captureState };
+}
 
 function csv(value) {
   const text = String(value ?? "");
@@ -67,18 +116,22 @@ function loadManifest() {
     manifest.variants.map((variant) => variant.name),
     ["B", "B2", "B+O3", "B+O3+LTOA", "B+LTOA"],
   );
-  return manifest.variants.map((variant) => ({
+  const variants = manifest.variants.map((variant) => ({
     ...variant,
     artifactDir: path.resolve(root, variant.artifact_dir),
     mjs: readFileSync(path.resolve(root, variant.artifact_dir, "openFPGALoader.mjs")),
     wasm: readFileSync(path.resolve(root, variant.artifact_dir, "openFPGALoader.wasm")),
   }));
+  if (options.variant === "all") return variants;
+  const selected = variants.filter((variant) => variant.name === options.variant);
+  assert.equal(selected.length, 1, `Unknown variant: ${options.variant}`);
+  return selected;
 }
 
-async function setupPage(browser, baseUrl, variant) {
+async function setupPage(browser, baseUrl, variant, captureState = null) {
   const context = await browser.newContext();
   const page = await context.newPage();
-  await stubPageUsb(page);
+  await stubPageUsb(page, false, { captureFakeUsbState: captureState !== null });
   await page.route("**/openFPGALoader.mjs", (route) =>
     route.fulfill({
       status: 200,
@@ -99,10 +152,19 @@ async function setupPage(browser, baseUrl, variant) {
 }
 
 async function runProgrammingCase(browser, baseUrl, variant, testCase) {
-  const { context, page } = await setupPage(browser, baseUrl, variant);
+  const expectation = contentExpectation(testCase);
+  const { context, page } = await setupPage(
+    browser,
+    baseUrl,
+    variant,
+    expectation.captureState,
+  );
   const fixture = path.resolve(root, `build/fixtures/${testCase.board.id}.fs`);
   try {
-    await routeWorkerWithFakeUsb(page, { idcode: testCase.board.idcode });
+    await routeWorkerWithFakeUsb(page, {
+      idcode: testCase.board.idcode,
+      captureState: expectation.captureState,
+    });
     await page.goto(baseUrl, { waitUntil: "domcontentloaded" });
     await page.locator("#support-status").waitFor({ state: "visible", timeout: 30_000 });
     await page.waitForFunction(
@@ -146,7 +208,38 @@ async function runProgrammingCase(browser, baseUrl, variant, testCase) {
         `Programming verification failed: status=${status}; progress=${progress}; log=${log}`,
       );
     }
-    return { elapsedMs, details: `status=${status}; progress=${progress}; command=${command}` };
+    const contentResult = await page.evaluate(
+      ({ kind, expectedBase64 }) => {
+        const expected = Uint8Array.from(atob(expectedBase64), (char) => char.charCodeAt(0));
+        const state = globalThis.__s7FakeUsbState;
+        const rawActual = state?.[kind];
+        const actual = rawActual ? new Uint8Array(rawActual.buffer ?? rawActual) : null;
+        if (!actual) return { ok: false, reason: `missing ${kind} snapshot` };
+        if (actual.length !== expected.length) {
+          return {
+            ok: false,
+            reason: `${kind} length ${actual.length} != expected ${expected.length}`,
+          };
+        }
+        for (let index = 0; index < expected.length; index += 1) {
+          if (actual[index] !== expected[index]) {
+            return {
+              ok: false,
+              reason: `${kind} mismatch at byte ${index}: ${actual[index]} != ${expected[index]}`,
+            };
+          }
+        }
+        return { ok: true, length: actual.length };
+      },
+      { kind: expectation.kind, expectedBase64: expectation.bytes.toString("base64") },
+    );
+    if (!contentResult.ok) {
+      throw new Error(`Fake device content mismatch: ${contentResult.reason}`);
+    }
+    return {
+      elapsedMs,
+      details: `status=${status}; progress=${progress}; ${expectation.kind}=${contentResult.length}; command=${command}`,
+    };
   } finally {
     await context.close();
   }
@@ -205,6 +298,9 @@ async function main() {
   }
   if (options.mode === "formal" && options.case !== "all") {
     throw new Error("Formal mode uses all eight programming cases and instantiate.");
+  }
+  if (options.mode === "formal" && options.variant !== "all") {
+    throw new Error("Formal mode uses all five variants.");
   }
   if (options.mode === "smoke" && !programmingCases.some((item) => item.id === options.case)) {
     throw new Error(`Unknown smoke case: ${options.case}`);
