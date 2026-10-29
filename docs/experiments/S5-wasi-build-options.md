@@ -292,6 +292,8 @@ B と B2 の Yosys WASM はどちらも 52,926,660 bytes だったが、SHA-256 
 
 LTO で新しい target feature は増えず、B と同じである。実機の Tang Nano では測定していないため、結果を実機の性能として扱わない。LTO を既定ビルドに反映する変更は別 PR で行う。
 
+- S5B で追加測定: [S5B Yosys・nextpnr の Os／LTO／Os+LTO 比較](S5B-os-lto-chromium.md)で候補を追加比較し、凍結した選定規則により OsLTO を選んだ。既定 build script への反映は別 PR で行う。
+
 ## ログ
 
 大きなビルドログと Node WASI の実行ファイルは `build/s5/` に置き、コミットしない。正式記録では再生成コマンドと SHA-256 を示す。

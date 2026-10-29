@@ -37,6 +37,14 @@ VARIANTS = {
         "ld": "-flto",
         "use_ipo": "OFF",
     },
+    "OsLTO": {
+        "opt": "-Os",
+        "expected_opt": "-Os",
+        "c": "-flto",
+        "cxx": "-flto",
+        "ld": "-flto",
+        "use_ipo": "OFF",
+    },
     "TLTO": {
         "opt": "",
         "expected_opt": "-O3",
@@ -84,6 +92,7 @@ METRIC_UNITS = {
     "wasm_sha256": "sha256",
     "synth_ms": "ms",
     "pnr_ms": "ms",
+    "total_ms": "ms",
     "node_wall_s": "s",
     "yosys_memory_bytes": "bytes",
     "nextpnr_memory_bytes": "bytes",
@@ -291,11 +300,21 @@ def check_build_flags(variant, tool, directory):
         ]
         if missing:
             raise RuntimeError(f"{tool} link command is missing flags: {', '.join(missing)}")
-    if variant == "LTO" and tool == "nextpnr":
+    if variant in ("LTO", "OsLTO") and tool == "nextpnr":
         cache_path = directory / "CMakeCache.txt"
         cache = cache_path.read_text(errors="replace") if cache_path.is_file() else ""
         if "USE_IPO:BOOL=OFF" not in cache:
             raise RuntimeError("nextpnr LTO build did not configure USE_IPO=OFF")
+        all_compile_flags = "\n".join(
+            path.read_text(errors="replace")
+            for path in directory.rglob("flags.make")
+        )
+        all_link_commands = "\n".join(
+            path.read_text(errors="replace")
+            for path in directory.rglob("link.txt")
+        )
+        if "-flto=thin" in all_compile_flags or "-flto=thin" in all_link_commands:
+            raise RuntimeError("nextpnr LTO build must not contain -flto=thin")
         target_dir = (
             directory
             / "himbaechel/uarch/gowin/CMakeFiles/nextpnr-himbaechel-gowin.dir"
@@ -314,7 +333,7 @@ def check_build_flags(variant, tool, directory):
                 f"nextpnr LTO link command must contain -flto and no -flto=thin: "
                 f"{link_path.relative_to(ROOT)}"
             )
-        objects = list(directory.rglob("*.obj"))
+        objects = [*directory.rglob("*.obj"), *directory.rglob("*.o")]
         if not objects or any(
             path.read_bytes()[:4] != b"BC\xc0\xde" for path in objects
         ):
@@ -471,6 +490,22 @@ def check_variant_artifacts(variant):
             raise SystemExit(
                 f"Missing {tool} build for {variant}: {artifact.relative_to(ROOT)}"
             )
+    if variant == "OsLTO":
+        for tool in ("yosys", "nextpnr"):
+            _, candidate = tool_paths("OsLTO", tool)
+            candidate_digest = sha256_file(candidate)
+            for comparison in ("B", "LTO", "Os"):
+                _, reference = tool_paths(comparison, tool)
+                if not reference.is_file():
+                    raise SystemExit(
+                        f"Missing {comparison} {tool} reference for OsLTO hash validation: "
+                        f"{reference.relative_to(ROOT)}"
+                    )
+                if candidate_digest == sha256_file(reference):
+                    raise SystemExit(
+                        f"OsLTO {tool} SHA-256 must differ from {comparison}: "
+                        f"{candidate.relative_to(ROOT)}"
+                    )
 
 
 def write_reused_build_rows(variant, sink):
@@ -502,6 +537,78 @@ def write_reused_build_rows(variant, sink):
             ),
         )
     return all(metadata["tools"][tool]["status"] == "pass" for tool in ("yosys", "nextpnr"))
+
+
+def write_s5_reuse_rows(variants, sink):
+    groups = {}
+    with DEFAULT_CSV.open(newline="", encoding="utf-8") as source:
+        for row in csv.DictReader(source):
+            if not row["note"].startswith("phase=build;"):
+                continue
+            groups.setdefault(row["run_id"], {})[row["metric"]] = row
+    baseline_hashes = {}
+    for tool in ("yosys", "nextpnr"):
+        baseline_matches = [
+            values
+            for run_id, values in groups.items()
+            if run_id.endswith(f"-{tool}")
+            and values.get("status", {}).get("variant") == "B"
+            and values.get("status", {}).get("value") == "pass"
+            and values.get("wasm_sha256", {}).get("value")
+        ]
+        if not baseline_matches:
+            raise SystemExit(f"S5 CSV lacks a passing B {tool} build hash")
+        baseline_hashes[tool] = baseline_matches[-1]["wasm_sha256"]["value"]
+    for variant in variants:
+        for tool in ("yosys", "nextpnr"):
+            matches = [
+                (run_id, values)
+                for run_id, values in groups.items()
+                if run_id.endswith(f"-{tool}")
+                and values.get("status", {}).get("value") == "pass"
+                and values.get("status", {}).get("note", "").find(f"tool={tool}") >= 0
+                and values["status"]["variant"] == variant
+                and values.get("wasm_sha256", {}).get("value")
+                != baseline_hashes[tool]
+            ]
+            if not matches:
+                raise SystemExit(f"No successful S5 build record for {variant} {tool}")
+            run_id, values = matches[-1]
+            status_row = values["status"]
+            output_match = re.search(r"(?:^|; )output_dir=([^;]+)", status_row["note"])
+            if not output_match:
+                raise SystemExit(f"S5 build record {run_id} has no output directory")
+            output_directory = output_match.group(1)
+            log_match = re.search(r"(?:^|; )log=([^;]+)", status_row["note"])
+            artifact = (
+                ROOT / output_directory / tool / "yosys.wasm"
+                if tool == "yosys"
+                else ROOT / output_directory / "nextpnr/nextpnr-himbaechel-gowin.wasm"
+            )
+            expected_digest = values.get("wasm_sha256", {}).get("value", "")
+            if not artifact.is_file() or sha256_file(artifact) != expected_digest:
+                raise SystemExit(
+                    f"S5 artifact SHA-256 does not match CSV for {variant} {tool}: "
+                    f"{artifact.relative_to(ROOT)}"
+                )
+            sink.write(
+                run_id=f"s5-reuse-{variant}-{tool}",
+                phase="build-reuse",
+                variant=variant,
+                tool=tool,
+                status="pass",
+                build_wall_s=values["build_wall_s"]["value"],
+                build_peak_rss_kib=values["build_peak_rss_kib"]["value"],
+                wasm_bytes=values["wasm_bytes"]["value"],
+                zstd19_bytes=values["zstd19_bytes"]["value"],
+                wasm_sha256=expected_digest,
+                output_dir=output_directory,
+                details=(
+                    f"reused S5 artifact; source_run_id={run_id}; "
+                    f"source_csv=docs/experiments/S5-wasi-build-options.csv; "
+                    f"source_log={log_match.group(1) if log_match else 'unavailable'}"
+                ),
+            )
 
 
 def write_tlto_nextpnr_reuse_row(sink):
@@ -642,6 +749,68 @@ def negative_control(run_directory, board, repeat, baseline, sink):
     return True
 
 
+def run_wasm_corruption_controls(variant, output_directory, sink):
+    failures = False
+    for tool in ("yosys", "nextpnr"):
+        _, source = tool_paths(variant, tool)
+        corrupted = output_directory / f"{tool}.corrupted.wasm"
+        shutil.copyfile(source, corrupted)
+        with corrupted.open("r+b") as target:
+            original = target.read(1)
+            if not original:
+                raise RuntimeError(f"Cannot corrupt empty WASM artifact: {source}")
+            target.seek(0)
+            target.write(bytes([original[0] ^ 1]))
+        corrupted_digest = sha256_file(corrupted)
+        source_digest = sha256_file(source)
+        command = [
+            "node",
+            "--input-type=module",
+            "-e",
+            (
+                "import { readFile } from 'node:fs/promises'; "
+                "const bytes = await readFile(process.argv[1]); "
+                "try { await WebAssembly.compile(bytes); "
+                "console.error('corrupt WASM accepted'); process.exitCode = 1; } "
+                "catch (error) { console.log(`rejected: ${error.message}`); }"
+            ),
+            str(corrupted),
+        ]
+        result = subprocess.run(
+            command,
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        log_path = output_directory / f"{tool}.corruption.log"
+        log_path.write_text(
+            f"$ {' '.join(command)}\n{result.stdout}\n{result.stderr}\n",
+            encoding="utf-8",
+        )
+        passed = (
+            corrupted_digest != source_digest
+            and result.returncode == 0
+            and result.stdout.startswith("rejected:")
+        )
+        if not passed:
+            failures = True
+        sink.write(
+            run_id=f"corruption-{variant}-{tool}",
+            phase="corruption-control",
+            variant=variant,
+            tool=tool,
+            status="pass" if passed else "corruption-not-rejected",
+            wasm_sha256=corrupted_digest,
+            output_dir=output_directory.relative_to(ROOT).as_posix(),
+            details=(
+                f"original_sha256={source_digest}; corrupted_sha256={corrupted_digest}; "
+                f"exit={result.returncode}; log={log_path.relative_to(ROOT)}"
+            ),
+        )
+    return not failures
+
+
 def run_node_trial(variant, board, repeat, run_directory, environment):
     command = [
         "node",
@@ -718,8 +887,40 @@ def summarize_node_trials(rows):
                 )
 
 
-def run_node_trials(variants, boards, repeats, output_directory, sink, unavailable=()):
-    baseline = {}
+def load_s5_node_baselines():
+    grouped = {}
+    with DEFAULT_CSV.open(newline="", encoding="utf-8") as source:
+        for row in csv.DictReader(source):
+            if row["variant"] != "B" or not row["run_id"].startswith("node-B-"):
+                continue
+            parts = row["run_id"].split("-")
+            if len(parts) != 4 or parts[2] not in BOARDS:
+                continue
+            grouped.setdefault(row["run_id"], {})[row["metric"]] = row["value"]
+    baselines = {}
+    for board in BOARDS:
+        for run_id, values in grouped.items():
+            parts = run_id.split("-")
+            if parts[2] != board or parts[3] != "1":
+                continue
+            if values.get("status") != "pass":
+                continue
+            hashes = {
+                key: values.get(key, "")
+                for key in ("netlist_sha256", "pnr_sha256", "fs_sha256")
+            }
+            if all(hashes.values()):
+                baselines[board] = hashes
+                break
+    if set(baselines) != set(BOARDS):
+        raise SystemExit("S5 CSV lacks passing B Node hashes for all four boards")
+    return baselines
+
+
+def run_node_trials(
+    variants, boards, repeats, output_directory, sink, unavailable=(), baseline=None
+):
+    baseline = baseline or {}
     metrics_rows = []
     failures = False
     for repeat in range(1, repeats + 1):
@@ -827,6 +1028,8 @@ def run_node_trials(variants, boards, repeats, output_directory, sink, unavailab
 
 
 def run_chromium(variants, repeats, output_directory, port, sink):
+    if "OsLTO" in variants:
+        return run_interleaved_chromium(variants, repeats, output_directory, port, sink)
     if "B" not in variants or "B2" in variants or len(variants) > 3:
         raise SystemExit(
             "Chromium phase requires B plus up to two finalists; B2 is only the A/A control"
@@ -919,6 +1122,179 @@ def run_chromium(variants, repeats, output_directory, port, sink):
     return not failures
 
 
+def run_interleaved_chromium(variants, repeats, output_directory, port, sink):
+    order = ("B", "B2", "LTO", "Os", "OsLTO")
+    if set(variants) != set(order):
+        raise SystemExit("S5B Chromium requires B, B2, LTO, Os, and OsLTO")
+    for variant in order:
+        check_variant_artifacts(variant)
+
+    asset_root = BUILD_ROOT / "asset-bundles"
+    if asset_root.exists() or asset_root.is_symlink():
+        raise SystemExit(f"Refusing to overwrite asset bundles: {asset_root.relative_to(ROOT)}")
+    asset_root.mkdir(parents=True)
+    failures = False
+    for variant in order:
+        raw_output = BUILD_ROOT / "asset-stage" / variant
+        bundle_output = asset_root / variant
+        if raw_output.exists() or raw_output.is_symlink():
+            raise SystemExit(f"Refusing to overwrite asset stage: {raw_output.relative_to(ROOT)}")
+        raw_output.parent.mkdir(parents=True, exist_ok=True)
+        command = [
+            "python3",
+            "scripts/build-synth-assets.py",
+            "--output",
+            str(raw_output),
+            "--dist-output",
+            str(bundle_output),
+        ]
+        environment = os.environ.copy()
+        environment["S5_ASSET_DIR"] = variant_root(variant).relative_to(ROOT).as_posix()
+        log_path = output_directory / f"assets-{variant}.log"
+        with log_path.open("w", encoding="utf-8") as log:
+            log.write(f"$ {' '.join(command)}\n")
+            result = subprocess.run(
+                command,
+                cwd=ROOT,
+                env=environment,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                check=False,
+                text=True,
+            )
+            log.write(f"\nexit={result.returncode}\n")
+        if result.returncode != 0:
+            failures = True
+            sink.write(
+                run_id=f"chromium-assets-{variant}",
+                phase="chromium-assets",
+                variant=variant,
+                tool="build-synth-assets",
+                status="failed",
+                output_dir=raw_output.relative_to(ROOT).as_posix(),
+                details=f"exit={result.returncode}; log={log_path.relative_to(ROOT)}",
+            )
+        else:
+            sink.write(
+                run_id=f"chromium-assets-{variant}",
+                phase="chromium-assets",
+                variant=variant,
+                tool="build-synth-assets",
+                status="pass",
+                output_dir=bundle_output.relative_to(ROOT).as_posix(),
+                details=f"log={log_path.relative_to(ROOT)}",
+            )
+    if failures:
+        return False
+
+    playwright_output = output_directory / "test-results"
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "S5_ASSET_DIR": variant_root("B").relative_to(ROOT).as_posix(),
+            "S5_WASI_ROOT": variant_root("B").relative_to(ROOT).as_posix(),
+            "S5_ASSET_BUNDLE_ROOT": asset_root.relative_to(ROOT).as_posix(),
+            "S5_CHROMIUM_VARIANTS": ",".join(order),
+            "S5_CHROMIUM_REPEATS": str(repeats),
+            "S5_PLAYWRIGHT_OUTPUT_DIR": str(playwright_output),
+            "PLAYWRIGHT_PORT": str(port),
+        }
+    )
+    command = [
+        "npx",
+        "playwright",
+        "test",
+        "tests/e2e/s5-synthesis.spec.mjs",
+    ]
+    process = subprocess.Popen(
+        command,
+        cwd=ROOT,
+        env=environment,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+    output_lines = []
+    metric_rows = []
+    for line in process.stdout:
+        print(line, end="", flush=True)
+        output_lines.append(line)
+        marker = "S5_BROWSER_METRIC "
+        marker_index = line.find(marker)
+        if marker_index >= 0:
+            try:
+                metric_rows.append(json.loads(line[marker_index + len(marker) :]))
+            except json.JSONDecodeError:
+                failures = True
+    return_code = process.wait()
+    log_path = output_directory / "playwright.log"
+    log_path.write_text("".join(output_lines), encoding="utf-8")
+    metrics = {
+        (int(metric["repeat"]), metric["board"], metric["variant"]): metric
+        for metric in metric_rows
+    }
+    expected_keys = {
+        (repeat, board, variant)
+        for repeat in range(1, repeats + 1)
+        for board in BOARDS
+        for variant in order
+    }
+    if len(metrics) != len(metric_rows) or set(metrics) != expected_keys:
+        failures = True
+    baseline = {
+        board: metrics[(1, board, "B")]["fs_sha256"]
+        for board in BOARDS
+        if (1, board, "B") in metrics
+    }
+    for repeat in range(1, repeats + 1):
+        for board in BOARDS:
+            for variant in order:
+                metric = metrics.get((repeat, board, variant))
+                identity = bool(
+                    metric and baseline.get(board) == metric.get("fs_sha256")
+                )
+                status = (
+                    "pass"
+                    if metric and return_code == 0 and identity
+                    else "identity-mismatch"
+                    if metric and not identity
+                    else "failed"
+                )
+                if status != "pass":
+                    failures = True
+                synth_ms = float(metric["synth_ms"]) if metric else None
+                pnr_ms = float(metric["pnr_ms"]) if metric else None
+                sink.write(
+                    run_id=f"chromium-{variant}-{board}-{repeat}",
+                    phase="chromium",
+                    variant=variant,
+                    board=board,
+                    repeat=repeat,
+                    tool="chromium",
+                    status=status,
+                    synth_ms=f"{synth_ms:.3f}" if synth_ms is not None else "",
+                    pnr_ms=f"{pnr_ms:.3f}" if pnr_ms is not None else "",
+                    total_ms=f"{synth_ms + pnr_ms:.3f}"
+                    if synth_ms is not None and pnr_ms is not None
+                    else "",
+                    fs_sha256=metric["fs_sha256"] if metric else "",
+                    fs_bytes=metric["fs_size"] if metric else "",
+                    identity_vs_B=str(identity).lower() if metric else "",
+                    output_dir=output_directory.relative_to(ROOT).as_posix(),
+                    details=(
+                        f"Playwright exit={return_code}; order=repeat,board,variant; "
+                        f"log={log_path.relative_to(ROOT)}"
+                    ),
+                )
+    print(
+        f"S5B_CHROMIUM_SUMMARY order={','.join(order)} trials={len(metric_rows)} "
+        f"exit={return_code} log={log_path.relative_to(ROOT)}",
+        flush=True,
+    )
+    return not failures
+
+
 def selected_variants(args):
     selected = args.variant or list(VARIANTS)
     return [variant for variant in VARIANTS if variant in selected]
@@ -930,7 +1306,7 @@ def main():
     )
     parser.add_argument(
         "--phase",
-        choices=("build", "node", "matrix", "chromium"),
+        choices=("build", "node", "matrix", "chromium", "corruption", "reuse-s5"),
         default="matrix",
     )
     parser.add_argument(
@@ -977,15 +1353,29 @@ def main():
         parser.error("The Chromium phase always measures all four boards")
     if args.phase == "chromium":
         if not args.variant:
-            parser.error("Select B and up to two finalists with --variant")
-        if "B" not in variants or "B2" in variants or len(variants) > 3:
-            parser.error("Chromium phase requires B plus up to two finalists; do not select B2")
+            parser.error("Select the S5B Chromium variants with --variant")
+        if "OsLTO" in variants:
+            if set(variants) != {"B", "B2", "LTO", "Os", "OsLTO"}:
+                parser.error("S5B Chromium requires B, B2, LTO, Os, and OsLTO")
+        elif "B" not in variants or "B2" in variants or len(variants) > 3:
+            parser.error("Chromium phase requires B plus up to two finalists; B2 is A/A only")
         if not args.append:
             parser.error("Chromium phase appends to the existing Node matrix CSV; pass --append")
+    if args.phase == "corruption" and variants != ["OsLTO"]:
+        parser.error("The corruption control requires only --variant OsLTO")
+    if args.phase == "reuse-s5":
+        if not args.variant or not set(variants).issubset({"LTO", "Os"}):
+            parser.error("S5 reuse requires explicit --variant LTO and/or --variant Os")
+        if not args.append:
+            parser.error("S5 reuse rows append to an existing CSV; pass --append")
     if args.tool and args.phase != "build":
         parser.error("--tool is only valid for --phase build")
-    if args.append and args.phase not in ("build", "node", "chromium"):
-        parser.error("--append is only valid for --phase build, node, or chromium")
+    if args.append and args.phase not in (
+        "build", "node", "chromium", "corruption", "reuse-s5"
+    ):
+        parser.error(
+            "--append is only valid for build, node, chromium, corruption, or S5 reuse"
+        )
     if args.phase == "build" and args.reuse_builds:
         parser.error("--reuse-builds is only valid for --phase matrix")
     if args.phase == "chromium" and args.repeats != 5:
@@ -1007,7 +1397,7 @@ def main():
     )
 
     preflight_csv(csv_path, args.append)
-    if args.phase in ("node", "matrix", "chromium"):
+    if args.phase in ("node", "matrix", "chromium", "corruption"):
         if args.phase == "matrix":
             for variant in variants:
                 directory = variant_root(variant)
@@ -1017,7 +1407,7 @@ def main():
                         f"{directory.relative_to(ROOT)}"
                     )
         for variant in variants:
-            if args.phase in ("node", "chromium") or (
+            if args.phase in ("node", "chromium", "corruption") or (
                 args.phase == "matrix" and args.reuse_builds and variant_root(variant).exists()
             ):
                 check_variant_artifacts(variant)
@@ -1072,7 +1462,12 @@ def main():
             if args.phase == "node":
                 for variant in variants:
                     check_variant_artifacts(variant)
-            if "B" not in variants:
+            node_baseline = (
+                load_s5_node_baselines()
+                if args.phase == "node" and variants == ["OsLTO"]
+                else None
+            )
+            if "B" not in variants and node_baseline is None:
                 raise SystemExit("Node phase requires B for per-board output identity comparisons")
             if args.phase == "node" and "TLTO" in variants:
                 write_tlto_nextpnr_reuse_row(sink)
@@ -1087,6 +1482,7 @@ def main():
                     if args.phase == "matrix"
                     else ()
                 ),
+                baseline=node_baseline,
             ):
                 ok = False
         if args.phase == "chromium":
@@ -1098,6 +1494,11 @@ def main():
                 sink,
             ):
                 ok = False
+        if args.phase == "corruption":
+            if not run_wasm_corruption_controls("OsLTO", output_directory, sink):
+                ok = False
+        if args.phase == "reuse-s5":
+            write_s5_reuse_rows(variants, sink)
     finally:
         sink.close()
     if not ok:
