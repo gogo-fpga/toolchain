@@ -13,7 +13,7 @@ const defaultAssets = [
   "synth/nextpnr-himbaechel-gowin.wasm",
   "synth/yosys-share.tar",
   "pack/pyodide/pyodide.asm.wasm",
-  "synth/chipdb-GW2A-18C.bin",
+  "synth/chipdb/chipdb-GW2A-18C.bin",
 ];
 const formats = ["zstd", "xz"];
 const { values } = parseArgs({
