@@ -1,6 +1,6 @@
 # S5B Yosys・nextpnr の Os／LTO／Os+LTO を Chromium で比較
 
-- 状態: 事前登録済み
+- 状態: 完了
 - 日付: 2026-10-29
 - 担当: Devin
 - 関連: [S5 WASI ビルド最適化](S5-wasi-build-options.md)
@@ -62,3 +62,62 @@ S5 の `B` build time は Yosys 838.420 s、nextpnr 93.910 s、合計 932.330 s 
 7. CSV の全試行を用いて中央値、B–B2 noise、圧縮サイズ、各基準の pass/fail、および選定規則を計算する。失敗・無効試行も削除せず CSV とログに残す。
 
 正式実行コマンドは、事前登録 commit SHA を追記した後に実行し、CSV とこの記録の「ログ」節にそのまま転記する。出力・ログのリポジトリ内パスは `$REPO_ROOT` を基準に記録し、個人環境の絶対パスはコミットしない。
+
+## 結果
+
+### 手順/結果: 基準 1 の Chromium 中間出力の追加確認
+
+> 基準 1 の Chromium 中間出力の一致は、事前登録した計測ログに記録項目がなかったため、同じ成果物での追加の一致確認で確かめた
+
+- 実施日: 2026-10-29
+- 計測コード commit: `dc9769cb9f95802d66182823e3cebcbfd65f35cc`
+- 試行とハッシュの補足 CSV: [S5B Chromium identity 補足記録](S5B-os-lto-chromium-identity-supplement.csv)
+- 生ログ: `build/s5b/chromium-artifacts/identity-run/playwright.log`
+- `S5_RECORD_INTERMEDIATE=1` を指定し、同じ OPFS 成果物 `build/top.json`、`build/top_pnr.json`、`build/top.fs` の SHA-256 を記録した。計100試行がすべて成功し、追加 run の時間は選定に使わない補足値として CSV に保存した。
+
+| variant | netlist JSON (`top.json`) | PnR JSON (`top_pnr.json`) | bitstream (`top.fs`) |
+|---|---:|---:|---:|
+| B | 20/20 | 20/20 | 20/20 |
+| B2 | 20/20 | 20/20 | 20/20 |
+| LTO | 20/20 | 20/20 | 20/20 |
+| Os | 20/20 | 20/20 | 20/20 |
+| OsLTO | 20/20 | 20/20 | 20/20 |
+
+候補ごとに4ボード×5回の全試行を、同じボードの B と比較した。Node の OsLTO 行列も4ボード×5回で、netlist JSON、PnR JSON、`.fs` がすべて B と一致した。比較器の負の対照として、B の Tang Nano 1K と4Kの PnR hash を比較すると不一致を検出した。1K は `0c5333b0a74a2457a427c179485fe1e283d2689422d399b12933952ca2a6278c`、4K は `c36b24081b34d4f2e430920a83758a0689099abe63575e1e5ee9bfb1bcaf9922` である。
+
+### 正式計測の性能とサイズ
+
+以下の Chromium 時間は事前登録した正式計測の中央値であり、追加 identity run の時間は含まない。B の20K中央値は合成 1,646.455 ms、PnR 1,024.965 ms、合計 2,671.420 ms。B2 はそれぞれ 1,629.765 ms、965.970 ms、2,586.175 ms で、`|B-B2|` の合計時間差は 85.245 ms だった。サイズは Yosys と nextpnr の合計、zstd は `-19` の bytes である。
+
+| variant | 20K 合成 / PnR / 合計中央値 (ms) | B より速い割合 | WASM raw 合計 (bytes) | zstd-19 合計 (bytes) | build wall 合計 (s) | 最大 peak RSS (KiB) |
+|---|---:|---:|---:|---:|---:|---:|
+| LTO | 1,292.080 / 1,035.405 / 2,344.315 | 12.245% | 72,856,165 | 13,476,347 | 1,687.650 | 7,795,916 |
+| Os | 1,349.360 / 1,032.140 / 2,397.160 | 10.266% | 81,305,645 | 13,268,893 | 830.400 | 909,200 |
+| OsLTO | 1,079.375 / 1,055.240 / 2,122.105 | 20.563% | 62,934,115 | 11,327,113 | 1,294.710 | 5,687,276 |
+
+### 安定性と基準の判定
+
+| variant | Yosys A/A SHA-256 | nextpnr A/A SHA-256 | 連続 Node test | 最大 RSS | 基準 1 | 基準 2 | 基準 3 | 基準 4 | 基準 5 |
+|---|---|---|---:|---:|---|---|---|---|---|
+| LTO | `9fa3304768875a02e10b08c5f84c2b2125831197e47d9e66a2289d0449c8f331` | `fd4b6d1edccd2ac5558b1f9447d20fe83409ff1615aeee94a58294e440fd4b73` | 5/5 pass | 7,795,916 KiB | pass | pass | pass | pass | pass |
+| Os | `96e6b8da4a8aff3e09d6ca0d641f69e3fe65fde5e92f1d7c70708180bde540de` | `27289a60442a513b0ffa65746ea0be31355377f3326d6602369f318e021a8c4b` | 5/5 pass | 909,200 KiB | pass | pass | pass | pass | pass |
+| OsLTO | `b9d9723c52223bfc9a3a77ca1b78a44853dc8c23f38df44e65effcdfec9ee744` | `a7fb73ed785b9649e94810edca60fbc76aa6c0de4b40fc403406f7996720defb` | 5/5 pass | 5,687,276 KiB | pass | pass | pass | pass | pass |
+
+LTO は S5 の Yosys と nextpnr 成果物を A1 として再利用し、S5 CSV の SHA-256 と一致することを確認した。Os は Yosys の S5 成果物を再利用した一方、nextpnr は S5 の成果物とは異なるため、S5B の A2/A3 一致で判定した。OsLTO は両ツールとも S5B 内の A/A で一致した。LTO の表の合計 build time は A2 Yosys の 1,537.670 s と nextpnr の 149.980 s を合算した値である。nextpnr 自体は 30,492,749 bytes の WASM を生成し、S5 成果物と同じ SHA-256 `fd4b6d1edccd2ac5558b1f9447d20fe83409ff1615aeee94a58294e440fd4b73` で build log も完了を記録した。一方、検証 harness は期待された B 参照成果物のパスが欠けていたため、この行を無効として記録した。A/A のハッシュ一致は生成物と S5 CSV を照合して判定し、この無効行とログも CSV と build 配下に保持した。
+
+基準 2 は3候補すべてが速度条件とサイズ条件の両方を満たした。圧縮サイズは B の 15,253,172 bytes に対して LTO が 11.649%、Os が 13.009%、OsLTO が 25.739% 小さく、いずれも B より速いためサイズ条件も満たす。速度条件では各候補の改善幅が10%以上で、B–B2 noise の 85.245 ms を超えた。基準 3 の上限 1,864.660 s に対し、3候補の合計 build time はすべて上限内だった。基準 4 は WASI SDK 34 の標準 target feature (`bulk-memory`、`multivalue`、`mutable-globals`、`nontrapping-fptoint`、`reference-types`、`sign-ext`) を対象とし、確認した現行安定版 Chromium、Firefox、Safari でサポートされる。基準 5 の最大 peak RSS は14 GiB未満で、各候補の A/A と連続5回の Node test も通過した。
+
+全候補が安定性条件を含む基準を満たした。凍結した選定規則を適用すると、正式 Chromium 計測で最も速い **OsLTO** を選ぶ。これは実験上の選定結果であり、既定 build script はこの変更では変更しない。
+
+### OsLTO Node 行列の時間
+
+Node の4ボード×5回の行列では、合成 / PnR の中央値は Tang Nano 1K が 875.207 / 357.866 ms、4K が 854.038 / 373.233 ms、9K が 849.436 / 517.541 ms、20K が 850.176 / 993.335 ms だった。各試行の時間と出力比較は S5B CSV と `build/s5b/node-runs/OsLTO/` に保存した。
+
+### CSV とログ
+
+- 正式計測 CSV: [S5B Chromium 計測](S5B-os-lto-chromium.csv)。失敗・無効試行を含む1,010行を保持する。
+- 追加 identity run CSV: [S5B Chromium identity 補足記録](S5B-os-lto-chromium-identity-supplement.csv)。100試行の各時間は補足値であり、選定には使わない。
+- 正式 Chromium 生ログ: `build/s5b/chromium-artifacts/chromium-runs/playwright.log`
+- 追加 identity run 生ログ: `build/s5b/chromium-artifacts/identity-run/playwright.log`
+- 候補別 Node test logs: `build/s5b/test-suite/{LTO,Os,OsLTO}/repeat-{1..5}.log`
+- OsLTO Node matrix: `build/s5b/node-runs/OsLTO/`
