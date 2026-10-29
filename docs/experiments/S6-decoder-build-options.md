@@ -1,0 +1,63 @@
+# S6 zstd・xz 展開器のビルドオプション比較
+
+- 状態: 計画
+- 日付: 2026-10-29
+- 担当: Devin
+- 基準の commit: `a757cd6ddf3f2d2e72f180e4300bec863ba6e051`（`origin/main`）
+
+## 目的
+
+zstd と xz の WASM 展開器について、現在の `-O2`、`-O3`、`-Os`、LTO の有無を比較します。既定のビルド動作は変えず、まず未設定の `DECODER_OPT_LEVEL` と `DECODER_LTO` で作る展開器が、基準 commit の `-O2` ビルドとバイト単位で一致することを確認します。
+
+## 仮説
+
+`-O3`、`-Os`、LTO の組み合わせによって、zstd の展開時間または WASM の大きさが変わると予想します。安定性の基準をすべて満たした候補のうち、採否の基準を超えて zstd 展開を速くする変種だけを採用候補とします。xz は結果を記録しますが、選定には使いません。
+
+## 基準
+
+安定性を速度より優先し、次のすべてを満たさない変種は選定から除外します。
+
+1. すべての反復ですべての展開出力の SHA-256 が元データと一致し、trap、例外、停止がないこと。展開 1 回あたり 120 秒でタイムアウトした場合は失敗とします。
+2. 各変種を 2 回ビルドし、展開器ごとに SHA-256 が一致すること。
+3. 各変種の WASM を配置した状態で `node --test tests/web/decompress.test.mjs` が 5 回連続で成功すること。`DECODER_OUT_DIR` を使うか標準パスへコピーし、B に戻した後で復元後の SHA-256 を確認します。
+4. 安定版 Chromium、Firefox、Safari がサポートする WASM feature のみを使うこと。利用できる場合は `wasm-objdump` または `wasm-tools` で調べ、どちらも使えない場合は feature section または flags を確認し、その方法を記録します。
+5. 次の負の対照が両方とも検出されること。B と選定候補で確認します。
+   - 圧縮入力の 1 byte を壊すと、展開器がエラーを返すか、出力 SHA-256 の不一致を検出する。
+   - 展開器 WASM の code section の 1 byte を壊すと、コンパイル失敗または不一致を検出する。
+
+一次指標は、Tang Nano 20K の 5 資材に対する zstd 展開時間の合計とする。各変種の反復間中央値が B よりノイズ幅 `N` を超えて速く、かつ 5% 以上速い場合を候補とする。`N` は B と B2 の一次指標の中央値の差の絶対値とする。基準を満たす候補では最速のものを選ぶ。候補同士の差が `N` 以内なら、フラグが少ないもの（LTO なしを LTO より優先）を選び、次に zstd 展開器 WASM が小さいものを優先する。候補がなければ B（`-O2`）を維持する。xz は本番で使わず、数値だけ記録し、選定対象外とする。
+
+## 条件
+
+| 項目 | 値 |
+|---|---|
+| 基準の commit | `a757cd6ddf3f2d2e72f180e4300bec863ba6e051`（`origin/main`） |
+| 対象 | zstd と xz の WASM 展開器 |
+| 変種 | B、B2、O3、O3LTO、Os、OsLTO |
+| ビルド変数 | `DECODER_OPT_LEVEL` は `2`、`3`、`s`。`DECODER_LTO` は空、`0`、`1` |
+| B | 現行の `-O2`。`DECODER_OPT_LEVEL=2`、`DECODER_LTO=0` |
+| B2 | B を新しい出力先へ再ビルドした A/A とノイズ幅の基準 |
+| O3 | `DECODER_OPT_LEVEL=3`、`DECODER_LTO=0` |
+| O3LTO | `DECODER_OPT_LEVEL=3`、`DECODER_LTO=1` |
+| Os | `DECODER_OPT_LEVEL=s`、`DECODER_LTO=0` |
+| OsLTO | `DECODER_OPT_LEVEL=s`、`DECODER_LTO=1` |
+| LTO | `DECODER_LTO=1` はコンパイルとリンクに `-flto` を加える。WASI SDK の sysroot にある `lib/wasm32-wasip1/llvm-lto` により libc も LTO 対象となるため、リンクで `llvm-lto` が使われた証拠を記録する |
+| 出力先 | `DECODER_OUT_DIR` は変種ごとに異なる相対パスを使い、出力を並べて保持する。未指定時の出力先は現行のままとする。この比較では既定ビルドの動作を変えない |
+| 入力 | `scripts/prepare-compressed-assets.sh` が作る S4B の `dist/bench`。Tang Nano 20K の 5 資材（`synth/yosys.wasm`、`synth/nextpnr-himbaechel-gowin.wasm`、`synth/yosys-share.tar`、`pack/pyodide/pyodide.asm.wasm`、`synth/chipdb/chipdb-GW2A-18C.bin`）を zstd と xz で展開する |
+| ブラウザー | 同じホスト上の headless Chromium。計測中はほかの重い処理を実行しない |
+| 反復と順序 | 5 回以上。各反復で変種の順番を 1 つずつずらす round-robin とし、各反復で新しいページを使う |
+| 指標 | 各展開器の `WebAssembly.compile` 時間、資材ごとの展開時間、展開後 SHA-256、raw WASM bytes |
+| 集計 | 一次指標は反復ごとの zstd 5 資材の展開時間合計の中央値。二次指標は xz の同じ合計、compile 時間、raw WASM bytes |
+| ログと出力 | 生 CSV とログは `build/s6/` に保存する。文書と CSV には VM の絶対パスを記載せず、`$REPO_ROOT` を使う |
+
+## 手順
+
+1. `origin/main` の基準 commit から作業ブランチを作ります。
+2. `DECODER_OPT_LEVEL` と `DECODER_LTO` を未設定にしたビルドを行い、基準 commit の現行 `-O2` ビルドと zstd、xz それぞれの SHA-256 を比較します。既定動作を変えていないことを確認します。
+3. B、B2、O3、O3LTO、Os、OsLTO をそれぞれ別の `DECODER_OUT_DIR` にビルドします。各変種の zstd と xz の WASM SHA-256 を記録し、LTO 変種はリンクに `llvm-lto` sysroot library が使われた証拠を確認します。証拠がなければ、その変種を失敗として扱います。
+4. 各変種を 2 回ビルドして、展開器ごとの A/A SHA-256 を比較します。
+5. S4B 資材を用意し、headless Chromium で各展開器の compile 時間と資材ごとの展開時間を測ります。反復ごとに変種の順番を回し、新しいページを使います。展開後の SHA-256 を元の資材と照合します。
+6. 全変種について安定性の基準を確認し、B と B2 から `N` を求めて、上記の選定基準を適用します。
+7. B と選定候補で圧縮入力および WASM code section の負の対照を確認します。失敗した試行も含む全反復の生 CSV、絶対値、基準、WASI SDK、clang、Chromium、ホスト、CPU、submodule、コマンド、ログを記録します。ログは一時ディレクトリーではなく `build/s6/` に置きます。
+
+Chromium の正式計測は同じホストで 5 回以上行う。各反復で変種の順番を回し、新しいページを使う。WASM の compile 時間と各資材の展開時間を個別に測定する。SHA-256 は計測区間の外で照合する。
