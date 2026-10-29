@@ -11,7 +11,7 @@ decoder_lto="${DECODER_LTO:-0}"
 decoder_out_dir="${DECODER_OUT_DIR:-}"
 
 case "$decoder_opt_level" in
-  2|3|s) ;;
+  0|1|2|3|s|z) ;;
   *)
     printf 'Unsupported DECODER_OPT_LEVEL: %s\n' "$decoder_opt_level" >&2
     exit 2
