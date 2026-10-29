@@ -56,4 +56,4 @@ B を基準に、B+O3、B+O3+LTOA、B+LTOA のいずれかが、安定性の条�
 
 ### 手順への追記（2026-10-29、事前登録後・正式計測前）
 
-各 Chromium 書き込み試行では、`tests/e2e/fake-usb-helpers.mjs` の opt-in 状態取得を使って fake USB の最終状態を読み戻す。SRAM は `tests/sim/program.test.mjs` と同じ `parseFsPayload(..., true)` のバイト列、Tang Nano 20K の外付け NOR は `parseFsPayload(..., false)` のバイト列、その他の内蔵フラッシュは `GW1N`、20 バイトの `0xff`、`parseFsPayload(..., false)` を連結したバイト列と比較する。比較は各試行の UI 成功判定の後に行い、長さと全バイトが一致しなければ失敗とする。正式計測前の smoke では、期待値の先頭バイトを意図的に反転する負の対照も実行し、比較が不一致を検出することを確認する。fake USB のモデルと permanent test は変更しない。
+各 Chromium 書き込み試行では、`tests/e2e/fake-usb-helpers.mjs` の opt-in 状態取得を使って fake USB の最終状態を読み戻す。SRAM は `tests/sim/program.test.mjs` と同じ `parseFsPayload(..., true)` のバイト列、Tang Nano 20K の外付け NOR は `parseFsPayload(..., false)` のバイト列、その他の内蔵フラッシュは `GW1N`、20 バイトの `0xff`、`parseFsPayload(..., false)` を連結したバイト列と比較する。比較は各試行の UI 成功判定の後に行い、長さと全バイトが一致しなければ失敗とする。正式計測前の smoke では、期待値の先頭バイトを反転する負の対照を実行し、比較が不一致を検出することを確認する。基準 5 の負の対照では、fixture の先頭ビットを反転したファイルを入力して内容不一致を確認し、さらに WASM code section の命令を不正化して UI が load failure を検出することを確認する。fake USB のモデルと permanent test は変更しない。

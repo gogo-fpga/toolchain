@@ -19,6 +19,8 @@ const options = parseArgs({
     case: { type: "string", default: "tangnano9k-sram" },
     variant: { type: "string", default: "all" },
     "tamper-expected": { type: "boolean", default: false },
+    "tamper-fixture": { type: "boolean", default: false },
+    "tamper-wasm": { type: "boolean", default: false },
   },
 }).values;
 
@@ -78,6 +80,49 @@ function contentExpectation(testCase) {
   return { kind, bytes, captureState };
 }
 
+function tamperFixture(source) {
+  const lines = source.toString("ascii").split(/(\r?\n)/);
+  for (let index = 0; index < lines.length; index += 2) {
+    if (/^[01]+$/.test(lines[index])) {
+      lines[index] = `${lines[index][0] === "0" ? "1" : "0"}${lines[index].slice(1)}`;
+      return Buffer.from(lines.join(""), "ascii");
+    }
+  }
+  throw new Error("Fixture contains no binary data record to corrupt.");
+}
+
+function readUleb(bytes, offset) {
+  let value = 0;
+  let shift = 0;
+  let cursor = offset;
+  while (cursor < bytes.length) {
+    const byte = bytes[cursor];
+    cursor += 1;
+    value |= (byte & 0x7f) << shift;
+    shift += 7;
+    if ((byte & 0x80) === 0) return { value: value >>> 0, next: cursor };
+  }
+  throw new Error("Unexpected end of WASM section.");
+}
+
+function tamperWasmCode(source) {
+  const bytes = Buffer.from(source);
+  let sectionOffset = 8;
+  while (sectionOffset < bytes.length) {
+    const sectionId = bytes[sectionOffset];
+    const sectionSize = readUleb(bytes, sectionOffset + 1);
+    const payloadOffset = sectionSize.next;
+    if (sectionId === 10) {
+      const functionCount = readUleb(bytes, payloadOffset);
+      assert.ok(functionCount.value > 0, "WASM code section contains a function.");
+      bytes[payloadOffset] ^= 1;
+      return bytes;
+    }
+    sectionOffset = payloadOffset + sectionSize.value;
+  }
+  throw new Error("WASM code section was not found.");
+}
+
 function csv(value) {
   const text = String(value ?? "");
   return `"${text.replaceAll('"', '""')}"`;
@@ -132,6 +177,7 @@ async function setupPage(browser, baseUrl, variant, captureState = null) {
   const context = await browser.newContext();
   const page = await context.newPage();
   await stubPageUsb(page, false, { captureFakeUsbState: captureState !== null });
+  const wasm = options["tamper-wasm"] ? tamperWasmCode(variant.wasm) : variant.wasm;
   await page.route("**/openFPGALoader.mjs", (route) =>
     route.fulfill({
       status: 200,
@@ -145,7 +191,7 @@ async function setupPage(browser, baseUrl, variant, captureState = null) {
       status: 200,
       contentType: "application/wasm",
       headers: { "Cross-Origin-Resource-Policy": "same-origin" },
-      body: variant.wasm,
+      body: wasm,
     }),
   );
   return { context, page, baseUrl };
@@ -173,7 +219,15 @@ async function runProgrammingCase(browser, baseUrl, variant, testCase) {
       { timeout: 30_000 },
     );
     await page.locator("#board-select").selectOption(testCase.board.id);
-    await page.locator("#bitstream-file").setInputFiles(fixture);
+    if (options["tamper-fixture"]) {
+      await page.locator("#bitstream-file").setInputFiles({
+        name: path.basename(fixture),
+        mimeType: "text/plain",
+        buffer: tamperFixture(readFileSync(fixture)),
+      });
+    } else {
+      await page.locator("#bitstream-file").setInputFiles(fixture);
+    }
     if (testCase.target === "flash") {
       await page.locator('input[name="target"][value="flash"]').check();
     }
@@ -301,6 +355,15 @@ async function main() {
   }
   if (options.mode === "formal" && options.variant !== "all") {
     throw new Error("Formal mode uses all five variants.");
+  }
+  if (
+    options.mode === "formal"
+    && (options["tamper-expected"] || options["tamper-fixture"] || options["tamper-wasm"])
+  ) {
+    throw new Error("Negative controls are smoke-only.");
+  }
+  if (options["tamper-fixture"] && options["tamper-wasm"]) {
+    throw new Error("Only one negative control may run at a time.");
   }
   if (options.mode === "smoke" && !programmingCases.some((item) => item.id === options.case)) {
     throw new Error(`Unknown smoke case: ${options.case}`);
