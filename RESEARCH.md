@@ -25,6 +25,7 @@ IDCODE と書き込み先は、[移植元の RESEARCH.md](https://github.com/gog
 - JSPI と `-fwasm-exceptions` を組み合わせる構成で書き込み部を動かしています。libusb の WebUSB バックエンドは pthread と共有メモリーを必要とし、配信には COOP/COEP ヘッダーを使います。
 - upstream の openFPGALoader は、失敗時にログへ `FAIL` を出しても終了コード 0 を返す場合があります。終了コードだけで成否を判断しません。
 - 仮想 FT2232、GOWIN TAP、NOR フラッシュを使ったテストがあり、故障注入による負の対照も行っています。仮想デバイスの結果は実機の検証ではありません。
+- S7 では、Chromium 上の fake USB 書き込みと最終 SRAM / flash 内容検証を行い、凍結基準により B+LTOA を選定しました。primary は B+LTOA が 14,994.695 ms、B が 15,491.515 ms（3.207%改善、N = 55.165 ms）でした。B+O3+LTOA は sim 4/5 のため対象外です。既定 build は変更せず、詳細は [S7 実験記録](docs/experiments/S7-openfpgaloader-chromium.md)を参照してください。実機では、本リポジトリでは試していない。
 
 これらは移植元の記録に基づく知見です。新しい Emscripten やブラウザーでの再検証は、このリポジトリーではまだ実施していません。
 
