@@ -517,6 +517,134 @@ jobs:
             echo "Step timings unavailable (unknown)." >> "$GITHUB_STEP_SUMMARY"
           fi
 
+  ghdl:
+    name: GHDL WASM synthesis
+    needs: changes
+    if: needs.changes.outputs.build == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 90
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: false
+          persist-credentials: false
+
+      - name: GHDL と ghdl-browser の submodule を取得
+        run: git submodule update --init --depth 1 -- vendor/ghdl vendor/ghdl-browser
+
+      - name: GNAT を確認
+        run: |
+          if ! command -v gnatmake >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y gnat
+          fi
+          gnatmake --version | head -n 1
+
+      - name: Node.js を設定
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+
+      - id: ghdl-key
+        name: GHDL の cache key を作成
+        run: |
+          echo "ghdl=$(git rev-parse HEAD:vendor/ghdl)" >> "$GITHUB_OUTPUT"
+          echo "browser=$(git rev-parse HEAD:vendor/ghdl-browser)" >> "$GITHUB_OUTPUT"
+          wasi_pin="$(python3 .github/scripts/check-pins.py wasi-sdk-pin)"
+          echo "wasi=$(printf '%s' "$wasi_pin" | sha256sum | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
+      - id: ghdl-cache-restore
+        name: GHDL build inputs を cache から復元
+        if: github.event_name != 'schedule' && (github.event_name != 'workflow_dispatch' || inputs.cache)
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            build/cache/ghdl-wasm/
+            build/cache/ghdl-host-packages/
+            build/wasi-sdk-*
+          key: ghdl-wasm-ubuntu-26.04-${{ steps.ghdl-key.outputs.ghdl }}-${{ steps.ghdl-key.outputs.browser }}-${{ steps.ghdl-key.outputs.wasi }}-${{ hashFiles('scripts/build-ghdl-wasm.sh', 'patches/ghdl/**', 'scripts/ghdl-wasm/**') }}
+
+      - name: Pinned WASI SDK 34 を取得
+        run: |
+          pin="$(python3 .github/scripts/check-pins.py wasi-sdk-pin)"
+          IFS=$'\t' read -r version sha asset url <<< "$pin"
+          if [[ -z "$version" || -z "$sha" || -z "$asset" || -z "$url" ]]; then
+            echo "WASI SDK pin is incomplete." >&2
+            exit 1
+          fi
+          sdk_dir="build/${asset%.tar.gz}"
+          archive="build/cache/ghdl-wasm/$asset"
+          mkdir -p "$(dirname "$archive")"
+          if [[ ! -f "$archive" ]]; then
+            curl --fail --location --retry 3 --output "$archive.tmp" "$url"
+            mv "$archive.tmp" "$archive"
+          fi
+          printf '%s  %s\n' "$sha" "$archive" | sha256sum --check
+          if [[ ! -x "$sdk_dir/bin/clang" || ! -x "$sdk_dir/bin/wasm-ld" ||
+            ! -x "$sdk_dir/bin/llvm-ar" || ! -x "$sdk_dir/bin/llvm-strip" ]]; then
+            tar -xzf "$archive" -C build
+          fi
+          for tool in clang wasm-ld llvm-ar llvm-strip; do
+            if [[ ! -x "$sdk_dir/bin/$tool" ]]; then
+              printf 'Required WASI SDK tool is missing: %s/bin/%s\n' "$sdk_dir" "$tool" >&2
+              exit 1
+            fi
+          done
+
+      - id: ghdl-build
+        name: GHDL WASM と native 版をビルド
+        run: scripts/build-ghdl-wasm.sh
+
+      - id: ghdl-tests
+        name: WASM/native VHDL 合成を比較
+        run: node --test tests/synth/ghdl-wasm.test.mjs
+
+      - name: GHDL build inputs cache を保存
+        if: steps.ghdl-cache-restore.outputs.cache-hit != 'true' && steps.ghdl-build.outcome == 'success' && steps.ghdl-tests.outcome == 'success' && github.event_name != 'schedule' && (github.event_name != 'workflow_dispatch' || inputs.cache)
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            build/cache/ghdl-wasm/
+            build/cache/ghdl-host-packages/
+            build/wasi-sdk-*
+          key: ghdl-wasm-ubuntu-26.04-${{ steps.ghdl-key.outputs.ghdl }}-${{ steps.ghdl-key.outputs.browser }}-${{ steps.ghdl-key.outputs.wasi }}-${{ hashFiles('scripts/build-ghdl-wasm.sh', 'patches/ghdl/**', 'scripts/ghdl-wasm/**') }}
+
+      - name: GHDL WASM 成果物を保存
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ci-ghdl-wasm-${{ github.run_id }}
+          path: |
+            build/ghdl-wasm/
+            build/ghdl-native/
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Summarize step timings
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_DISPLAY_NAME: GHDL WASM synthesis
+        run: |
+          step_lines="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}/jobs" --paginate --jq '
+            .jobs[] | select(.name == env.JOB_DISPLAY_NAME) | .steps[] |
+            select(.completed_at != null) |
+            [.number, .name, (if .started_at == null then "unknown" else ((.completed_at | fromdateiso8601) - (.started_at | fromdateiso8601)) end), .conclusion] |
+            @tsv
+          ' 2>/dev/null)" || step_lines=""
+          if [[ -n "$step_lines" ]]; then
+            {
+              printf '| # | Step | Seconds | Conclusion |\n|---:|---|---:|---|\n'
+              printf '%s\n' "$step_lines" | awk -F '\t' '{ printf "| %s | %s | %s | %s |\n", $1, $2, $3, $4 }'
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Step timings unavailable (unknown)." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   pyodide-pack:
     name: Pyodide gowin_pack
     needs: [changes, nextpnr]

@@ -35,7 +35,7 @@ jobs:
           git submodule update --init --depth 1 -- \
             vendor/emsdk vendor/libftdi vendor/libusb vendor/openFPGALoader \
             vendor/yomiyasu vendor/zlib vendor/yosys vendor/nextpnr \
-            vendor/zstd vendor/xz-embedded
+            vendor/zstd vendor/xz-embedded vendor/ghdl vendor/ghdl-browser
           git -C vendor/yosys submodule update --init --depth 1 -- \
             abc libs/cxxopts libs/fmt libs/tomlplusplus libs/boost_regex libs/symfpu
 
@@ -43,9 +43,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y autoconf automake bison flex libtool python3-venv
+          if ! command -v gnatmake >/dev/null 2>&1; then
+            sudo apt-get install -y gnat
+          fi
           autoconf --version | head -n 1
           automake --version | head -n 1
           libtoolize --version | head -n 1
+          gnatmake --version | head -n 1
 
       - name: Node.js を設定
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -71,6 +75,9 @@ jobs:
         run: |
           scripts/build-pnr-wasm.sh
           scripts/build-pnr-wasm.sh --native
+
+      - name: GHDL WASM と native をビルド
+        run: scripts/build-ghdl-wasm.sh
 
       - name: WASI decoder をビルド
         run: scripts/build-decoders.sh
@@ -113,6 +120,8 @@ jobs:
             build/wasi/yosys/
             build/wasi/nextpnr/
             build/wasi/decoders/
+            build/ghdl-wasm/
+            build/ghdl-native/
             build/native/
             build/pack/
           retention-days: 1
