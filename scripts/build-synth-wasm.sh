@@ -69,6 +69,10 @@ done
 build_dir=
 start_time=$(date +%s)
 if [ "$mode" = wasi ]; then
+  WASI_OPT_FLAGS=${WASI_OPT_FLAGS--Os}
+  WASI_EXTRA_CFLAGS=${WASI_EXTRA_CFLAGS--flto}
+  WASI_EXTRA_CXXFLAGS=${WASI_EXTRA_CXXFLAGS--flto}
+  WASI_EXTRA_LDFLAGS=${WASI_EXTRA_LDFLAGS--flto}
   for tool in curl tar; do
     if ! command -v "$tool" >/dev/null 2>&1; then
       printf 'Required command not found: %s\n' "$tool" >&2

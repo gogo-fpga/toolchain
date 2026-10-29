@@ -334,16 +334,11 @@ def build_environment(variant, tool, jobs):
     for key in ENV_KEYS:
         environment.pop(key, None)
     config = VARIANTS[variant]
-    if config["opt"]:
-        environment["WASI_OPT_FLAGS"] = config["opt"]
-    if config["c"]:
-        environment["WASI_EXTRA_CFLAGS"] = config["c"]
-    if config["cxx"]:
-        environment["WASI_EXTRA_CXXFLAGS"] = config["cxx"]
-    if config["ld"]:
-        environment["WASI_EXTRA_LDFLAGS"] = config["ld"]
-    if config.get("use_ipo"):
-        environment["WASI_USE_IPO"] = config["use_ipo"]
+    environment["WASI_OPT_FLAGS"] = config["opt"]
+    environment["WASI_EXTRA_CFLAGS"] = config["c"]
+    environment["WASI_EXTRA_CXXFLAGS"] = config["cxx"]
+    environment["WASI_EXTRA_LDFLAGS"] = config["ld"]
+    environment["WASI_USE_IPO"] = config.get("use_ipo", "ON")
     build_directory, _ = tool_paths(variant, tool)
     environment["WASI_BUILD_DIR"] = build_directory.relative_to(ROOT).as_posix()
     environment["JOBS"] = str(jobs)
