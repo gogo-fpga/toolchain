@@ -308,10 +308,10 @@ export GPR_PROJECT_PATH="$adawebpack/lib/gnat"
 export GHDL_WASM_ADAWP_LD_LIBRARY_PATH="$ada_lib_dir:$host_lib_dir"
 gprbuild_bin=$(command -v gprbuild || true)
 if [[ -n "$gprbuild_bin" ]]; then
-  gprbuild_lib_path="$host_lib_dir${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+  gprbuild_lib_path="$ada_lib_dir:$host_lib_dir${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 else
   gprbuild_bin="$host_tools/usr/bin/gprbuild"
-  gprbuild_lib_path="$host_lib_dir${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+  gprbuild_lib_path="$ada_lib_dir:$host_lib_dir${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 fi
 if [[ ! -x "$gprbuild_bin" ]]; then
   printf 'gprbuild is unavailable after package extraction.\n' >&2
