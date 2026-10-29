@@ -57,3 +57,124 @@ B を基準に、B+O3、B+O3+LTOA、B+LTOA のいずれかが、安定性の条�
 ### 手順への追記（2026-10-29、事前登録後・正式計測前）
 
 各 Chromium 書き込み試行では、`tests/e2e/fake-usb-helpers.mjs` の opt-in 状態取得を使って fake USB の最終状態を読み戻す。SRAM は `tests/sim/program.test.mjs` と同じ `parseFsPayload(..., true)` のバイト列、Tang Nano 20K の外付け NOR は `parseFsPayload(..., false)` のバイト列、その他の内蔵フラッシュは `GW1N`、20 バイトの `0xff`、`parseFsPayload(..., false)` を連結したバイト列と比較する。比較は各試行の UI 成功判定の後に行い、長さと全バイトが一致しなければ失敗とする。正式計測前の smoke では、期待値の先頭バイトを反転する負の対照を実行し、比較が不一致を検出することを確認する。基準 5 の負の対照では、fixture の先頭ビットを反転したファイルを入力して内容不一致を確認し、さらに WASM code section の命令を不正化して UI が load failure を検出することを確認する。fake USB のモデルと permanent test は変更しない。
+
+### 手順への追記（2026-10-30、事前登録後・正式計測前）
+
+round 1 の instantiate 25 試行はすべて失敗した。以前のベンチは blob module worker から `/openFPGALoader.mjs` を import しており、`Failed to resolve module specifier` となった。production は `web/app.js` から同じ origin の module worker を作り、`web/worker.js` が `./openFPGALoader.mjs` を相対 import する。ベンチも app module URL を基準に module worker を作り、その worker 内で同じ相対 import を行うようにした。worker 応答には `web/_headers` と同じ COOP、COEP、CORP を設定した。
+
+修正前の instantiate smoke は 0/5 で、worker error event から message、filename、stack を取得できなかった。response に production と同じ header set を加えた後の独立 smoke は 5/5 pass した。原因の詳細は browser event に現れなかったため、header 追加で解消したこと以上は特定していない。1 repeat の smoke は正式計測 CSV に含めない。最終 smoke の記録は `$REPO_ROOT/build/s7/chromium-instantiate-smoke-round2-coep.csv` と `.log` にある。実行コマンドは次のとおり。
+
+```sh
+cd "$REPO_ROOT"
+mise exec -- node scripts/bench-s7-openfpgaloader.mjs \
+  --mode=smoke --case=instantiate --variant=all --repeats=1 \
+  --out=build/s7/chromium-instantiate-smoke-round2-coep.csv
+```
+
+## 結果（2026-10-30）
+
+### 実行環境と出力
+
+- 基準 commit は `092a31bd1fa03ed900ae7eab2b3b4ad926bb80d6`。実験用 build root は `$REPO_ROOT/build/s7/build-roots/<変種>` とし、各 build の出力を新規に作成した。
+- Linux x86_64、Intel Xeon CPU D-1531 @ 2.20 GHz、12 論理 CPU、RAM 30 GiB。Node.js v24.22.1、Playwright 1.64.1、Emscripten 6.0.13、Binaryen `wasm-dis` 133、Chromium 156.0.8078.4 を使用した。
+- 関連 submodule は emsdk `35659964bc2762fffec0d257997fb61475f765b7`、openFPGALoader `befbab4f646207dbaf1daf8b144dd980ad283dd5`、libusb `87a55632db62c9bdc58cd31d3ccfa673f1bb017f`、libftdi `92d657bcb543a9622947d984d4a8e725fb680e8c`、zlib `da607da739fa6047df13e66a2af6b8bec7c2a498`。
+- 引数なしの既定 build を新しい `$REPO_ROOT/build/s7/default-confirmation/jspi-pthread` に作り、WASM は `84cb4077c3d02ab5392d47798e6a10d540ad8db9e547424926501bdaaccd285c`、MJS は `9005540841199936d9f983124e7a890e3661bd21f250b11e580346e8e7c0df27` となった。`build-info.json` の値とも一致し、指定された origin/main の SHA と byte-for-byte で一致した。wall time は 145.47 秒、peak RSS は 255,784 KiB。既定 build 設定は変更していない。
+- 各変種の build は別の `BUILD_ROOT` に出力し、`/usr/bin/time -v` で計測した。B の実行例は次のとおり。A/A では別の build root を使い、各変種を2回 build して SHA を比較した。
+
+```sh
+cd "$REPO_ROOT"
+BUILD_ROOT="$REPO_ROOT/build/s7/build-roots/B" \
+  /usr/bin/time -v scripts/build-wasm.sh --variant=B
+```
+
+- sim は各変種で次のテストを5回実行した。B+O3 などでは3つの `B` を同じ変種名に置き換える。各回のログは `$REPO_ROOT/build/s7/formal-sim-corrected/` にある。
+
+```sh
+cd "$REPO_ROOT"
+WASM_BUILD_ROOT="$REPO_ROOT/build/s7/build-roots/B" \
+WASM_VARIANT=B WASM_VARIANTS=B \
+  mise exec -- node --test --test-concurrency=1 tests/sim/*.test.mjs
+```
+
+- 正式 Chromium 行列は次のコマンドで実行した。1 ケースの timeout は 120 秒、各試行は新しい browser context/page を使い、5 反復で変種の順を round-robin に回した。
+
+```sh
+cd "$REPO_ROOT"
+mise exec -- node scripts/bench-s7-openfpgaloader.mjs \
+  --mode=formal --repeats=5 --variant=all --case=all \
+  --manifest=build/s7/variants.json \
+  --out=build/s7/formal-chromium-round2.csv
+```
+
+round 2 の 225 試行は 225/225 pass。8 programming cases の 200 試行はすべて UI 成功、`FAIL` なし、progress 100%、fake device の SRAM または flash 内容が fixture 由来の期待値と一致した。instantiate も 25/25 pass した。全生値は [S7 CSV](S7-openfpgaloader-chromium.csv) に収録し、round 1 と negative control を含む。round 1 の programming 時間は監査用に残すが、集計と選定には使っていない。正式行列の出力は `$REPO_ROOT/build/s7/formal-chromium-round2.csv`、実行ログは `$REPO_ROOT/build/s7/formal-chromium-round2.log` と `.csv.server.log` に保存した。
+
+### Chromium の絶対値
+
+次のセルは 5 試行の中央値と最小-最大をミリ秒で示す。各 primary は 8 cases の中央値の合計である。生の各試行値は CSV に残した。
+
+| ケース | B | B2 | B+O3 | B+O3+LTOA | B+LTOA |
+|---|---:|---:|---:|---:|---:|
+| Tang Nano 1K SRAM | 560.950 [522.470-582.475] | 548.530 [541.595-561.665] | 574.280 [560.585-600.150] | 563.705 [540.755-597.150] | 518.650 [489.525-595.415] |
+| Tang Nano 1K flash | 2198.445 [2188.050-2286.725] | 2202.680 [2182.555-2229.575] | 2233.180 [2195.885-2260.780] | 2197.105 [2142.965-2230.580] | 2147.910 [2113.520-2210.585] |
+| Tang Nano 4K SRAM | 678.740 [649.820-762.205] | 654.880 [652.790-662.885] | 696.110 [673.785-728.980] | 651.550 [626.950-661.940] | 631.085 [620.480-644.470] |
+| Tang Nano 4K flash | 3163.695 [3113.195-3228.310] | 3192.445 [3125.990-3358.285] | 3148.225 [3079.650-3196.575] | 3129.890 [3026.595-3265.095] | 3096.870 [3076.740-3177.265] |
+| Tang Nano 9K SRAM | 809.340 [764.330-862.035] | 779.950 [775.630-851.305] | 799.015 [750.510-811.940] | 777.780 [762.165-810.625] | 736.410 [718.350-746.990] |
+| Tang Nano 9K flash | 4193.490 [4112.785-4260.240] | 4145.095 [4086.595-4296.165] | 4134.890 [4057.885-4163.005] | 4195.050 [3959.945-4233.715] | 4045.980 [4029.520-4188.995] |
+| Tang Nano 20K SRAM | 1055.105 [1048.605-1061.235] | 1069.175 [1033.320-1121.035] | 1080.435 [1028.880-1097.105] | 1063.365 [1041.625-1080.600] | 1014.565 [1003.055-1057.160] |
+| Tang Nano 20K flash | 2831.750 [2747.470-2984.220] | 2953.925 [2783.075-3100.315] | 2814.095 [2747.100-2843.760] | 2832.010 [2777.910-2915.930] | 2803.225 [2736.140-2815.755] |
+
+### 変種別の指標と安定性
+
+`N = |primary(B) - primary(B2)| = |15491.515 - 15546.680| = 55.165 ms`。改善量は `primary(B) - primary(変種)` とし、改善率は B を分母にした。WASM 圧縮サイズは gzip level 9（mtime 0）と zstd 1.5.7 `-19` の値である。
+
+| 変種 | primary (ms) | N (ms) | B 比の改善量 / 率 | instantiate 中央値 [最小-最大] (ms) | WASM raw / gzip-9 / zstd-19 (bytes) |
+|---|---:|---:|---:|---:|---:|
+| B | 15491.515 | 55.165 | 0.000 ms / 0.000% | 339.035 [327.760-350.530] | 2280871 / 635186 / 229717 |
+| B2 | 15546.680 | 55.165 | -55.165 ms / -0.356% | 333.545 [302.990-348.270] | 2280871 / 635186 / 229717 |
+| B+O3 | 15480.230 | 55.165 | 11.285 ms / 0.073% | 388.230 [335.385-395.175] | 2040830 / 702682 / 258099 |
+| B+O3+LTOA | 15410.455 | 55.165 | 81.060 ms / 0.523% | 319.370 [310.000-333.450] | 1952305 / 679495 / 263481 |
+| B+LTOA | 14994.695 | 55.165 | 496.820 ms / 3.207% | 297.640 [280.265-316.160] | 1639776 / 579467 / 229068 |
+
+| 変種 | A/A の SHA 照合 | sim 連続実行 | WASM 機能の確認 | build wall / peak RSS |
+|---|---|---:|---|---:|
+| B | pass | 5/5 | bulk-memory、sign-extension、atomics、non-trapping float-to-int。SIMD なし | 165.55 秒 / 269452 KiB |
+| B2 | pass | 5/5 | 同上 | 165.18 秒 / 262340 KiB |
+| B+O3 | pass | 5/5 | 同上 | 145.49 秒 / 311176 KiB |
+| B+O3+LTOA | pass | 4/5、安定性 gate 4 不合格 | 同上。`i64.trunc_sat_f64_u` あり | 189.56 秒 / 579820 KiB |
+| B+LTOA | pass | 5/5 | 同上。`i64.trunc_sat_f64_u` あり | 154.47 秒 / 530932 KiB |
+
+build wall と RSS は各変種の最初の smoke build の値であり、正式 Chromium 計測中には build を行っていない。`flags.make` と `link.txt` の確認は全変種で pass した。B と B2 は `-Os`、LTO なし、B+O3 は `-O3`、LTO なし、B+O3+LTOA は `-O3` と LTO、B+LTOA は `-Os` と LTO だった。section listing は `$REPO_ROOT/build/s7/formal-wasm-objdump.txt` にある。instruction scan は各 WASM に対して Binaryen 133 の `wasm-dis --all-features` を実行し、結果を `$REPO_ROOT/build/s7/formal-wasm-feature-scan.txt` に保存した。全変種で `memory.copy`、`memory.fill`、`i32.extend8_s`、`i32.extend16_s`、atomics、saturating float-to-int conversions を確認し、SIMD 命令はなかった。`i64.trunc_sat_f64_u` は LTO の2変種で確認した。計測したすべての module は Chromium 156.0.8078.4 で instantiate できた。build gate は RSS 14 GiB 未満、wall time が B の 2 倍以下であり、全変種が通った。A/A の全 SHA は `$REPO_ROOT/build/s7/formal-aa-results.csv` にある。SHA は各変種の2 build で一致した。代表する一致値は次のとおり。
+
+| 変種 | A1 = A2 `.wasm` SHA-256 | A1 = A2 `.mjs` SHA-256 |
+|---|---|---|
+| B | `ecf7617859639422050c1098edc1dac04e943def90cb5a7328b8035714cb42b7` | `9005540841199936d9f983124e7a890e3661bd21f250b11e580346e8e7c0df27` |
+| B2 | `ecf7617859639422050c1098edc1dac04e943def90cb5a7328b8035714cb42b7` | `9005540841199936d9f983124e7a890e3661bd21f250b11e580346e8e7c0df27` |
+| B+O3 | `d5a3e8f029375f70e8aae6f278fdb08d1f27b55a725bf377c3f8a66c3c3a3633` | `9005540841199936d9f983124e7a890e3661bd21f250b11e580346e8e7c0df27` |
+| B+O3+LTOA | `191123667fc7c13ea3b7f75eb19e24fbcb94570c3be4e75d556c1fbf4fc263e2` | `f66be852ed33c8245fe781d900a7124186a6d3cd611a81849e1019ae080d8d44` |
+| B+LTOA | `5ccccd017186a7a8d137f9791e08a53cf2fedaa5aaa59143028def8908557812` | `f66be852ed33c8245fe781d900a7124186a6d3cd611a81849e1019ae080d8d44` |
+
+### 選定
+
+B+O3+LTOA は sim が 4/5 のため、他の測定値にかかわらず安定性 gate 4 に不合格で、選定対象外とした。B2 は noise floor のみを求める基準である。選定可能な変更候補 B+O3 は B より 11.285 ms（0.073%）速いだけで、`N` と 3% の両条件を満たさない。B+LTOA は B より 496.820 ms（3.207%）速く、`N = 55.165 ms` を超え、3% 条件も満たす。よって凍結規則による選定は **B+LTOA**。既定 build は変更していない。
+
+### 負の対照
+
+B と選定変種 B+LTOA のそれぞれで Tang Nano 9K SRAM を用い、`.fs` の先頭ビットと WASM code section を壊した。4 対照すべてが失敗を検出した。負の対照は正式な timing 行列には含めない。
+
+| 変種 | 対照 | 検出結果 |
+|---|---|---|
+| B | `.fs` の1 bit反転 | fake SRAM の byte 0 が期待値 `255` に対して `254` となり、内容不一致を検出 |
+| B | WASM code section の1 byte破損 | UI が `失敗：書き込み失敗`、progress 0 を表示。WebAssembly compile が function body count mismatch で拒否 |
+| B+LTOA | `.fs` の1 bit反転 | fake SRAM の byte 0 が期待値 `255` に対して `254` となり、内容不一致を検出 |
+| B+LTOA | WASM code section の1 byte破損 | UI が `失敗：書き込み失敗`、progress 0 を表示。WebAssembly compile が function body count mismatch で拒否 |
+
+各対照の実行ログと CSV は `$REPO_ROOT/build/s7/negative-control-B-fs.log`、`negative-control-B-wasm.log`、`negative-control-BpLTOA-fs.log`、`negative-control-BpLTOA-wasm.log` と同名の CSV に保存した。
+
+### 失敗した試行と診断
+
+- round 1 の `$REPO_ROOT/build/s7/formal-chromium-round1.csv` と `.log` は変更せず保存した。200 programming trials は UI と fake device の内容検査を通ったが、25 instantiate trials はすべて `TypeError: Failed to resolve module specifier '/openFPGALoader.mjs'` で失敗した。blob worker 内の root-relative import が解決されない harness の誤りだったため、round 1 全体を失敗した試行として扱い、そこに含まれる programming timings は選定・結果表に使用していない。新しい URL resolution を確認してから round 2 を全件やり直した。
+- instantiate 修正の初期 smoke 2 回は 0/5 だった。worker error event の詳細は取得できなかった。production と同じ COOP、COEP、CORP header を worker route に付けた後は 5/5 pass した。失敗イベントだけから詳細な browser 内原因は確認できていない。初期 smoke は `$REPO_ROOT/build/s7/chromium-instantiate-smoke-round2.csv` と `chromium-instantiate-smoke-round2-diagnostic.csv`、最終 smoke は `chromium-instantiate-smoke-round2-coep.csv` に保存した。
+- B+O3+LTOA は `$REPO_ROOT/build/s7/formal-sim-corrected/BpO3pLTOA-run-5.log` で gate 4 に不合格となった。USB disconnect during transfer のテストで `NotFoundError` が続き、`spawnSync` の 90 秒 timeout 経路に入った。ログ中の `__PROGRAM_RESULT__` は `exitCode:0` だが、timeout 経路の外側は失敗を返した。分類は timeout/host load としたが、host load が原因という仮説は未確認である。isolated diagnostic は 1/1 pass したものの、5回連続の正式失敗を置き換えるものではない。再実行して gate の結果を上書きしていない。
+- B+LTOA の初回 run 1 は調査中断時に停止し、`$REPO_ROOT/build/s7/formal-sim-corrected/BpLTOA-run-1.log` は 14 pass、0 fail、1 cancelled だった。その後の独立 rerun series は `$REPO_ROOT/build/s7/formal-sim-corrected/BpLTOA-rerun-1.log` から `BpLTOA-rerun-5.log` まで 5/5 pass した。中断 run 1 は連続 pass の代わりにせず、完了した5回の series で安定性を判定した。
+
+仮想 FT2232、GOWIN TAP、NOR flash での測定であり、**実機では試していない**。配布先での実機書き込み、別の Chromium channel、別 OS の検証は**本リポジトリでは試していない**。
