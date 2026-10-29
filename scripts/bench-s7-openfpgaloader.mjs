@@ -1,0 +1,339 @@
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { closeSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
+import net from "node:net";
+import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+import { parseArgs } from "node:util";
+import { chromium } from "@playwright/test";
+import { BOARDS } from "../web/lib/boards.mjs";
+import { routeWorkerWithFakeUsb, stubPageUsb } from "../tests/e2e/fake-usb-helpers.mjs";
+
+const root = path.resolve(import.meta.dirname, "..");
+const options = parseArgs({
+  options: {
+    mode: { type: "string", default: "smoke" },
+    manifest: { type: "string", default: "build/s7/variants.json" },
+    out: { type: "string", default: "build/s7/chromium-smoke.csv" },
+    repeats: { type: "string", default: "1" },
+    case: { type: "string", default: "tangnano9k-sram" },
+  },
+}).values;
+
+const repeats = Number(options.repeats);
+const manifestPath = path.resolve(root, options.manifest);
+const outputPath = path.resolve(root, options.out);
+const timeoutMs = 120_000;
+const programmingCases = BOARDS.flatMap((board) => [
+  { id: `${board.id}-sram`, board, target: "sram" },
+  { id: `${board.id}-flash`, board, target: "flash" },
+]);
+
+function csv(value) {
+  const text = String(value ?? "");
+  return `"${text.replaceAll('"', '""')}"`;
+}
+
+async function freePort() {
+  const server = net.createServer();
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const port = server.address().port;
+  await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  return port;
+}
+
+async function waitForServer(baseUrl, process) {
+  const deadline = Date.now() + 60_000;
+  while (Date.now() < deadline) {
+    if (process.exitCode !== null) {
+      throw new Error(`Local server exited with status ${process.exitCode}.`);
+    }
+    try {
+      const response = await fetch(baseUrl);
+      if (response.ok) return;
+    } catch {}
+    await delay(250);
+  }
+  throw new Error(`Timed out waiting for ${baseUrl}.`);
+}
+
+function loadManifest() {
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  assert.equal(manifest.phase, "smoke");
+  assert.deepEqual(
+    manifest.variants.map((variant) => variant.name),
+    ["B", "B2", "B+O3", "B+O3+LTOA", "B+LTOA"],
+  );
+  return manifest.variants.map((variant) => ({
+    ...variant,
+    artifactDir: path.resolve(root, variant.artifact_dir),
+    mjs: readFileSync(path.resolve(root, variant.artifact_dir, "openFPGALoader.mjs")),
+    wasm: readFileSync(path.resolve(root, variant.artifact_dir, "openFPGALoader.wasm")),
+  }));
+}
+
+async function setupPage(browser, baseUrl, variant) {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await stubPageUsb(page);
+  await page.route("**/openFPGALoader.mjs", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "text/javascript",
+      headers: { "Cross-Origin-Resource-Policy": "same-origin" },
+      body: variant.mjs,
+    }),
+  );
+  await page.route("**/openFPGALoader.wasm", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/wasm",
+      headers: { "Cross-Origin-Resource-Policy": "same-origin" },
+      body: variant.wasm,
+    }),
+  );
+  return { context, page, baseUrl };
+}
+
+async function runProgrammingCase(browser, baseUrl, variant, testCase) {
+  const { context, page } = await setupPage(browser, baseUrl, variant);
+  const fixture = path.resolve(root, `build/fixtures/${testCase.board.id}.fs`);
+  try {
+    await routeWorkerWithFakeUsb(page, { idcode: testCase.board.idcode });
+    await page.goto(baseUrl, { waitUntil: "domcontentloaded" });
+    await page.locator("#support-status").waitFor({ state: "visible", timeout: 30_000 });
+    await page.waitForFunction(
+      () => document.querySelector("#project-status")?.textContent.trim() === "保存しました。",
+      null,
+      { timeout: 30_000 },
+    );
+    await page.locator("#board-select").selectOption(testCase.board.id);
+    await page.locator("#bitstream-file").setInputFiles(fixture);
+    if (testCase.target === "flash") {
+      await page.locator('input[name="target"][value="flash"]').check();
+    }
+    const button = page.locator("#program-button");
+    await button.waitFor({ state: "visible", timeout: 30_000 });
+    await page.waitForFunction(
+      () => !document.querySelector("#program-button").disabled,
+      null,
+      { timeout: 30_000 },
+    );
+    const command = await page.locator("#command-preview").innerText();
+    if (!command.includes(testCase.board.id)) {
+      throw new Error(`Unexpected command preview: ${command}`);
+    }
+
+    const start = await page.evaluate(() => performance.now());
+    await button.click();
+    await page.waitForFunction(
+      () => {
+        const text = document.querySelector("#result-status")?.textContent ?? "";
+        return text === "成功" || text.startsWith("失敗：");
+      },
+      null,
+      { timeout: timeoutMs },
+    );
+    const elapsedMs = await page.evaluate((started) => performance.now() - started, start);
+    const status = await page.locator("#result-status").innerText();
+    const log = await page.locator("#program-log").innerText();
+    const progress = await page.locator("#progress-bar").evaluate((element) => element.value);
+    if (status !== "成功" || /\bFAIL\b/.test(log) || progress !== 100) {
+      throw new Error(
+        `Programming verification failed: status=${status}; progress=${progress}; log=${log}`,
+      );
+    }
+    return { elapsedMs, details: `status=${status}; progress=${progress}; command=${command}` };
+  } finally {
+    await context.close();
+  }
+}
+
+async function runInstantiate(browser, baseUrl, variant) {
+  const { context, page } = await setupPage(browser, baseUrl, variant);
+  try {
+    await page.goto(baseUrl, { waitUntil: "domcontentloaded" });
+    const result = await page.evaluate(async (timeout) => {
+      const source = `
+        self.onmessage = async () => {
+          try {
+            const { default: instantiate } = await import("/openFPGALoader.mjs");
+            const wasmBinary = await (await fetch("/openFPGALoader.wasm")).arrayBuffer();
+            await instantiate({ wasmBinary, noInitialRun: true });
+            self.postMessage({ status: "ready" });
+          } catch (error) {
+            self.postMessage({ status: "error", message: String(error) });
+          }
+        };
+      `;
+      const worker = new Worker(
+        URL.createObjectURL(new Blob([source], { type: "text/javascript" })),
+        { type: "module" },
+      );
+      const started = performance.now();
+      return await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("Instantiate timeout.")), timeout);
+        worker.onmessage = ({ data }) => {
+          clearTimeout(timer);
+          worker.terminate();
+          if (data.status !== "ready") reject(new Error(data.message));
+          else resolve({ elapsedMs: performance.now() - started });
+        };
+        worker.onerror = (event) => {
+          clearTimeout(timer);
+          worker.terminate();
+          reject(new Error(event.message));
+        };
+        worker.postMessage({});
+      });
+    }, timeoutMs);
+    return { elapsedMs: result.elapsedMs, details: "module load, compile, and instantiate ready" };
+  } finally {
+    await context.close();
+  }
+}
+
+async function main() {
+  if (!["smoke", "formal"].includes(options.mode)) {
+    throw new Error("--mode must be smoke or formal.");
+  }
+  if (!Number.isInteger(repeats) || repeats < (options.mode === "formal" ? 5 : 1)) {
+    throw new Error("Formal runs require at least 5 repeats; smoke requires at least 1.");
+  }
+  if (options.mode === "formal" && options.case !== "all") {
+    throw new Error("Formal mode uses all eight programming cases and instantiate.");
+  }
+  if (options.mode === "smoke" && !programmingCases.some((item) => item.id === options.case)) {
+    throw new Error(`Unknown smoke case: ${options.case}`);
+  }
+  mkdirSync(path.dirname(outputPath), { recursive: true });
+  const outputFd = openSync(outputPath, "wx");
+  closeSync(outputFd);
+
+  const variants = loadManifest();
+  const port = await freePort();
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const serverLog = `${outputPath}.server.log`;
+  const logFd = openSync(serverLog, "wx");
+  const server = spawn("python3", ["dist/serve.py", "--port", String(port)], {
+    cwd: root,
+    stdio: ["ignore", logFd, logFd],
+  });
+  let browser;
+  const rows = [];
+  try {
+    await waitForServer(baseUrl, server);
+    browser = await chromium.launch({ headless: true });
+    if (options.mode === "smoke") {
+      const testCase = programmingCases.find((item) => item.id === options.case);
+      for (const variant of variants) {
+        try {
+          const result = await runProgrammingCase(browser, baseUrl, variant, testCase);
+          rows.push({
+            phase: "smoke",
+            variant: variant.name,
+            repeat: 1,
+            case: testCase.id,
+            status: "pass",
+            elapsed_ms: "",
+            details: result.details,
+          });
+          console.log(`${variant.name}: smoke PASS`);
+        } catch (error) {
+          rows.push({
+            phase: "smoke",
+            variant: variant.name,
+            repeat: 1,
+            case: testCase.id,
+            status: "fail",
+            elapsed_ms: "",
+            details: error.stack ?? String(error),
+          });
+          console.error(`${variant.name}: smoke FAIL: ${error.message}`);
+        }
+      }
+    } else {
+      const cases = programmingCases;
+      for (let repeat = 1; repeat <= repeats; repeat += 1) {
+        const offset = (repeat - 1) % variants.length;
+        const order = [...variants.slice(offset), ...variants.slice(0, offset)];
+        for (const testCase of cases) {
+          for (const variant of order) {
+            try {
+              const result = await runProgrammingCase(browser, baseUrl, variant, testCase);
+              rows.push({
+                phase: "formal",
+                variant: variant.name,
+                repeat,
+                case: testCase.id,
+                status: "pass",
+                elapsed_ms: result.elapsedMs.toFixed(3),
+                details: result.details,
+              });
+            } catch (error) {
+              rows.push({
+                phase: "formal",
+                variant: variant.name,
+                repeat,
+                case: testCase.id,
+                status: "fail",
+                elapsed_ms: "",
+                details: error.stack ?? String(error),
+              });
+            }
+          }
+        }
+        for (const variant of order) {
+          try {
+            const result = await runInstantiate(browser, baseUrl, variant);
+            rows.push({
+              phase: "formal",
+              variant: variant.name,
+              repeat,
+              case: "instantiate",
+              status: "pass",
+              elapsed_ms: result.elapsedMs.toFixed(3),
+              details: result.details,
+            });
+          } catch (error) {
+            rows.push({
+              phase: "formal",
+              variant: variant.name,
+              repeat,
+              case: "instantiate",
+              status: "fail",
+              elapsed_ms: "",
+              details: error.stack ?? String(error),
+            });
+          }
+        }
+      }
+    }
+  } finally {
+    await browser?.close();
+    server.kill("SIGTERM");
+    closeSync(logFd);
+  }
+
+  const columns = ["phase", "variant", "repeat", "case", "status", "elapsed_ms", "details"];
+  writeFileSync(
+    outputPath,
+    `${columns.join(",")}\n${rows.map((row) => columns.map((key) => csv(row[key])).join(",")).join("\n")}\n`,
+  );
+  const failures = rows.filter((row) => row.status !== "pass").length;
+  console.log(`S7 ${options.mode}: ${rows.length - failures}/${rows.length} passed; ${options.out}`);
+  return failures === 0 ? 0 : 1;
+}
+
+main().then(
+  (code) => {
+    process.exitCode = code;
+  },
+  (error) => {
+    console.error(error.stack ?? error);
+    process.exitCode = 1;
+  },
+);
