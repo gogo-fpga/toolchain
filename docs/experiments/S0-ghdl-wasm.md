@@ -25,15 +25,23 @@ GHDL 6.0.0 の VHDL 合成を WASM で実行し、Verilog を出力する。既�
 
 | host package pin | 版 | .deb SHA-256 |
 |---|---|---|
-| `gprbuild` | 2025.0.0-4build2 | `ebf68e78caf320692fbae9c1cb58e8b365d989b66033f703e3224040691db9bb` |
-| `gprconfig-kb` | 25.0.0-2 | `4f3e254e1cae5c0edbc87f999144202d717ec828f4d07bd5cc0ddb31d01ccac0` |
-| `libgnat-14` | 14.3.0-14ubuntu1 | `d58050517bc1e289a879f4433eac71e8718c87143e9c860a5479e8aa92968012` |
-| `libgnatprj12` | 2025.0.0-4build2 | `b57ab4d2bd90360966eb245ff464afd2145685802b6e8e56f7ecb806f59bb194` |
-| `libxmlada-dom9` | 25.0.0-4build2 | `7b8773467a50b27bb9071f21e4a10b5c61a8bd0614d2bade32f45e57a91ed075` |
-| `libxmlada-input8` | 25.0.0-4build2 | `30161cb121ee176ea0c5d37a9db2744dd91056f47f1ce75c2f4d54773d31f69b` |
-| `libxmlada-sax8` | 25.0.0-4build2 | `aae83ba17f060d82a5c1e32432462470cc0a8bab1dfa45df58a816512d4c3a57` |
-| `libxmlada-schema8` | 25.0.0-4build2 | `b01d6d3ed8189a9902da2ba037599fbcb23cba3d553fa5b74d7741f64e299969` |
-| `libxmlada-unicode8` | 25.0.0-4build2 | `badb5d896cc19507c01996c71e54ff0beb83a8f30472a2c2bf15071f816e56f5` |
+| `gprbuild (amd64)` | 2025.0.0-4build2 | `ebf68e78caf320692fbae9c1cb58e8b365d989b66033f703e3224040691db9bb` |
+| `gprbuild (amd64v3)` | 2025.0.0-4build2 | `327805b431911427fec34f3e22815e3212c138bb49d6e07f538d139a704404ac` |
+| `gprconfig-kb (all)` | 25.0.0-2 | `4f3e254e1cae5c0edbc87f999144202d717ec828f4d07bd5cc0ddb31d01ccac0` |
+| `libgnat-14 (amd64)` | 14.3.0-14ubuntu1 | `d58050517bc1e289a879f4433eac71e8718c87143e9c860a5479e8aa92968012` |
+| `libgnat-14 (amd64v3)` | 14.3.0-14ubuntu1 | `8c4183d87c63ac3875fd3d5b732ef8fb87c412ad3cac427d1d5336aaa8a05e79` |
+| `libgnatprj12 (amd64)` | 2025.0.0-4build2 | `b57ab4d2bd90360966eb245ff464afd2145685802b6e8e56f7ecb806f59bb194` |
+| `libgnatprj12 (amd64v3)` | 2025.0.0-4build2 | `575af2e2d2885d2a71f0a27d3bd4c9b355219e7cc57bb29c8f8398674d9e36a9` |
+| `libxmlada-dom9 (amd64)` | 25.0.0-4build2 | `7b8773467a50b27bb9071f21e4a10b5c61a8bd0614d2bade32f45e57a91ed075` |
+| `libxmlada-dom9 (amd64v3)` | 25.0.0-4build2 | `2b6fa4c516ed90975895663fafc6ef0ba5f263b26acc9a63b639f0bbaaaef6b2` |
+| `libxmlada-input8 (amd64)` | 25.0.0-4build2 | `30161cb121ee176ea0c5d37a9db2744dd91056f47f1ce75c2f4d54773d31f69b` |
+| `libxmlada-input8 (amd64v3)` | 25.0.0-4build2 | `042c9e7ee29dc9431df41f9b9cd42a1f3ec995f95c754eeb675ac446b34ea833` |
+| `libxmlada-sax8 (amd64)` | 25.0.0-4build2 | `aae83ba17f060d82a5c1e32432462470cc0a8bab1dfa45df58a816512d4c3a57` |
+| `libxmlada-sax8 (amd64v3)` | 25.0.0-4build2 | `fe643fbe119a24c89ec0732125a6e58958d07c9d60ed05e3157eb5ce76ae6b38` |
+| `libxmlada-schema8 (amd64)` | 25.0.0-4build2 | `b01d6d3ed8189a9902da2ba037599fbcb23cba3d553fa5b74d7741f64e299969` |
+| `libxmlada-schema8 (amd64v3)` | 25.0.0-4build2 | `e674bc886ee4ae1dd2db213d8f0676e5bf2af443ed48e8c49f70773e37e88328` |
+| `libxmlada-unicode8 (amd64)` | 25.0.0-4build2 | `badb5d896cc19507c01996c71e54ff0beb83a8f30472a2c2bf15071f816e56f5` |
+| `libxmlada-unicode8 (amd64v3)` | 25.0.0-4build2 | `4b23b9407f95600bfcaf2346b55f5d4ed1b7544f87b037e13245656e1e006556` |
 | `libxml2` for AdaWebPack | 2.9.14+dfsg-1.3ubuntu3.10 | `c5a065f85c1e6f605741e365e40cad71c3ceb0e85e2791400bd35b8896e12ad1` |
 | `libicu74` for AdaWebPack | 74.2-1ubuntu3.1 | `c9a70989678660eed9a1e904c74fa043da8bec8e2036856fc16e31ced79b04f8` |
 

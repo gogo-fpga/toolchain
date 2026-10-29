@@ -71,16 +71,20 @@ class CheckPinsTests(unittest.TestCase):
             "}\n"
             "expected_package_sha256() {\n"
             "  case \"$1\" in\n"
-            "    gprbuild) printf '%s' ebf68e78caf320692fbae9c1cb58e8b365d989b66033f703e3224040691db9bb ;;\n"
-            "    libgnat-14) printf '%s' d58050517bc1e289a879f4433eac71e8718c87143e9c860a5479e8aa92968012 ;;\n"
+            "    gprbuild:amd64) printf '%s' ebf68e78caf320692fbae9c1cb58e8b365d989b66033f703e3224040691db9bb ;;\n"
+            "    gprbuild:amd64v3) printf '%s' 327805b431911427fec34f3e22815e3212c138bb49d6e07f538d139a704404ac ;;\n"
+            "    libgnat-14:amd64) printf '%s' d58050517bc1e289a879f4433eac71e8718c87143e9c860a5479e8aa92968012 ;;\n"
+            "    libgnat-14:amd64v3) printf '%s' 8c4183d87c63ac3875fd3d5b732ef8fb87c412ad3cac427d1d5336aaa8a05e79 ;;\n"
             "  esac\n"
             "}\n",
             encoding="utf-8",
         )
         (self.root / "docs/experiments/S0-ghdl-wasm.md").write_text(
             "| GCC libgnat tag object | `ed10445fe222d3973ae13eda9bf211f315c5e3f9` |\n"
-            "| `gprbuild` | 2025.0.0-4build2 | `ebf68e78caf320692fbae9c1cb58e8b365d989b66033f703e3224040691db9bb` |\n"
-            "| `libgnat-14` | 14.3.0-14ubuntu1 | `d58050517bc1e289a879f4433eac71e8718c87143e9c860a5479e8aa92968012` |\n"
+            "| `gprbuild (amd64)` | 2025.0.0-4build2 | `ebf68e78caf320692fbae9c1cb58e8b365d989b66033f703e3224040691db9bb` |\n"
+            "| `gprbuild (amd64v3)` | 2025.0.0-4build2 | `327805b431911427fec34f3e22815e3212c138bb49d6e07f538d139a704404ac` |\n"
+            "| `libgnat-14 (amd64)` | 14.3.0-14ubuntu1 | `d58050517bc1e289a879f4433eac71e8718c87143e9c860a5479e8aa92968012` |\n"
+            "| `libgnat-14 (amd64v3)` | 14.3.0-14ubuntu1 | `8c4183d87c63ac3875fd3d5b732ef8fb87c412ad3cac427d1d5336aaa8a05e79` |\n"
             "| libxml2 for AdaWebPack | 2.9.14+dfsg-1.3ubuntu3.10 | `c5a065f85c1e6f605741e365e40cad71c3ceb0e85e2791400bd35b8896e12ad1` |\n"
             "| libicu74 for AdaWebPack | 74.2-1ubuntu3.1 | `c9a70989678660eed9a1e904c74fa043da8bec8e2036856fc16e31ced79b04f8` |\n",
             encoding="utf-8",
@@ -181,6 +185,19 @@ class CheckPinsTests(unittest.TestCase):
             encoding="utf-8",
         )
         self.assertTrue(any("GCC libgnat tag" in error for error in check_pins.ghdl_build_pin_errors(self.root)))
+        script.write_text(
+            script.read_text(encoding="utf-8").replace(
+                "327805b431911427fec34f3e22815e3212c138bb49d6e07f538d139a704404ac",
+                "0" * 64,
+            ),
+            encoding="utf-8",
+        )
+        self.assertTrue(
+            any(
+                "gprbuild (amd64v3) package SHA-256" in error
+                for error in check_pins.ghdl_build_pin_errors(self.root)
+            )
+        )
 
     def test_missing_shallow_is_rejected(self):
         path = self.root / ".gitmodules"

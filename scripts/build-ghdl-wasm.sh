@@ -99,15 +99,23 @@ expected_package_version() {
 
 expected_package_sha256() {
   case "$1" in
-    gprbuild) printf '%s' ebf68e78caf320692fbae9c1cb58e8b365d989b66033f703e3224040691db9bb ;;
-    gprconfig-kb) printf '%s' 4f3e254e1cae5c0edbc87f999144202d717ec828f4d07bd5cc0ddb31d01ccac0 ;;
-    libgnat-14) printf '%s' d58050517bc1e289a879f4433eac71e8718c87143e9c860a5479e8aa92968012 ;;
-    libgnatprj12) printf '%s' b57ab4d2bd90360966eb245ff464afd2145685802b6e8e56f7ecb806f59bb194 ;;
-    libxmlada-dom9) printf '%s' 7b8773467a50b27bb9071f21e4a10b5c61a8bd0614d2bade32f45e57a91ed075 ;;
-    libxmlada-input8) printf '%s' 30161cb121ee176ea0c5d37a9db2744dd91056f47f1ce75c2f4d54773d31f69b ;;
-    libxmlada-sax8) printf '%s' aae83ba17f060d82a5c1e32432462470cc0a8bab1dfa45df58a816512d4c3a57 ;;
-    libxmlada-schema8) printf '%s' b01d6d3ed8189a9902da2ba037599fbcb23cba3d553fa5b74d7741f64e299969 ;;
-    libxmlada-unicode8) printf '%s' badb5d896cc19507c01996c71e54ff0beb83a8f30472a2c2bf15071f816e56f5 ;;
+    gprbuild:amd64) printf '%s' ebf68e78caf320692fbae9c1cb58e8b365d989b66033f703e3224040691db9bb ;;
+    gprbuild:amd64v3) printf '%s' 327805b431911427fec34f3e22815e3212c138bb49d6e07f538d139a704404ac ;;
+    gprconfig-kb:all) printf '%s' 4f3e254e1cae5c0edbc87f999144202d717ec828f4d07bd5cc0ddb31d01ccac0 ;;
+    libgnat-14:amd64) printf '%s' d58050517bc1e289a879f4433eac71e8718c87143e9c860a5479e8aa92968012 ;;
+    libgnat-14:amd64v3) printf '%s' 8c4183d87c63ac3875fd3d5b732ef8fb87c412ad3cac427d1d5336aaa8a05e79 ;;
+    libgnatprj12:amd64) printf '%s' b57ab4d2bd90360966eb245ff464afd2145685802b6e8e56f7ecb806f59bb194 ;;
+    libgnatprj12:amd64v3) printf '%s' 575af2e2d2885d2a71f0a27d3bd4c9b355219e7cc57bb29c8f8398674d9e36a9 ;;
+    libxmlada-dom9:amd64) printf '%s' 7b8773467a50b27bb9071f21e4a10b5c61a8bd0614d2bade32f45e57a91ed075 ;;
+    libxmlada-dom9:amd64v3) printf '%s' 2b6fa4c516ed90975895663fafc6ef0ba5f263b26acc9a63b639f0bbaaaef6b2 ;;
+    libxmlada-input8:amd64) printf '%s' 30161cb121ee176ea0c5d37a9db2744dd91056f47f1ce75c2f4d54773d31f69b ;;
+    libxmlada-input8:amd64v3) printf '%s' 042c9e7ee29dc9431df41f9b9cd42a1f3ec995f95c754eeb675ac446b34ea833 ;;
+    libxmlada-sax8:amd64) printf '%s' aae83ba17f060d82a5c1e32432462470cc0a8bab1dfa45df58a816512d4c3a57 ;;
+    libxmlada-sax8:amd64v3) printf '%s' fe643fbe119a24c89ec0732125a6e58958d07c9d60ed05e3157eb5ce76ae6b38 ;;
+    libxmlada-schema8:amd64) printf '%s' b01d6d3ed8189a9902da2ba037599fbcb23cba3d553fa5b74d7741f64e299969 ;;
+    libxmlada-schema8:amd64v3) printf '%s' e674bc886ee4ae1dd2db213d8f0676e5bf2af443ed48e8c49f70773e37e88328 ;;
+    libxmlada-unicode8:amd64) printf '%s' badb5d896cc19507c01996c71e54ff0beb83a8f30472a2c2bf15071f816e56f5 ;;
+    libxmlada-unicode8:amd64v3) printf '%s' 4b23b9407f95600bfcaf2346b55f5d4ed1b7544f87b037e13245656e1e006556 ;;
     *) return 1 ;;
   esac
 }
@@ -123,13 +131,8 @@ installed_version() {
 }
 
 download_package() {
-  local package=$1 version expected_version expected_sha deb candidate_dir candidate sha
+  local package=$1 version expected_version expected_sha package_variant deb candidate_dir candidate sha
   expected_version=$(expected_package_version "$package" || true)
-  expected_sha=$(expected_package_sha256 "$package" || true)
-  if [[ -z "$expected_sha" ]]; then
-    printf 'No SHA-256 pin is configured for downloadable host package %s\n' "$package" >&2
-    return 1
-  fi
   deb=
   for candidate in "$host_package_cache/${package}_"*.deb; do
     [[ -f "$candidate" ]] || continue
@@ -141,7 +144,7 @@ download_package() {
   done
   if [[ -z "$deb" ]]; then
     candidate_dir=$(mktemp -d "$host_package_cache/download-${package}.XXXXXX")
-    (cd "$candidate_dir" && apt-get -o APT::Architecture=amd64 download "$package:amd64")
+    (cd "$candidate_dir" && apt-get download "$package")
     deb=$(find "$candidate_dir" -maxdepth 1 -type f -name '*.deb' -print -quit)
     if [[ -z "$deb" ]]; then
       printf 'apt-get download did not produce a .deb for %s\n' "$package" >&2
@@ -157,6 +160,13 @@ download_package() {
     rm -rf "$candidate_dir"
   fi
   version=$(dpkg-deb -f "$deb" Version)
+  package_variant=${deb##*_}
+  package_variant=${package_variant%.deb}
+  expected_sha=$(expected_package_sha256 "$package:$package_variant" || true)
+  if [[ -z "$expected_sha" ]]; then
+    printf 'No SHA-256 pin is configured for host package %s (%s)\n' "$package" "$package_variant" >&2
+    return 1
+  fi
   sha=$(sha256sum "$deb" | cut -d' ' -f1)
   if [[ -n "$expected_sha" && "$sha" != "$expected_sha" ]]; then
     printf 'SHA-256 mismatch for downloaded package: %s\n' "$deb" >&2
@@ -164,7 +174,7 @@ download_package() {
   fi
   dpkg-deb -x "$deb" "$host_tools"
   printf 'downloaded\t%s\t%s\t%s\n' "$package" "$version" "$sha" >> "$work_dir/packages.tsv"
-  printf 'apt package: %s %s sha256=%s\n' "$package" "$version" "$sha"
+  printf 'apt package: %s %s (%s) sha256=%s\n' "$package" "$version" "$package_variant" "$sha"
 }
 
 : > "$work_dir/packages.tsv"

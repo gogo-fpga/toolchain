@@ -441,15 +441,17 @@ def ghdl_build_pin_errors(root: Path) -> list[str]:
     ):
         for name in names.split("|"):
             versions[name] = version
-    hashes: dict[str, str] = dict(
-        re.findall(r"(?m)^\s*([a-z0-9-]+)\) printf '%s' ([0-9a-f]{64})", sha_case)
+    hashes = re.findall(
+        r"(?m)^\s*([a-z0-9-]+):([a-z0-9]+)\) printf '%s' ([0-9a-f]{64})",
+        sha_case,
     )
-    for name, sha256 in hashes.items():
-        row = report_row(name)
+    for name, architecture, sha256 in hashes:
+        label = f"{name} ({architecture})"
+        row = report_row(label)
         if row is None or len(row) < 3 or row[2].strip("`") != sha256:
-            errors.append(f"build-ghdl-wasm.sh: {name} package SHA-256 が S0.md と一致しません")
+            errors.append(f"build-ghdl-wasm.sh: {label} package SHA-256 が S0.md と一致しません")
         elif versions.get(name) != row[1]:
-            errors.append(f"build-ghdl-wasm.sh: {name} package version が S0.md と一致しません")
+            errors.append(f"build-ghdl-wasm.sh: {label} package version が S0.md と一致しません")
     return errors
 
 
