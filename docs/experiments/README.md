@@ -12,6 +12,7 @@
 | [S4C ブラウザーの初回配信量](S4C-cold-load-bytes.md) | 4 ボードの冷たい初回ビルド・書き込み時に取得する応答本文量 | 完了 |
 | [S5 WASI SDK のビルドオプション比較](S5-wasi-build-options.md) | Yosys と nextpnr のビルドサイズ、資源、Node・Chromium の実行時間と出力同一性 | 完了 |
 | [S5B Yosys・nextpnr の Os／LTO／Os+LTO 比較](S5B-os-lto-chromium.md) | Chromium の性能、WASM サイズ、ビルド安定性と出力同一性の追加比較 | 完了 |
+| [S6 zstd・xz 展開器のビルドオプション比較](S6-decoder-build-options.md) | Chromium での展開時間、WASM サイズ、A/A と Node テストによる安定性を比較。凍結基準を満たす候補がなく B を維持 | 完了 |
 | [S0 GHDL WASM 合成のビルドと smoke](S0-ghdl-wasm.md) | GHDL 6.0.0 の WASM 合成、VHDL fixture、Tang Nano 20K bitstream の比較 | Phase 1 完了 |
 
 仮想デバイスによる測定値は、実機の値として扱いません。
