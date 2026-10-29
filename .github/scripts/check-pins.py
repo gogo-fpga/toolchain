@@ -41,7 +41,10 @@ BRANCH_SUBMODULES = ("libftdi", "ghdl-browser")
 ARCHIVE_TAG_SOURCES = {
     "boost": "https://github.com/boostorg/boost.git",
     "eigen": "https://gitlab.com/libeigen/eigen.git",
+    "adawebpack": "https://github.com/godunko/adawebpack.git",
 }
+GCC_SOURCE = "https://gcc.gnu.org/git/gcc.git"
+GCC_LIBGNAT_TAG = "releases/gcc-14.1.0"
 APYCULA_REQUIREMENTS = "requirements-nextpnr.txt"
 APYCULA_PYPI_RELEASE = "https://pypi.org/pypi/apycula/json"
 NODE_INDEX = "https://nodejs.org/dist/index.json"
@@ -388,6 +391,68 @@ def parse_action_pins(workflow_text: str) -> list[tuple[str, str | None, str | N
     return pins
 
 
+def ghdl_build_pin_errors(root: Path) -> list[str]:
+    errors: list[str] = []
+    script = read_text(root / "scripts/build-ghdl-wasm.sh")
+    report = read_text(root / "docs/experiments/S0-ghdl-wasm.md")
+    research = read_text(root / "RESEARCH.md")
+
+    def constant(name: str) -> str | None:
+        match = re.search(rf"(?m)^readonly {re.escape(name)}=([^\s]+)$", script)
+        return match.group(1).strip("'\"") if match else None
+
+    def report_row(name: str) -> list[str] | None:
+        for line in report.splitlines():
+            if not line.lstrip().startswith("|"):
+                continue
+            cells = [cell.strip().strip("`") for cell in line.strip().strip("|").split("|")]
+            if cells and cells[0].replace("`", "") == name.replace("`", ""):
+                return cells
+        return None
+
+    adawebpack = parse_archive_pin(research, "adawebpack")
+    if constant("adawebpack_version") != adawebpack["version"]:
+        errors.append("build-ghdl-wasm.sh: AdaWebPack version が RESEARCH.md と一致しません")
+    if constant("adawebpack_sha256") != adawebpack["sha256"]:
+        errors.append("build-ghdl-wasm.sh: AdaWebPack SHA-256 が RESEARCH.md と一致しません")
+    gcc_row = report_row("GCC libgnat tag object")
+    if gcc_row is None or len(gcc_row) < 2 or constant("gcc_pin") != gcc_row[1].strip("`"):
+        errors.append("build-ghdl-wasm.sh: GCC libgnat tag が S0.md と一致しません")
+
+    for label, constant_name in (
+        ("libxml2 for AdaWebPack", "libxml2_sha256"),
+        ("libicu74 for AdaWebPack", "libicu74_sha256"),
+    ):
+        row = report_row(label)
+        if (
+            row is None
+            or len(row) < 3
+            or constant(constant_name) != row[2].strip("`")
+            or row[1] not in script
+        ):
+            errors.append(f"build-ghdl-wasm.sh: {label} SHA-256 が S0.md と一致しません")
+
+    version_case = script.split("expected_package_version() {", 1)[-1].split("\n}", 1)[0]
+    sha_case = script.split("expected_package_sha256() {", 1)[-1].split("\n}", 1)[0]
+    versions: dict[str, str] = {}
+    for names, version in re.findall(
+        r"(?m)^\s*([a-z0-9|-]+)\)\s*printf '%s' '([^']+)'",
+        version_case,
+    ):
+        for name in names.split("|"):
+            versions[name] = version
+    hashes: dict[str, str] = dict(
+        re.findall(r"(?m)^\s*([a-z0-9-]+)\) printf '%s' ([0-9a-f]{64})", sha_case)
+    )
+    for name, sha256 in hashes.items():
+        row = report_row(name)
+        if row is None or len(row) < 3 or row[2].strip("`") != sha256:
+            errors.append(f"build-ghdl-wasm.sh: {name} package SHA-256 が S0.md と一致しません")
+        elif versions.get(name) != row[1]:
+            errors.append(f"build-ghdl-wasm.sh: {name} package version が S0.md と一致しません")
+    return errors
+
+
 def run(*args: str, cwd: Path = ROOT) -> str:
     result = subprocess.run(
         args,
@@ -418,17 +483,28 @@ def consistency(root: Path = ROOT) -> list[str]:
     for dependency in ARCHIVE_TAG_SOURCES:
         try:
             pin = parse_archive_pin(read_text(root / "RESEARCH.md"), dependency)
-            expected_url = (
-                f"https://github.com/boostorg/boost/releases/download/boost-{pin['version']}/"
-                f"boost-{pin['version']}-b2-nodocs.tar.xz"
-                if dependency == "boost"
-                else f"https://gitlab.com/libeigen/eigen/-/archive/{pin['version']}/"
-                f"eigen-{pin['version']}.tar.gz"
-            )
+            expected_url = {
+                "boost": (
+                    f"https://github.com/boostorg/boost/releases/download/boost-{pin['version']}/"
+                    f"boost-{pin['version']}-b2-nodocs.tar.xz"
+                ),
+                "eigen": (
+                    f"https://gitlab.com/libeigen/eigen/-/archive/{pin['version']}/"
+                    f"eigen-{pin['version']}.tar.gz"
+                ),
+                "adawebpack": (
+                    f"https://github.com/godunko/adawebpack/releases/download/{pin['version']}/"
+                    f"adawebpack-{pin['version']}.tar.gz"
+                ),
+            }[dependency]
             if pin["url"] != expected_url:
                 errors.append(f"RESEARCH.md: {dependency} asset URL が pin と一致しません")
         except RuntimeError as error:
             errors.append(f"RESEARCH.md: {error}")
+    try:
+        errors.extend(ghdl_build_pin_errors(root))
+    except RuntimeError as error:
+        errors.append(f"GHDL WASM pins: {error}")
     try:
         parse_apycula_requirements(read_text(root / APYCULA_REQUIREMENTS))
     except RuntimeError as error:
@@ -625,6 +701,33 @@ def upstream_report(root: Path = ROOT) -> str:
         except (OSError, urllib.error.URLError, RuntimeError, subprocess.CalledProcessError) as error:
             print(f"{name}: upstream を取得できません: {error}", file=sys.stderr)
             add_row(f"{name} archive", "取得できません", "取得できません", "要確認")
+
+    try:
+        s0 = read_text(root / "docs/experiments/S0-ghdl-wasm.md")
+        tag_match = re.search(
+            r"^\|\s*GCC libgnat tag object\s*\|\s*`?([0-9a-f]{40})`?\s*\|$",
+            s0,
+            re.MULTILINE,
+        )
+        if tag_match is None:
+            raise RuntimeError("S0.md に GCC libgnat tag object がありません")
+        pinned = tag_match.group(1)
+        remote = run(
+            "git", "ls-remote", "--tags", GCC_SOURCE,
+            f"refs/tags/{GCC_LIBGNAT_TAG}",
+            f"refs/tags/{GCC_LIBGNAT_TAG}^{{}}",
+            cwd=root,
+        )
+        latest = remote_ref_sha(remote, f"refs/tags/{GCC_LIBGNAT_TAG}")
+        add_row(
+            "GCC libgnat",
+            f"{GCC_LIBGNAT_TAG} ({pinned[:12]})",
+            f"{GCC_LIBGNAT_TAG} ({latest[:12]})",
+            "最新" if pinned == latest else "更新あり",
+        )
+    except (OSError, RuntimeError, subprocess.CalledProcessError) as error:
+        print(f"GCC libgnat: upstream を取得できません: {error}", file=sys.stderr)
+        add_row("GCC libgnat", "取得できません", "取得できません", "要確認")
 
     try:
         apycula_version, _ = parse_apycula_requirements(

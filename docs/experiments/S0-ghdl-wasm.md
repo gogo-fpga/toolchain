@@ -23,11 +23,11 @@ GHDL 6.0.0 の VHDL 合成を WASM で実行し、Verilog を出力する。既�
 
 ビルドは Docker と root 権限を使わず、必要な host package を `apt-get download` で取得し、`build/host-tools/` に展開した。AdaWebPack の `llvm-ar` は使わず、WASI SDK 34 の `clang`、`wasm-ld`、`llvm-ar`、`llvm-strip` を使った。AdaWebPack の runtime calendar stub は展開コピー上でのみ変更し、固定 epoch の年 2026 を返すようにした。GHDL v6 の Verilog frontend units と `Synth.Verilog_Insts` への synthesis-path 依存は build copy から除外した。Verilog output emitter は維持した。vendor source は変更していない。
 
-| 取得した host package | 版 | .deb SHA-256 |
+| host package pin | 版 | .deb SHA-256 |
 |---|---|---|
 | `gprbuild` | 2025.0.0-4build2 | `ebf68e78caf320692fbae9c1cb58e8b365d989b66033f703e3224040691db9bb` |
 | `gprconfig-kb` | 25.0.0-2 | `4f3e254e1cae5c0edbc87f999144202d717ec828f4d07bd5cc0ddb31d01ccac0` |
-| `libgnat-14` | 14.3.0-14ubuntu1 | host に導入済み、download なし |
+| `libgnat-14` | 14.3.0-14ubuntu1 | `d58050517bc1e289a879f4433eac71e8718c87143e9c860a5479e8aa92968012` |
 | `libgnatprj12` | 2025.0.0-4build2 | `b57ab4d2bd90360966eb245ff464afd2145685802b6e8e56f7ecb806f59bb194` |
 | `libxmlada-dom9` | 25.0.0-4build2 | `7b8773467a50b27bb9071f21e4a10b5c61a8bd0614d2bade32f45e57a91ed075` |
 | `libxmlada-input8` | 25.0.0-4build2 | `30161cb121ee176ea0c5d37a9db2744dd91056f47f1ce75c2f4d54773d31f69b` |
@@ -37,13 +37,13 @@ GHDL 6.0.0 の VHDL 合成を WASM で実行し、Verilog を出力する。既�
 | `libxml2` for AdaWebPack | 2.9.14+dfsg-1.3ubuntu3.10 | `c5a065f85c1e6f605741e365e40cad71c3ceb0e85e2791400bd35b8896e12ad1` |
 | `libicu74` for AdaWebPack | 74.2-1ubuntu3.1 | `c9a70989678660eed9a1e904c74fa043da8bec8e2036856fc16e31ced79b04f8` |
 
-`libxml2` は Ubuntu archive の `https://archive.ubuntu.com/ubuntu/pool/main/libx/libxml2/libxml2_2.9.14+dfsg-1.3ubuntu3.10_amd64.deb` から取得した。manifest と package の版・hash は `build/ghdl-wasm-final/ghdl-wasm/build-manifest.tsv` にも記録した。
+`libxml2` は Ubuntu archive の `https://archive.ubuntu.com/ubuntu/pool/main/libx/libxml2/libxml2_2.9.14+dfsg-1.3ubuntu3.10_amd64.deb` から取得した。`libgnat-14` は host に導入済みだったため download を省略した。各 package の版・hash pin はこの表に記録し、build log / manifest には download した package の実値を記録した。
 
 ## build と fixture の結果
 
 | 項目 | 結果 |
 |---|---|
-| WASM | 1,999,655 bytes、SHA-256 `8c919800d9c23c381920f8782b6ca33cb214a8a34018b6ed8d3ee767c95acd7d` |
+| WASM | 1,999,778 bytes、SHA-256 `a0eff3c41ccf92b104143174ce6ed735118fb787b0c0200e7b416f4d7feaa273` |
 | libraries archive | 455,929 bytes、SHA-256 `32c3586a64b5adc62d55a45aab127b18aeb2f45a8205da089d5618c6c9e10513` |
 | build wall time | 最終 build 297 秒 |
 | artifact を作った GHDL | 6.0.0、commit `e589c698c351369ac5bcfe7abe1f1152ac5d4727` |
@@ -62,22 +62,22 @@ GHDL 6.0.0 の VHDL 合成を WASM で実行し、Verilog を出力する。既�
 
 詳細な fixture 出力は `build/ghdl-wasm/fixture-tests.log` にある。
 
+## Runtime checks
+
+`synth_api.adb` の adapter-wide `pragma Suppress (All_Checks);` を削除した状態で full build と8 fixture tests が成功した。GHDL units の compile command には `-gnata` があり、`-gnatp` はありません。したがって全体の runtime checks は有効で、個々の upstream unit にある明示的な suppression のみ適用されます。
+
 ## Tang Nano 20K `.fs` smoke
 
 VHDL LED blink について、WASM GHDL と native GHDL の双方が出した Verilog を、native / WASI Yosys、native / WASI nextpnr、native gowin_pack / Pyodide pack に通した。4 経路の `.fs` は全て 4,618,782 bytes、SHA-256 `16f96233dbbc90af33256cae3bdc9a12e245e9afbc480e756af47941abf72e3c` で byte-identical だった。WASM と native GHDL の Verilog は 1,162 bytes で byte-identical だった。実機では試していない。
 
 ## A/A 再現性
 
-最初の fresh-root builds では WASM は一致したが、libraries archive は一致しなかった。archive の member metadata は一致し、差は `ieee` と `std` の8個の `.cf` catalog に含まれる compile time だった。GHDL は `SOURCE_DATE_EPOCH` を無視して catalog に wall-clock timestamp を記録していた。
+`GHDL_WASM_BUILD_ROOT=build/ghdl-review-aa1` と `build/ghdl-review-aa2` の2つの空の build root で、build script をそれぞれ最初から最後まで実行した。再梱包はしていない。両方の full build が成功し、WASM は 1,999,778 bytes / SHA-256 `a0eff3c41ccf92b104143174ce6ed735118fb787b0c0200e7b416f4d7feaa273`、libraries archive は 455,929 bytes / SHA-256 `32c3586a64b5adc62d55a45aab127b18aeb2f45a8205da089d5618c6c9e10513` で一致した。script は native library tree の staging copy で123個の `.cf` catalog timestamp を `SOURCE_DATE_EPOCH` に基づく `20260307174740.000` に正規化する。ログは `build/ghdl-review-aa1/ghdl-wasm/build.log` と `build/ghdl-review-aa2/ghdl-wasm/build.log`。
 
-build script は native GHDL の library tree を staging copy に複製し、123 個の catalog timestamp を `SOURCE_DATE_EPOCH` に基づく `20260307174740.000` に正規化してから、sort、mtime、owner/group を固定して archive 化する。native library tree 自体は変更しない。二つの fresh-root library tree を同じ処理で再梱包し、patched script で作った最終 archive と比較した結果、全て SHA-256 `32c3586a64b5adc62d55a45aab127b18aeb2f45a8205da089d5618c6c9e10513`、455,929 bytes で一致した。WASM も fresh-root 2回と最終 build で一致した。
-
-| Fresh root | build time | WASM SHA-256 | 初回 archive SHA-256 | 正規化後 archive SHA-256 |
-|---|---:|---|---|---|
-| 初回 `ghdl-wasm` | 297 秒 | `8c919800d9c23c381920f8782b6ca33cb214a8a34018b6ed8d3ee767c95acd7d` | `163154f1830b033d1af2950dd2e41337b83c6f94f7052e0b8cc491846fd2215f` | — |
-| `ghdl-wasm-aa1` | 299 秒 | `8c919800d9c23c381920f8782b6ca33cb214a8a34018b6ed8d3ee767c95acd7d` | `e20bba6f9398a73088de2efea35141ff210ba10a1bdcef1347ab48cfa4fc4a8e` | `32c3586a64b5adc62d55a45aab127b18aeb2f45a8205da089d5618c6c9e10513` |
-| `ghdl-wasm-aa2` | 297 秒 | `8c919800d9c23c381920f8782b6ca33cb214a8a34018b6ed8d3ee767c95acd7d` | `4cde6d255e621f024aac2fb90498b887642b76f3741182c15a65be26b67e4952` | `32c3586a64b5adc62d55a45aab127b18aeb2f45a8205da089d5618c6c9e10513` |
-| patched script build | 297 秒 | `8c919800d9c23c381920f8782b6ca33cb214a8a34018b6ed8d3ee767c95acd7d` | — | `32c3586a64b5adc62d55a45aab127b18aeb2f45a8205da089d5618c6c9e10513` |
+| Fresh root | build time | WASM SHA-256 | libraries archive SHA-256 |
+|---|---:|---|---|
+| `ghdl-review-aa1` | 298 秒 | `a0eff3c41ccf92b104143174ce6ed735118fb787b0c0200e7b416f4d7feaa273` | `32c3586a64b5adc62d55a45aab127b18aeb2f45a8205da089d5618c6c9e10513` |
+| `ghdl-review-aa2` | 297 秒 | `a0eff3c41ccf92b104143174ce6ed735118fb787b0c0200e7b416f4d7feaa273` | `32c3586a64b5adc62d55a45aab127b18aeb2f45a8205da089d5618c6c9e10513` |
 
 生データと比較結果は [S0-ghdl-wasm.csv](S0-ghdl-wasm.csv) に記録した。
 
@@ -95,4 +95,4 @@ build script は native GHDL の library tree を staging copy に複製し、12
 | 6.0.0 | 初回 A/A archive | SHA-256 が一致せず: main `163154f1…`, aa1 `e20bba6f…`, aa2 `4cde6d25…` | `build/ghdl-wasm-aa-initial-mismatch.log` |
 | 6.0.0 | 手動 archive 再梱包 | timestamp `20260308024740.000` での hash は不一致。manifest の値 `20260307174740.000` に合わせて解消 | `build/ghdl-wasm-aa-manual-repack-attempt.log` |
 
-attempt 1/2 は v5.0.1 向け dynamic table patch を v6 の `dyn_htables.ads` に適用した失敗である。full frontend は default flags、`-O0`、`-O0 -gnatd.n` の各条件で再現し、VHDL synthesis に不要な Verilog frontend を build copy から外して解消した。attempt 3 は WASI SDK の `llvm-ar` に切り替えて解消した。runtime failure は AdaWebPack calendar stub が 1970 年を返し、GHDL の `Filesystem.Year_Range` 2000..2099 に反したためで、stub を展開コピー上で固定年に変更した。初回 archive の差は `.cf` catalog の wall-clock timestamp で、staging copy の正規化により解消した。手動再梱包の誤った timestamp と修正後の manifest 値も記録した。
+attempt 1/2 は v5.0.1 向け dynamic table patch を v6 の `dyn_htables.ads` に適用した失敗である。full frontend は default flags、`-O0`、`-O0 -gnatd.n` の各条件で再現し、VHDL synthesis に不要な Verilog frontend を build copy から外して解消した。attempt 3 は WASI SDK の `llvm-ar` に切り替えて解消した。runtime failure は AdaWebPack calendar stub が 1970 年を返し、GHDL の `Filesystem.Year_Range` 2000..2099 に反したためで、stub を展開コピー上で固定年に変更した。初回 archive の差は `.cf` catalog の wall-clock timestamp で、staging copy の正規化により解消した。手動再梱包による A/A 証拠は破棄し、上記の直接 full build を最終証拠とした。

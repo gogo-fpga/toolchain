@@ -20,6 +20,9 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: 固定値の整合性を確認
+        run: python3 .github/scripts/check-pins.py consistency
+
       - name: 固定版を確認
         id: report
         env:

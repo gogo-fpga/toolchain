@@ -92,7 +92,7 @@ expected_package_version() {
     libxmlada-dom9|libxmlada-input8|libxmlada-sax8|libxmlada-schema8|libxmlada-unicode8)
       printf '%s' '25.0.0-4build2'
       ;;
-    libgnat-14) return 1 ;;
+    libgnat-14) printf '%s' '14.3.0-14ubuntu1' ;;
     *) return 1 ;;
   esac
 }
@@ -101,6 +101,7 @@ expected_package_sha256() {
   case "$1" in
     gprbuild) printf '%s' ebf68e78caf320692fbae9c1cb58e8b365d989b66033f703e3224040691db9bb ;;
     gprconfig-kb) printf '%s' 4f3e254e1cae5c0edbc87f999144202d717ec828f4d07bd5cc0ddb31d01ccac0 ;;
+    libgnat-14) printf '%s' d58050517bc1e289a879f4433eac71e8718c87143e9c860a5479e8aa92968012 ;;
     libgnatprj12) printf '%s' b57ab4d2bd90360966eb245ff464afd2145685802b6e8e56f7ecb806f59bb194 ;;
     libxmlada-dom9) printf '%s' 7b8773467a50b27bb9071f21e4a10b5c61a8bd0614d2bade32f45e57a91ed075 ;;
     libxmlada-input8) printf '%s' 30161cb121ee176ea0c5d37a9db2744dd91056f47f1ce75c2f4d54773d31f69b ;;
@@ -125,6 +126,10 @@ download_package() {
   local package=$1 version expected_version expected_sha deb candidate_dir candidate sha
   expected_version=$(expected_package_version "$package" || true)
   expected_sha=$(expected_package_sha256 "$package" || true)
+  if [[ -z "$expected_sha" ]]; then
+    printf 'No SHA-256 pin is configured for downloadable host package %s\n' "$package" >&2
+    return 1
+  fi
   deb=
   for candidate in "$host_package_cache/${package}_"*.deb; do
     [[ -f "$candidate" ]] || continue

@@ -19,10 +19,11 @@ import { tmpdir } from "node:os";
 import test from "node:test";
 
 const root = path.resolve(import.meta.dirname, "../..");
+const buildRoot = path.resolve(root, process.env.GHDL_WASM_BUILD_ROOT ?? "build");
 const fixtureRoot = path.join(root, "tests/fixtures/vhdl");
-const wasmPath = path.join(root, "build/ghdl-wasm/ghdl-synth.wasm");
-const libDir = path.join(root, "build/ghdl-native/lib/ghdl");
-const nativePath = path.join(root, "build/ghdl-native/bin/ghdl");
+const wasmPath = path.join(buildRoot, "ghdl-wasm/ghdl-synth.wasm");
+const libDir = path.join(buildRoot, "ghdl-native/lib/ghdl");
+const nativePath = path.join(buildRoot, "ghdl-native/bin/ghdl");
 const wasmModule = new WebAssembly.Module(readFileSync(wasmPath));
 const vhdlRoot = "/ghdl/lib/ghdl";
 const decoder = new TextDecoder("latin1");

@@ -1,4 +1,3 @@
-pragma Suppress (All_Checks);
 -- Adapted from synth-explorer/tools/ghdl-wasm/synth_api.adb.
 -- Copyright 2025 synth-explorer contributors.
 -- Licensed under the Apache License, Version 2.0 (the "License");
