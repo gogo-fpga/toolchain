@@ -22,6 +22,8 @@ class CheckPinsTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
         (self.root / ".github/workflows").mkdir(parents=True)
+        (self.root / "scripts").mkdir(parents=True)
+        (self.root / "docs/experiments").mkdir(parents=True)
         (self.root / "vendor/libusb").mkdir(parents=True)
         (self.root / ".gitmodules").write_text(
             '[submodule "vendor/libusb"]\n'
@@ -48,7 +50,45 @@ class CheckPinsTests(unittest.TestCase):
                 "boost-1.92.0-b2-nodocs.tar.xz |\n"
                 "| eigen | 5.0.1 | `" + "b" * 64 + "` | "
                 "https://gitlab.com/libeigen/eigen/-/archive/5.0.1/eigen-5.0.1.tar.gz |\n"
+                "| adawebpack | 24.0.0 | `8edaae8b9987a20aec430d750f30033f12f953ce2b6437afb87fbf8cc1063796` | "
+                "https://github.com/godunko/adawebpack/releases/download/24.0.0/adawebpack-24.0.0.tar.gz |\n"
             )
+        (self.root / "scripts/build-ghdl-wasm.sh").write_text(
+            "readonly adawebpack_version=24.0.0\n"
+            "readonly adawebpack_sha256=8edaae8b9987a20aec430d750f30033f12f953ce2b6437afb87fbf8cc1063796\n"
+            "readonly gcc_pin=ed10445fe222d3973ae13eda9bf211f315c5e3f9\n"
+            "readonly libxml2_sha256=c5a065f85c1e6f605741e365e40cad71c3ceb0e85e2791400bd35b8896e12ad1\n"
+            "readonly libicu74_sha256=c9a70989678660eed9a1e904c74fa043da8bec8e2036856fc16e31ced79b04f8\n"
+            "libxml2 '2.9.14+dfsg-1.3ubuntu3.10'\n"
+            "libicu74 '74.2-1ubuntu3.1'\n"
+            "expected_package_version() {\n"
+            "  case \"$1\" in\n"
+            "    gprbuild|libgnatprj12)\n"
+            "      printf '%s' '2025.0.0-4build2'\n"
+            "      ;;\n"
+            "    libgnat-14) printf '%s' '14.3.0-14ubuntu1' ;;\n"
+            "  esac\n"
+            "}\n"
+            "expected_package_sha256() {\n"
+            "  case \"$1\" in\n"
+            "    gprbuild:amd64) printf '%s' ebf68e78caf320692fbae9c1cb58e8b365d989b66033f703e3224040691db9bb ;;\n"
+            "    gprbuild:amd64v3) printf '%s' 327805b431911427fec34f3e22815e3212c138bb49d6e07f538d139a704404ac ;;\n"
+            "    libgnat-14:amd64) printf '%s' d58050517bc1e289a879f4433eac71e8718c87143e9c860a5479e8aa92968012 ;;\n"
+            "    libgnat-14:amd64v3) printf '%s' 8c4183d87c63ac3875fd3d5b732ef8fb87c412ad3cac427d1d5336aaa8a05e79 ;;\n"
+            "  esac\n"
+            "}\n",
+            encoding="utf-8",
+        )
+        (self.root / "docs/experiments/S0-ghdl-wasm.md").write_text(
+            "| GCC libgnat tag object | `ed10445fe222d3973ae13eda9bf211f315c5e3f9` |\n"
+            "| `gprbuild (amd64)` | 2025.0.0-4build2 | `ebf68e78caf320692fbae9c1cb58e8b365d989b66033f703e3224040691db9bb` |\n"
+            "| `gprbuild (amd64v3)` | 2025.0.0-4build2 | `327805b431911427fec34f3e22815e3212c138bb49d6e07f538d139a704404ac` |\n"
+            "| `libgnat-14 (amd64)` | 14.3.0-14ubuntu1 | `d58050517bc1e289a879f4433eac71e8718c87143e9c860a5479e8aa92968012` |\n"
+            "| `libgnat-14 (amd64v3)` | 14.3.0-14ubuntu1 | `8c4183d87c63ac3875fd3d5b732ef8fb87c412ad3cac427d1d5336aaa8a05e79` |\n"
+            "| libxml2 for AdaWebPack | 2.9.14+dfsg-1.3ubuntu3.10 | `c5a065f85c1e6f605741e365e40cad71c3ceb0e85e2791400bd35b8896e12ad1` |\n"
+            "| libicu74 for AdaWebPack | 74.2-1ubuntu3.1 | `c9a70989678660eed9a1e904c74fa043da8bec8e2036856fc16e31ced79b04f8` |\n",
+            encoding="utf-8",
+        )
         (self.root / check_pins.APYCULA_REQUIREMENTS).write_text(
             "apycula==0.35 \\\n    --hash=sha256:" + "a" * 64 + "\n"
             "fastcrc==0.5.0 \\\n    --hash=sha256:" + "b" * 64 + "\n"
@@ -133,6 +173,31 @@ class CheckPinsTests(unittest.TestCase):
 
     def test_consistency_passes(self):
         self.assertEqual([], self.errors())
+
+    def test_ghdl_build_pins_match_experiment_record(self):
+        self.assertEqual([], check_pins.ghdl_build_pin_errors(self.root))
+        script = self.root / "scripts/build-ghdl-wasm.sh"
+        script.write_text(
+            script.read_text(encoding="utf-8").replace(
+                "ed10445fe222d3973ae13eda9bf211f315c5e3f9",
+                "0" * 40,
+            ),
+            encoding="utf-8",
+        )
+        self.assertTrue(any("GCC libgnat tag" in error for error in check_pins.ghdl_build_pin_errors(self.root)))
+        script.write_text(
+            script.read_text(encoding="utf-8").replace(
+                "327805b431911427fec34f3e22815e3212c138bb49d6e07f538d139a704404ac",
+                "0" * 64,
+            ),
+            encoding="utf-8",
+        )
+        self.assertTrue(
+            any(
+                "gprbuild (amd64v3) package SHA-256" in error
+                for error in check_pins.ghdl_build_pin_errors(self.root)
+            )
+        )
 
     def test_missing_shallow_is_rejected(self):
         path = self.root / ".gitmodules"
@@ -346,6 +411,11 @@ class CheckPinsTests(unittest.TestCase):
         archive_tags = {
             check_pins.ARCHIVE_TAG_SOURCES["boost"]: "1" * 40 + "\trefs/tags/boost-1.92.0\n",
             check_pins.ARCHIVE_TAG_SOURCES["eigen"]: "2" * 40 + "\trefs/tags/5.0.1\n",
+            check_pins.ARCHIVE_TAG_SOURCES["adawebpack"]: "3" * 40 + "\trefs/tags/24.0.0\n",
+            check_pins.GCC_SOURCE: (
+                "ed10445fe222d3973ae13eda9bf211f315c5e3f9"
+                "\trefs/tags/releases/gcc-14.1.0\n"
+            ),
         }
         refs = []
 
@@ -360,6 +430,8 @@ class CheckPinsTests(unittest.TestCase):
                 refs.append(args[3])
                 if branch_error:
                     raise subprocess.CalledProcessError(2, args)
+                if module_urls.get(args[2]) == "ghdl-browser":
+                    return self.pinned["ghdl-browser"] + "\tHEAD\n"
                 return branch_output or ""
             raise AssertionError(f"unexpected command: {args}")
 
@@ -406,6 +478,10 @@ class CheckPinsTests(unittest.TestCase):
             ("libusb", "v1.0.0", "v1.0.0", "最新"),
             next(row for row in rows if row[0] == "libusb"),
         )
+        self.assertEqual(
+            ("ghdl-browser (branch)", self.pinned["ghdl-browser"][:12], self.pinned["ghdl-browser"][:12], "最新"),
+            next(row for row in rows if row[0] == "ghdl-browser (branch)"),
+        )
 
     def test_yosys_tag_and_wasi_sdk_are_monitored(self):
         tags = self.prepare_upstream_fixture()
@@ -413,6 +489,10 @@ class CheckPinsTests(unittest.TestCase):
         self.assertEqual(
             ("yosys", "v1.0.0", "v1.0.0", "最新"),
             next(row for row in rows if row[0] == "yosys"),
+        )
+        self.assertEqual(
+            ("ghdl", "v1.0.0", "v1.0.0", "最新"),
+            next(row for row in rows if row[0] == "ghdl"),
         )
         self.assertEqual(
             ("wasi-sdk", "34.0 (" + "e" * 12 + ")", "34.0 (" + "e" * 12 + ")", "最新"),
@@ -437,6 +517,19 @@ class CheckPinsTests(unittest.TestCase):
         self.assertEqual(
             ("eigen archive", "5.0.1 (" + "b" * 12 + ")", "5.0.1", "最新"),
             next(row for row in rows if row[0] == "eigen archive"),
+        )
+        self.assertEqual(
+            ("adawebpack archive", "24.0.0 (8edaae8b9987)", "24.0.0", "最新"),
+            next(row for row in rows if row[0] == "adawebpack archive"),
+        )
+        self.assertEqual(
+            (
+                "GCC libgnat",
+                "releases/gcc-14.1.0 (ed10445fe222)",
+                "releases/gcc-14.1.0 (ed10445fe222)",
+                "最新",
+            ),
+            next(row for row in rows if row[0] == "GCC libgnat"),
         )
         self.assertEqual(
             ("Apycula", "0.35", "0.35", "最新"),
