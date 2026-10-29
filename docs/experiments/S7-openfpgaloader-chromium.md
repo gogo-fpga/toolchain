@@ -56,11 +56,11 @@ B を基準に、B+O3、B+O3+LTOA、B+LTOA のいずれかが、安定性の条�
 
 ### 手順への追記（2026-10-29、事前登録後・正式計測前）
 
-各 Chromium 書き込み試行では、`tests/e2e/fake-usb-helpers.mjs` の opt-in 状態取得を使って fake USB の最終状態を読み戻す。SRAM は `tests/sim/program.test.mjs` と同じ `parseFsPayload(..., true)` のバイト列、Tang Nano 20K の外付け NOR は `parseFsPayload(..., false)` のバイト列、その他の内蔵フラッシュは `GW1N`、20 バイトの `0xff`、`parseFsPayload(..., false)` を連結したバイト列と比較する。比較は各試行の UI 成功判定の後に行い、長さと全バイトが一致しなければ失敗とする。正式計測前の smoke では、期待値の先頭バイトを反転する負の対照を実行し、比較が不一致を検出することを確認する。基準 5 の負の対照では、fixture の先頭ビットを反転したファイルを入力して内容不一致を確認し、さらに WASM code section の命令を不正化して UI が load failure を検出することを確認する。fake USB のモデルと permanent test は変更しない。
+各 Chromium 書き込み試行では、`tests/e2e/fake-usb-helpers.mjs` の opt-in 状態取得を使って fake USB の最終状態を読み戻す。SRAM は `tests/sim/program.test.mjs` と同じ `parseFsPayload(..., true)` のバイト列、Tang Nano 20K の外付け NOR は `parseFsPayload(..., false)` のバイト列、その他の内蔵フラッシュは `GW1N`、20 バイトの `0xff`、`parseFsPayload(..., false)` を連結したバイト列と比較する。比較は各試行の UI 成功判定の後に行い、長さと全バイトが一致しなければ失敗とする。正式計測前の smoke では、期待値の先頭バイトを反転する負の対照を実行し、比較が不一致を検出することを確認する。基準 5 の負の対照では、fixture の先頭ビットを反転したファイルを入力して内容不一致を確認し、さらに WASM code section の命令を不正化して UI が load failure を検出することを確認する。fake デバイスのモデル（`tests/sim/fake-webusb.mjs`）と permanent test の assertions は変更していない。`tests/e2e/fake-usb-helpers.mjs` には opt-in の fake state capture を追加したが、既定では無効であり、既存の E2E 呼び出しは従来どおり動作する。
 
 ### 手順への追記（2026-10-30、事前登録後・正式計測前）
 
-round 1 の instantiate 25 試行はすべて失敗した。以前のベンチは blob module worker から `/openFPGALoader.mjs` を import しており、`Failed to resolve module specifier` となった。production は `web/app.js` から同じ origin の module worker を作り、`web/worker.js` が `./openFPGALoader.mjs` を相対 import する。ベンチも app module URL を基準に module worker を作り、その worker 内で同じ相対 import を行うようにした。worker 応答には `web/_headers` と同じ COOP、COEP、CORP を設定した。
+round 1 の instantiate 25 試行はすべて失敗した。以前のベンチは blob module worker から `/openFPGALoader.mjs` を import しており、`Failed to resolve module specifier` となった。production は `web/app.js` から同じ origin の module worker を作り、`web/worker.js` が `./openFPGALoader.mjs` を相対 import する。ベンチの instantiate 試行では、app module URL を基準に bench 専用 worker `scripts/s7-instantiate-worker.js` を作り、その worker 内で production と同じ `import("./openFPGALoader.mjs")` を行って `instantiate({ noInitialRun: true })` を呼ぶ。これは production の `web/worker.js` ではないため、計測時間に app 側の worker message handling は含まれない。worker 応答には `web/_headers` と同じ COOP、COEP、CORP を設定した。
 
 修正前の instantiate smoke は 0/5 で、worker error event から message、filename、stack を取得できなかった。response に production と同じ header set を加えた後の独立 smoke は 5/5 pass した。原因の詳細は browser event に現れなかったため、header 追加で解消したこと以上は特定していない。1 repeat の smoke は正式計測 CSV に含めない。最終 smoke の記録は `$REPO_ROOT/build/s7/chromium-instantiate-smoke-round2-coep.csv` と `.log` にある。実行コマンドは次のとおり。
 
@@ -178,3 +178,12 @@ B と選定変種 B+LTOA のそれぞれで Tang Nano 9K SRAM を用い、`.fs` 
 - B+LTOA の初回 run 1 は調査中断時に停止し、`$REPO_ROOT/build/s7/formal-sim-corrected/BpLTOA-run-1.log` は 14 pass、0 fail、1 cancelled だった。その後の独立 rerun series は `$REPO_ROOT/build/s7/formal-sim-corrected/BpLTOA-rerun-1.log` から `BpLTOA-rerun-5.log` まで 5/5 pass した。中断 run 1 は連続 pass の代わりにせず、完了した5回の series で安定性を判定した。
 
 仮想 FT2232、GOWIN TAP、NOR flash での測定であり、**実機では試していない**。配布先での実機書き込み、別の Chromium channel、別 OS の検証は**本リポジトリでは試していない**。
+
+### レビュー時の E2E 回帰確認（2026-10-30）
+
+`tests/e2e/web-flasher.spec.mjs` と `tests/e2e/synthesis.spec.mjs` はどちらも `fake-usb-helpers.mjs` を import する。両 spec を含む下記コマンドは 38/38 pass（web-flasher 26、synthesis 12）した。`playwright.config.mjs` の webServer が `scripts/build-web.sh` を実行してから配信するため、この実行で `dist/` も再構築した。
+
+```sh
+PLAYWRIGHT_PORT=8123 mise exec -- npx playwright test \
+  tests/e2e/web-flasher.spec.mjs tests/e2e/synthesis.spec.mjs
+```
