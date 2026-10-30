@@ -180,10 +180,15 @@ function buildNativeFs(template, destination, board, top, vhdlTop, additions = {
         maxBuffer: 16 * 1024 * 1024,
       },
     );
+    const yosysFailure = [
+      yosys.error?.message,
+      yosys.signal ? `signal: ${yosys.signal}` : "",
+      yosys.stderr,
+    ].filter(Boolean).join("\n");
     assert.equal(
       yosys.status,
       0,
-      `Native Yosys synthesis failed for ${destination}:\n${yosys.stderr ?? ""}`,
+      `Native Yosys synthesis failed for ${destination}:\n${yosysFailure}`,
     );
 
     const pnr = runNative(workdir, pnrArgs(board));
