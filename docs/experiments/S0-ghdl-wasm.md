@@ -114,3 +114,55 @@ attempt 1/2 は v5.0.1 向け dynamic table patch を v6 の `dyn_htables.ads` �
 回帰時は、attribute と port の出力、式の幅や演算、初期値を含む memory、エラー入力後の処理を重点的に見る。既存の S0 は v6.0.0 の WASM と native の一致を確認するが、v5.1.1 との出力比較ではないため、v5 系からの機能・出力差は本リポジトリでは試していない。
 
 T3 の UI 統合候補は、まず VHDL の `keep` attribute が Verilog と Yosys の合成結果に届くことを fixture で確認すること、次に v6.0.0 で増えた演算・構文の合成 fixture を追加することである。VHDL-2019 は後から選択肢として提供し、既定は VHDL-2008 に保つ。理由は、現時点の対応が初期段階で本リポジトリでは合成範囲を試していないこと、2019 用 IEEE library を含めると配布資材が増えること、言語版を選ぶ UI がまだないことである。
+
+## T3: ghdl-browser 依存除去と最小 runtime
+
+基準は `origin/main` の `50b8367`、GHDL は pinned commit `e589c698c351369ac5bcfe7abe1f1152ac5d4727`、GCC libgnat は tag object `ed10445fe222d3973ae13eda9bf211f315c5e3f9`（peeled commit `cd0059a1976303638cea95f216de129334fc04d1`）、AdaWebPack は 24.0.0 である。frontend の unit 一覧は既存 build の `.ali` ファイルから取り、ソースは `vendor/ghdl/src` の原本だけから構成する。既存 WASM に残っていた v5.0.1 ベースの `vhdl-sem.adb`、`vhdl-sem_names.adb`、`vhdl-sem_lib.adb`、`files_map.adb`、`dyn_tables.adb` は GHDL 6.0.0 の原本に置き換えた。
+
+GCC の OS・Calendar unit を追加した試行は AdaWebPack の制約に反したため、`s-os_lib.adb`、`s-os_primitives`、`s-strings` は採用しなかった。代わりに `scripts/ghdl-wasm/rts/` に GHDL 6.0.0 と `synth_api` が参照する最小 runtime を実装した。C/WASI libc の file/path 操作を使い、`Ada.Command_Line` は空、`Ada.Calendar.Clock` は GHDL pin の commit timestamp から作る `SOURCE_DATE_EPOCH` 固定値、Time_Zones の offset は 0 とする。依存のない Ada.Strings.Unbounded など、制約下でコンパイルできた pure-Ada 単位は GCC libgnat 14.1.0 の原文を使う。
+
+`JOBS=2 GHDL_WASM_BUILD_ROOT=build/ghdl-no-browser-runtime8 scripts/build-ghdl-wasm.sh` は成功した（403 秒、WASM 約 2.0 MiB、libraries archive 約 448 KiB）。当初の WASM test は `/work/<fixture>` の絶対パスを開けなかった。root preopen だけでは直らず、fixture を sandbox 内に書いた上で解析 API へ相対ファイル名を渡す形に変更すると、`tests/synth/ghdl-wasm.test.mjs` は 8/8 成功した。実行した Node WASI module の imports は WASI Preview 1 の file/path 操作と少数の `env` callback だけで、旧 GNAT VFS file callbacks は含まれていない。ログは `build/ghdl-no-browser-runtime8.log`、`build/ghdl-wasm-runtime8-imports.txt`、`build/ghdl-wasm-runtime8-final-tests.log` にある。
+
+二つの clean build root、5回連続の GHDL fixture/native 比較と4 board parity、old/new WASM の fixture 出力比較を確認した。結果を以下に追記する。
+
+### T3 追記: WASI open flags と stdout buffering
+
+`std` library が見つからない原因は、`Is_Regular_File` の構造体 layout や mode 判定ではなかった。C の `stat` predicate は成功し、失敗していたのは catalog に対する `open` だった。Ada runtime が read 用 flags に 0 を渡していたが、WASI SDK の `O_RDONLY` は `0x04000000` である。`wasi.c` の open helper が WASI SDK の `O_RDONLY` / `O_WRONLY` macro を使うようにすると、trace に catalog と source file の `path_open`、`fd_read` が現れ、GHDL test は `std` を読み込めた。証拠は `build/ghdl-no-browser-wasi-open-flag-trace.log` と `build/ghdl-no-browser-wasi-trace-c-helper.log` にある。
+
+Verilog の native/WASM 差は、stdout の C stdio buffer が WASM host に戻る前に flush されないことが原因だった。GHDL の `Outputs.Close` は stdout を close しないため、`__ghdl_get_stdout` が `setvbuf` で stdout を unbuffered にする。`tests/synth/ghdl-wasm.test.mjs` は native/WASM 出力の byte equality を assert する。clean build A は 401 秒で成功し、WASM SHA-256 は `aa851b370a40ce4bf8bce6143a0293840c31ee13c5161e6597fedc8d4538400d`、`libraries.tar.gz` は `32c3586a64b5adc62d55a45aab127b18aeb2f45a8205da089d5618c6c9e10513` だった。build log は `build/ghdl-no-browser-flush-clean-a.log` にある。Node.js 24.22.1 の fixture test は 5 回連続で 8/8 成功し、6 つの positive fixture 全てで Verilog が byte-identical だった。記録は `build/ghdl-no-browser-5x-parity.log` にある。
+
+PR #29 の既存 WASM（`build/ghdl-review-aa1`）は 1,999,778 bytes、SHA-256 `a0eff3c41ccf92b104143174ce6ed735118fb787b0c0200e7b416f4d7feaa273`、新しい clean build A は 2,066,717 bytes、SHA-256 `aa851b370a40ce4bf8bce6143a0293840c31ee13c5161e6597fedc8d4538400d` だった。WASM hash は変わったが、fixture Verilog 6 件は全て同一だった。
+
+| Fixture | PR #29 / 新 build の共通 SHA-256 |
+|---|---|
+| combinational | `b1299d9fa412674b4d9b5d4365abd376a68c1af0cf0d2164e88f1c09de8e5f25` |
+| numeric_std counter | `a4296a146cc133e0807d4f1e4b864cbea302924295c89527c01e21e753d571ed` |
+| generic entity | `9b7a04a4ac79354a5f9e10873e66a6a5b0eef65a473f76a2eba2c62aa97f9c16` |
+| FSM | `3ea0b0c8b21ad7486ab5aacf339e54a6662122ff264929c590f0722bf98a2bd9` |
+| package and entity in dependency order | `9edb5abe0ac62fbdb7cfda89bd4a00e4afc76040a0a90b6393d98b64cd7f8bde` |
+| Tang Nano 20K LED blink | `9cb10ac78a877fce1c5cc028e01990c9435d96de663b18ed925a1fd420bcb91b` |
+
+Ada 側の flush call を試した手動 GPR 再ビルドでは、`llvm-gnat1` の `Add_Function_To_Module` assertion が起きた。再利用した work directory に原因があるかは未確定だが、fresh root の full build は成功した。
+
+### clean build B と4 board parity
+
+clean build B は404秒で成功し、build A と `ghdl-synth.wasm`（2,066,717 bytes、SHA-256 `aa851b370a40ce4bf8bce6143a0293840c31ee13c5161e6597fedc8d4538400d`）および `libraries.tar.gz`（448 KiB、SHA-256 `32c3586a64b5adc62d55a45aab127b18aeb2f45a8205da089d5618c6c9e10513`）が byte-identical だった。build B log は `build/ghdl-no-browser-flush-clean-b.log` にある。old/new WASM 比較と6 fixture の共通 Verilog hash は上記に記録した。
+
+`tangnano20k_led_blink.vhd` から WASM GHDL が出力した Verilog を入力として、native Yosys / native nextpnr / native `gowin_pack` と WASI Yosys / WASI nextpnr / Pyodide pack の `.fs` を比較した。native GHDL と WASM GHDL の Verilog は同じであり、4 board 全ての `.fs` は5回連続で byte-identical だった。初回の診断 script は P&R JSON 内の `src` path（native の絶対パスと WASI の `/share` path）も一致させようとして失敗したため、その比較を除き、最終成果物の bytes を比較した。
+
+| Board | `.fs` bytes | SHA-256 |
+|---|---:|---|
+| Tang Nano 1K | 351,954 | `751a5f3d266c7172723cf043adb02d47c7bc9d5304924459e032c79fc08e46f7` |
+| Tang Nano 4K | 1,167,294 | `769cf0ee2d2fa5f91b0095ff68cc80442b6954e3155b6c14e3a17d25a51a54a7` |
+| Tang Nano 9K | 2,069,320 | `12f29894546d06b3e3510060d2688b820ccde7dbc5463b58459bb88bc20f9933` |
+| Tang Nano 20K | 4,618,782 | `16f96233dbbc90af33256cae3bdc9a12e245e9afbc480e756af47941abf72e3c` |
+
+4 board parity のログは `build/ghdl-vhdl-four-board-parity-5x.log` にある。
+
+### ライセンスと source archive の検証
+
+`CHECK_GHDL_LICENSES_ONLY=1 scripts/package-release.sh` は成功した。負例として `licenses/GPL-3.0.txt` を一時的に隠すと、`Required GHDL license file is missing or empty` で失敗した。記録は `build/ghdl-license-negative-control.log` にある。
+
+初回の release package 検証は、既存 `dist/build-info.json` の `build_script_sha256` が現在の `scripts/build-wasm.sh` と一致せず失敗した。古い `build/jspi-pthread` を使う `scripts/build-web.sh` も build metadata の不一致で停止したため、`JOBS=2 mise exec -- scripts/build-wasm.sh --variant=C` で現在の script から再ビルドし、`python3 scripts/build-info.py check-artifacts --root "$PWD" --artifacts build/C` で出力 metadata を検証した。その artifacts と build-info を `dist/` に反映してから `mise exec -- scripts/package-release.sh v0.0.0-test` を実行すると、web zip と source tar.gz の両方を生成できた。ビルド記録は `build/ghdl-release-refresh-wasm.log`、package 記録は `build/ghdl-release-package-test.log` にある。
+
+source archive を展開せずに内容を調べ、`vendor/ghdl/.gitcommit` が pinned commit `e589c698c351369ac5bcfe7abe1f1152ac5d4727` と一致すること、`vendor/ghdl/src/vhdl/vhdl-sem.adb`、`patches/ghdl/`、`scripts/build-ghdl-wasm.sh`、`scripts/ghdl-wasm/` と全 runtime file が含まれることを確認した。web zip には GHDL、GPL-3.0、synth-explorer、AdaWebPack、GCC Runtime Library Exception の5つのライセンス本文がある。ライセンス負例と source archive の検査は成功した。
