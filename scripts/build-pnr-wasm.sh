@@ -269,6 +269,7 @@ fi
 
 jobs=${JOBS:-2}
 native_build=build/native/nextpnr
+mkdir -p "$(dirname "$native_build")"
 native_chipdb_root=$(CDPATH='' cd "$(dirname "$native_build")" && pwd)/nextpnr/share
 native_prefix_flags="-I$root/$boost_source -ffile-prefix-map=$root=/src -ffile-prefix-map=$root/$native_build=/build -ffile-prefix-map=$root/$boost_source=/boost -ffile-prefix-map=$root/$eigen_source=/eigen -DNPNR_DISABLE_THREADS"
 cmake -S vendor/nextpnr -B "$native_build" \
