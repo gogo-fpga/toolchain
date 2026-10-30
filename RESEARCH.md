@@ -94,6 +94,8 @@ GHDL v5.1.1..v6.0.0 の 665 commits には合成と Verilog 出力の修正が�
 
 [synth-explorer の Yosys ビルド記録](https://github.com/cachanova/synth-explorer/blob/main/tools/yosys-wasm/README.md)は、WASI SDK 33 で LTO とネイティブ WASM 例外を組み合わせたときの symbol type failure を避けるため、LTO を無効にしたと報告しています。この問題を本リポジトリーで再現したわけではありません。
 
+2026-10-30、ユーザーの判断に基づき、S9 では GHDL WASM の既定を `-Os -flto` にする前に安定性を確かめました。比較基準は PR #31 の head `a4d826b` の既定値（Ada `-O1`、`wasi.c` `-O2`、LTO なし）です。候補の最初の build は pinned WASI SDK の `wasm-ld` で `sqrtf` と `sqrt` の重複シンボルが発生して失敗しました。凍結基準の最初の条件を満たさなかったため、後続の再現性・合成・出力一致試験とサイズ・時間の測定は行っていません。Os + LTO は採用せず、既定値を変更しませんでした。詳細と失敗ログは [S9 実験記録](docs/experiments/S9-ghdl-os-lto.md) にあります。
+
 ### Yosys v0.70 と WASI SDK
 
 Yosys v0.70 は CMake でビルドします。upstream の [`CMakeLists.txt`](https://github.com/YosysHQ/yosys/blob/28ba3cb926fe376fa05ebfc1b921747d011d4557/CMakeLists.txt#L159-L169) は `CMAKE_SYSTEM_NAME` が `WASI` の場合の設定を持ちますが、Emscripten 用の分岐はありません。このため、合成・配置配線ツールには WASI SDK を使い、書き込み部の Emscripten と使い分けます。
