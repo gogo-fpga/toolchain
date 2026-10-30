@@ -435,7 +435,7 @@ jobs:
               echo "Missing time log: $log" >&2
               exit 1
             fi
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: 成果物の SHA-256 を記録
         if: always()
@@ -662,7 +662,7 @@ jobs:
               echo "Missing time log: $log" >&2
               exit 1
             fi
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Native Yosys share を確認
         run: |
@@ -876,7 +876,7 @@ jobs:
             echo '|---|---:|---:|'
             report_time 'nextpnr WASI' "$GITHUB_WORKSPACE/build/timings/nextpnr-wasi.time.log"
             report_time 'nextpnr native' "$GITHUB_WORKSPACE/build/timings/nextpnr-native.time.log"
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: 成果物の SHA-256 を記録
         if: always()
@@ -1092,7 +1092,7 @@ jobs:
             echo '### GHDL build resources'
             printf 'Build input cache restore: %s\n\n' "${CACHE_HIT:-miss}"
             printf '| Build | Wall time | Max RSS (KiB) |\n|---|---:|---:|\n| GHDL WASM and native | %s | %s |\n' "$wall" "$rss"
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - id: ghdl-tests
         name: WASM/native VHDL 合成を比較

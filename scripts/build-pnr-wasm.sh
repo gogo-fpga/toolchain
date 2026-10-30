@@ -18,6 +18,9 @@ fi
 root=$(CDPATH='' cd "$(dirname "$0")/.." && pwd)
 cd "$root"
 
+# Apicula's chipdb generator iterates hash-ordered sets; pin the seed so chipdb output is reproducible.
+export PYTHONHASHSEED=0
+
 for tool in cmake curl git node python3 sha256sum tar; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     printf 'Required command not found: %s\n' "$tool" >&2
