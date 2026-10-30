@@ -13,7 +13,7 @@ usage() {
   exit 2
 }
 
-variant=B0
+variant=Os
 variant_seen=false
 for arg in "$@"; do
   case "$arg" in
