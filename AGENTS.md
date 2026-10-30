@@ -32,7 +32,7 @@
 - すべての自動検査は fail closed にします。必要なツールやファイルがない場合、または出力を解析できない場合は失敗として扱います。
 - `.cst` はプロジェクトのピン割り当てから生成し、手で編集しません。
 - ツールのバージョンと依存の pin は、pin checker が検査するファイルを正とします。ソースコードなどに二重の固定値を持たせません。
-- 書き込み部（openFPGALoader）は Emscripten で、合成・配置配線のツール（Yosys、nextpnr）は WASI SDK でビルドします。Apicula は Pyodide（Emscripten 製）で動かします。どちらのオプションも安定性を最優先にし、そのうえで実行速度で選びます。変更するときは「experiment-record」スキルで比べてから決めます。
+- 書き込み部（openFPGALoader）は Emscripten でビルドします。合成・配置配線のツール（Yosys、nextpnr）と展開器（zstd、xz）は WASI SDK で、GHDL の合成部は AdaWebPack の Ada のコンパイラーと WASI SDK でビルドします。Apicula は Pyodide（Emscripten 製）で動かします。自分でビルドするものはすべて、オプションを安定性を最優先にし、そのうえで実行速度で選びます。変更するときは「experiment-record」スキルで比べてから決め、採用した設定と理由を RESEARCH.md に残します。
 
 ## 4. 実機と仮想デバイス
 
