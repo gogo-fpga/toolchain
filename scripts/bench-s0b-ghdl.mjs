@@ -23,6 +23,7 @@ const options = parseArgs({
     repeats: { type: "string", default: "5" },
     "base-build-root": { type: "string", default: "build/T3-2" },
     "b0-build-root": { type: "string", default: "build/S0B/B0" },
+    "server-log": { type: "string", default: "build/S0B/measurement-server.log" },
     "verify-negative-controls": { type: "boolean", default: false },
     "tamper-wasm": { type: "boolean", default: false },
     "tamper-expected": { type: "boolean", default: false },
@@ -361,8 +362,14 @@ async function waitForServer(url, server) {
   throw new Error(`Timed out waiting for ${url}.`);
 }
 
-function arrayBuffer(bytes) {
-  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+function serializeBrowserCase(testCase) {
+  return {
+    ...testCase,
+    files: testCase.files.map(({ path: filePath, content }) => ({
+      path: filePath,
+      contentBase64: Buffer.from(content).toString("base64"),
+    })),
+  };
 }
 
 async function startBrowser({ serverLogPath }) {
@@ -378,10 +385,13 @@ async function startBrowser({ serverLogPath }) {
     `import { createBuildRunner } from "../lib/build-runner.mjs";
 const runner = createBuildRunner();
 const workers = new Map();
+const decodeBase64 = (value) => Uint8Array.from(atob(value), (character) => character.charCodeAt(0));
 globalThis.s0bReady = true;
 globalThis.s0bCreateWorker = async (name, wasm, libraries) => {
   const worker = new Worker("./ghdl-worker.mjs", { type: "module" });
   workers.set(name, worker);
+  const wasmBytes = decodeBase64(wasm);
+  const libraryBytes = decodeBase64(libraries);
   const response = new Promise((resolve, reject) => {
     const onMessage = ({ data }) => {
       if (data.type !== "ready" && data.type !== "init-error") return;
@@ -391,7 +401,10 @@ globalThis.s0bCreateWorker = async (name, wasm, libraries) => {
     worker.addEventListener("message", onMessage);
     worker.addEventListener("error", (event) => reject(event.error ?? new Error(event.message)));
   });
-  worker.postMessage({ type: "init", wasm, libraries });
+  worker.postMessage(
+    { type: "init", wasm: wasmBytes, libraries: libraryBytes },
+    [wasmBytes.buffer, libraryBytes.buffer],
+  );
   return response;
 };
 globalThis.s0bRun = (name, testCase) => new Promise((resolve, reject) => {
@@ -402,7 +415,14 @@ globalThis.s0bRun = (name, testCase) => new Promise((resolve, reject) => {
     data.type === "result" ? resolve(data.result) : reject(new Error(data.message));
   };
   worker.addEventListener("message", onMessage);
-  worker.postMessage({ type: "run", testCase });
+  const prepared = {
+    ...testCase,
+    files: testCase.files.map(({ path, contentBase64 }) => ({
+      path,
+      content: decodeBase64(contentBase64),
+    })),
+  };
+  worker.postMessage({ type: "run", testCase: prepared });
 });
 globalThis.s0bBuild = async ({ board, top, verilog, constraintPath, constraint }) => {
   const result = await runner.build({
@@ -517,12 +537,12 @@ async function compileBrowserVariants(page, librariesTar) {
   for (const variant of variants) {
     const wasm = readFileSync(variant.wasmPath);
     const response = await page.evaluate(
-      async ({ name, wasmBytes, libraryBytes }) =>
-        globalThis.s0bCreateWorker(name, wasmBytes, libraryBytes),
+      async ({ name, wasmBase64, libraryBase64 }) =>
+        globalThis.s0bCreateWorker(name, wasmBase64, libraryBase64),
       {
         name: variant.name,
-        wasmBytes: arrayBuffer(wasm),
-        libraryBytes: arrayBuffer(librariesTar),
+        wasmBase64: wasm.toString("base64"),
+        libraryBase64: librariesTar.toString("base64"),
       },
     );
     compiled.set(variant.name, response.compileMs);
@@ -547,7 +567,7 @@ async function runBrowserWarmups(page, cases) {
     for (const variantName of ["Os", "B0"]) {
       await page.evaluate(
         ({ name, testCase: input }) => globalThis.s0bRun(name, input),
-        { name: variantName, testCase },
+        { name: variantName, testCase: serializeBrowserCase(testCase) },
       );
     }
   }
@@ -617,7 +637,7 @@ async function runChromiumMeasurements(page, cases, compiled, repeatsCount) {
         try {
           const result = await page.evaluate(
             ({ name, input }) => globalThis.s0bRun(name, input),
-            { name: variantName, input: testCase },
+            { name: variantName, input: serializeBrowserCase(testCase) },
           );
           rows.push(makeRow(
             "chromium",
@@ -809,7 +829,7 @@ async function main() {
   const librariesTar = readFileSync(librariesTarPath);
   const librariesTree = readUstar(librariesTar);
   const browserState = await startBrowser({
-    serverLogPath: path.join(buildDirectory, "measurement-server.log"),
+    serverLogPath: path.resolve(root, options["server-log"]),
   });
   let rows = [];
   let compiledNode;
