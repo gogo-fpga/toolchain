@@ -3,6 +3,8 @@ import { releaseDecoders } from "./lib/decompress.mjs";
 import { createVerifiedAssetLoader, safePath } from "./lib/verified-assets.mjs";
 import { createMemoryTree, runWasiP1 } from "./lib/wasi-p1.mjs";
 import { readUstar } from "./lib/ustar.mjs";
+import { runGhdlSynth } from "./lib/ghdl-host.mjs";
+import { analyzeVhdlDesign, orderVhdlFiles } from "./lib/vhdl-order.mjs";
 
 const synthURL = new URL("./synth/", import.meta.url);
 const synthCacheName = "gogo-fpga-synth-v1";
@@ -79,10 +81,11 @@ function makeLogger(tool, stream) {
 
 function checkedFiles(files) {
   if (!Array.isArray(files) || files.length === 0) {
-    throw new Error("The project has no Verilog source files");
+    throw new Error("The project has no HDL source files");
   }
   const tree = { build: {}, tmp: {} };
   const sourcePaths = [];
+  const vhdlFiles = [];
   let constraintPath = null;
   for (const file of files) {
     if (!file || typeof file.path !== "string") {
@@ -90,16 +93,17 @@ function checkedFiles(files) {
     }
     insertFile(tree, file.path, file.content);
     if (/\.(?:v|sv)$/i.test(file.path)) sourcePaths.push(file.path);
+    if (/\.(?:vhd|vhdl)$/i.test(file.path)) vhdlFiles.push(file);
     if (/\.cst$/i.test(file.path)) {
       if (constraintPath) throw new Error("The project has multiple constraint files");
       constraintPath = file.path;
     }
   }
-  if (sourcePaths.length === 0) {
-    throw new Error("The project has no Verilog source files");
+  if (sourcePaths.length === 0 && vhdlFiles.length === 0) {
+    throw new Error("The project has no HDL source files");
   }
   if (!constraintPath) throw new Error("The project has no generated constraint file");
-  return { tree, sourcePaths, constraintPath };
+  return { tree, sourcePaths, vhdlFiles, constraintPath };
 }
 
 function toolResult(module, args, workdir, share, tool) {
@@ -152,33 +156,130 @@ self.addEventListener("message", async ({ data }) => {
     if (!/^[A-Za-z_][A-Za-z0-9_$]*$/.test(data.top ?? "")) {
       throw new Error("The top module name is invalid");
     }
-    const { tree, sourcePaths, constraintPath } = checkedFiles(data.files);
-    self.postMessage({ type: "stage", stage });
+    const { tree, sourcePaths, vhdlFiles, constraintPath } = checkedFiles(data.files);
+    const hasVhdl = vhdlFiles.length > 0;
+    let vhdlTime = 0;
+    let vhdlStarted = 0;
+    let ghdlMemoryBytes = 0;
+    const generatedVhdlPaths = [];
+    let orderedVhdlFiles = [];
+    let vhdlTargets = [];
+    if (hasVhdl) {
+      stage = "vhdl";
+      self.postMessage({ type: "stage", stage });
+      vhdlStarted = performance.now();
+      const ordering = orderVhdlFiles(vhdlFiles);
+      if (!ordering.ok) {
+        for (const error of ordering.errors) {
+          self.postMessage({
+            type: "log",
+            tool: "ghdl",
+            stream: "stderr",
+            text: `${error.file}:${error.line}:1: error: ${error.message}\n`,
+          });
+        }
+        throw new Error("VHDL source ordering failed");
+      }
+      orderedVhdlFiles = ordering.order;
+      const units = analyzeVhdlDesign(orderedVhdlFiles);
+      const entities = units.flatMap(({ file, declarations }) =>
+        declarations
+          .filter(({ kind }) => kind === "entity")
+          .map(({ name }) => ({ name, file: file.path }))
+      );
+      const instantiated = new Set(
+        units.flatMap(({ references }) =>
+          references
+            .filter(({ usage }) => usage === "instantiation")
+            .map(({ name }) => name)
+        ),
+      );
+      const topName = data.top.toLowerCase();
+      if (entities.some(({ name }) => name === topName)) {
+        vhdlTargets = [topName];
+      } else if (sourcePaths.length > 0) {
+        vhdlTargets = entities
+          .map(({ name }) => name)
+          .filter((name) => !instantiated.has(name));
+        if (vhdlTargets.length === 0) {
+          throw new Error("No root VHDL entity is available for mixed synthesis");
+        }
+      } else {
+        throw new Error(`Top entity ${data.top} was not found in the VHDL sources`);
+      }
+    } else {
+      self.postMessage({ type: "stage", stage });
+    }
     const assets = await synthAssets.loadManifest();
     const chipdbPath = `chipdb/chipdb-${board.nextpnrFamily}.bin`;
-    for (const path of [...requiredAssetPaths, chipdbPath]) {
+    const requiredPaths = [
+      ...requiredAssetPaths,
+      ...(hasVhdl ? ["ghdl-synth.wasm", "libraries.tar"] : []),
+      chipdbPath,
+    ];
+    for (const path of requiredPaths) {
       if (!assets.has(path)) {
         throw new Error(`Synthesis asset is missing from manifest: ${path}`);
       }
     }
     const cache = await synthAssets.openCache();
-    let loadedAssets;
+    let loadedAssetBytes;
     try {
-      loadedAssets = await Promise.all([
-        synthAssets.fetchVerifiedAsset(assets, "yosys.wasm", cache),
-        synthAssets.fetchVerifiedAsset(assets, "nextpnr-himbaechel-gowin.wasm", cache),
-        synthAssets.fetchVerifiedAsset(assets, "yosys-share.tar", cache),
-        synthAssets.fetchVerifiedAsset(assets, chipdbPath, cache),
-      ]);
+      loadedAssetBytes = await Promise.all(
+        requiredPaths.map((path) => synthAssets.fetchVerifiedAsset(assets, path, cache)),
+      );
     } finally {
       releaseDecoders();
     }
     await synthAssets.pruneCache(cache, assets);
-    const [yosysBytes, nextpnrBytes, shareTar, chipdbBytes] = loadedAssets;
+    const loadedAssets = new Map(
+      requiredPaths.map((path, index) => [path, loadedAssetBytes[index]]),
+    );
+    const yosysBytes = loadedAssets.get("yosys.wasm");
+    const nextpnrBytes = loadedAssets.get("nextpnr-himbaechel-gowin.wasm");
+    const shareTar = loadedAssets.get("yosys-share.tar");
+    const chipdbBytes = loadedAssets.get(chipdbPath);
     const [yosysModule, nextpnrModule] = await Promise.all([
       WebAssembly.compile(yosysBytes),
       WebAssembly.compile(nextpnrBytes),
     ]);
+    if (hasVhdl) {
+      const ghdlModule = await WebAssembly.compile(loadedAssets.get("ghdl-synth.wasm"));
+      const librariesTree = readUstar(loadedAssets.get("libraries.tar"));
+      for (const target of vhdlTargets) {
+        const result = runGhdlSynth({
+          module: ghdlModule,
+          librariesTree,
+          files: orderedVhdlFiles,
+          top: target,
+          standard: data.vhdlStandard ?? "2008",
+        });
+        if (result.status !== 0 && result.log) {
+          self.postMessage({
+            type: "log",
+            tool: "ghdl",
+            stream: result.status === 0 ? "stdout" : "stderr",
+            text: result.log,
+          });
+        }
+        ghdlMemoryBytes = Math.max(ghdlMemoryBytes, result.memoryBytes ?? 0);
+        if (result.status !== 0) {
+          const file = result.file ? ` (${result.file})` : "";
+          const standardNote = data.vhdlStandard === "2019"
+            ? "\nVHDL-2019 は GHDL 6.0 の初期サポートです。未対応の構文・合成機能が含まれる場合があります。"
+            : "";
+          throw new Error(
+            `GHDL failed during ${result.stage}${file}\n${result.log}${standardNote}`,
+          );
+        }
+        const generatedPath = `build/vhdl/${target}.v`;
+        insertFile(tree, generatedPath, result.verilog);
+        generatedVhdlPaths.push(generatedPath);
+      }
+      vhdlTime = performance.now() - vhdlStarted;
+    }
+    stage = "synth";
+    self.postMessage({ type: "stage", stage });
     const yosysShareTree = readUstar(shareTar);
     const nextpnrShareTree = {};
     insertFile(
@@ -190,8 +291,21 @@ self.addEventListener("message", async ({ data }) => {
     const yosysShare = createMemoryTree(yosysShareTree);
     const nextpnrShare = createMemoryTree(nextpnrShareTree);
 
+    const yosysReadCommands = [];
+    if (sourcePaths.length) {
+      yosysReadCommands.push(
+        `read_verilog ${sourcePaths.map((path) => JSON.stringify(path)).join(" ")}`,
+      );
+    }
+    if (generatedVhdlPaths.length) {
+      yosysReadCommands.push(
+        `read_verilog -nooverwrite ${generatedVhdlPaths
+          .map((path) => JSON.stringify(path))
+          .join(" ")}`,
+      );
+    }
     const yosysCommand =
-      `read_verilog ${sourcePaths.map((path) => JSON.stringify(path)).join(" ")}; ` +
+      `${yosysReadCommands.join("; ")}; ` +
       `synth_gowin -top ${data.top} -json build/top.json`;
     const synthStarted = performance.now();
     const yosysResult = toolResult(
@@ -253,8 +367,13 @@ self.addEventListener("message", async ({ data }) => {
       {
         type: "done",
         files,
-        timings: { synth: synthTime, pnr: pnrTime },
+        timings: {
+          ...(hasVhdl ? { vhdl: vhdlTime } : {}),
+          synth: synthTime,
+          pnr: pnrTime,
+        },
         memoryBytes: {
+          ...(hasVhdl ? { ghdl: ghdlMemoryBytes } : {}),
           yosys: yosysResult.memoryBytes,
           nextpnr: nextpnrResult.memoryBytes,
         },

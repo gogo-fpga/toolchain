@@ -133,7 +133,7 @@ function nodePath(node) {
   return `/${names.reverse().join("/")}`;
 }
 
-export function runWasiP1(module, {
+export function createWasiP1ImportObject({
   args = [],
   env = {},
   preopens = {},
@@ -162,6 +162,7 @@ export function runWasiP1(module, {
     const descriptor = {
       kind: "directory",
       node: directory,
+      capabilityRoot: directory,
       position: 0n,
       flags: 0,
       rights: SUPPORTED_RIGHTS,
@@ -241,13 +242,20 @@ export function runWasiP1(module, {
     return ((base | inheriting) & ~SUPPORTED_RIGHTS) === 0n;
   }
 
-  function resolveParent(directory, path) {
+  function resolveParent(directory, path, capabilityRoot = directory) {
     const segments = pathSegments(path);
     if (!segments) return { errno: ERRNO.INVAL };
     if (segments.length === 0) return { errno: ERRNO.INVAL };
     let current = directory;
     for (const segment of segments.slice(0, -1)) {
-      if (segment === "..") return { errno: ERRNO.NOTCAPABLE };
+      if (current.type !== "directory") return { errno: ERRNO.NOTDIR };
+      if (segment === "..") {
+        if (current === capabilityRoot || !current.parent) {
+          return { errno: ERRNO.NOTCAPABLE };
+        }
+        current = current.parent;
+        continue;
+      }
       const child = current.entries.get(segment);
       if (!child) return { errno: ERRNO.NOENT };
       if (child.type !== "directory") return { errno: ERRNO.NOTDIR };
@@ -258,13 +266,19 @@ export function runWasiP1(module, {
     return { parent: current, name: finalName, errno: ERRNO.SUCCESS };
   }
 
-  function resolveNode(directory, path) {
+  function resolveNode(directory, path, capabilityRoot = directory) {
     const segments = pathSegments(path);
     if (!segments) return { errno: ERRNO.INVAL };
     let current = directory;
     for (const segment of segments) {
-      if (segment === "..") return { errno: ERRNO.NOTCAPABLE };
       if (current.type !== "directory") return { errno: ERRNO.NOTDIR };
+      if (segment === "..") {
+        if (current === capabilityRoot || !current.parent) {
+          return { errno: ERRNO.NOTCAPABLE };
+        }
+        current = current.parent;
+        continue;
+      }
       current = current.entries.get(segment);
       if (!current) return { errno: ERRNO.NOENT };
     }
@@ -558,7 +572,7 @@ export function runWasiP1(module, {
       if (!(descriptor.rights & RIGHTS.PATH_CREATE_DIRECTORY)) return ERRNO.NOTCAPABLE;
       const path = pathFromMemory(pathPointer, pathLength);
       if (path.errno) return path.errno;
-      const resolved = resolveParent(descriptor.node, path.path);
+      const resolved = resolveParent(descriptor.node, path.path, descriptor.capabilityRoot);
       if (resolved.errno) return resolved.errno;
       if (resolved.parent.entries.has(resolved.name)) return ERRNO.EXIST;
       const directory = { type: "directory", name: resolved.name, parent: resolved.parent, entries: new Map() };
@@ -573,7 +587,7 @@ export function runWasiP1(module, {
       if (!(descriptor.rights & RIGHTS.PATH_FILESTAT_GET)) return ERRNO.NOTCAPABLE;
       const path = pathFromMemory(pathPointer, pathLength);
       if (path.errno) return path.errno;
-      const resolved = resolveNode(descriptor.node, path.path);
+      const resolved = resolveNode(descriptor.node, path.path, descriptor.capabilityRoot);
       if (resolved.errno) return resolved.errno;
       return writeBytes(outputPointer, statNode(resolved.node)) ? ERRNO.SUCCESS : ERRNO.FAULT;
     },
@@ -588,7 +602,7 @@ export function runWasiP1(module, {
       if (!allowRights(rightsBase, rightsInheriting)) return ERRNO.NOTSUP;
       const path = pathFromMemory(pathPointer, pathLength);
       if (path.errno) return path.errno;
-      const resolved = resolveParent(descriptor.node, path.path);
+      const resolved = resolveParent(descriptor.node, path.path, descriptor.capabilityRoot);
       if (resolved.errno) return resolved.errno;
       let node = resolved.parent.entries.get(resolved.name);
       if (node && (oflags & OFLAGS.CREATE) && (oflags & OFLAGS.EXCLUSIVE)) return ERRNO.EXIST;
@@ -607,6 +621,7 @@ export function runWasiP1(module, {
         ? {
             kind: "directory",
             node,
+            capabilityRoot: descriptor.capabilityRoot,
             position: 0n,
             flags: fdflags,
             rights: rightsBase,
@@ -616,6 +631,7 @@ export function runWasiP1(module, {
         : {
             kind: "file",
             node,
+            capabilityRoot: descriptor.capabilityRoot,
             position: 0n,
             flags: fdflags,
             rights: rightsBase,
@@ -634,7 +650,7 @@ export function runWasiP1(module, {
       if (descriptor.kind !== "directory") return ERRNO.NOTDIR;
       const path = pathFromMemory(pathPointer, pathLength);
       if (path.errno) return path.errno;
-      const resolved = resolveParent(descriptor.node, path.path);
+      const resolved = resolveParent(descriptor.node, path.path, descriptor.capabilityRoot);
       if (resolved.errno) return resolved.errno;
       const node = resolved.parent.entries.get(resolved.name);
       if (!node) return ERRNO.NOENT;
@@ -653,8 +669,8 @@ export function runWasiP1(module, {
       const newPath = pathFromMemory(newPathPointer, newPathLength);
       if (oldPath.errno) return oldPath.errno;
       if (newPath.errno) return newPath.errno;
-      const source = resolveParent(oldDescriptor.node, oldPath.path);
-      const target = resolveParent(newDescriptor.node, newPath.path);
+      const source = resolveParent(oldDescriptor.node, oldPath.path, oldDescriptor.capabilityRoot);
+      const target = resolveParent(newDescriptor.node, newPath.path, newDescriptor.capabilityRoot);
       if (source.errno) return source.errno;
       if (target.errno) return target.errno;
       const node = source.parent.entries.get(source.name);
@@ -682,7 +698,7 @@ export function runWasiP1(module, {
       if (descriptor.kind !== "directory") return ERRNO.NOTDIR;
       const path = pathFromMemory(pathPointer, pathLength);
       if (path.errno) return path.errno;
-      const resolved = resolveParent(descriptor.node, path.path);
+      const resolved = resolveParent(descriptor.node, path.path, descriptor.capabilityRoot);
       if (resolved.errno) return resolved.errno;
       const node = resolved.parent.entries.get(resolved.name);
       if (!node) return ERRNO.NOENT;
@@ -704,19 +720,33 @@ export function runWasiP1(module, {
     },
   };
 
-  const importsByModule = { wasi_snapshot_preview1: imports };
-  instance = new WebAssembly.Instance(module, importsByModule);
-  try {
-    instance.exports._start();
-  } catch (error) {
-    const exit = wasiExitFrom(error);
-    if (exit) {
-      exitCode = exit.code;
-    } else if (error instanceof WebAssembly.Exception) {
-      exitCode = 1;
-    } else {
-      throw error;
-    }
-  }
-  return { exitCode, memoryBytes: instance.exports.memory.buffer.byteLength };
+  const importObject = { wasi_snapshot_preview1: imports };
+  return {
+    importObject,
+    initialize(nextInstance) {
+      instance = nextInstance;
+    },
+    start() {
+      try {
+        instance.exports._start();
+      } catch (error) {
+        const exit = wasiExitFrom(error);
+        if (exit) {
+          exitCode = exit.code;
+        } else if (error instanceof WebAssembly.Exception) {
+          exitCode = 1;
+        } else {
+          throw error;
+        }
+      }
+      return { exitCode, memoryBytes: instance.exports.memory.buffer.byteLength };
+    },
+  };
+}
+
+export function runWasiP1(module, options = {}) {
+  const wasi = createWasiP1ImportObject(options);
+  const instance = new WebAssembly.Instance(module, wasi.importObject);
+  wasi.initialize(instance);
+  return wasi.start();
 }

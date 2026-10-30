@@ -4,13 +4,16 @@
 -- you may not use this file except in compliance with the License.
 -- https://www.apache.org/licenses/LICENSE-2.0
 -- SPDX-License-Identifier: Apache-2.0
+-- Modified by gogo-fpga/toolchain to select the VHDL standard at runtime.
 --  Minimal exported entry points to drive GHDL's synthesis kernel from a
 --  WebAssembly host, bypassing the native command-line driver.
 with Types; use Types;
 
 package Synth_Api is
-   --  Initialize VHDL-2008 analysis, load the bundled standard libraries,
-   --  and configure diagnostics. 0 = success.
+   function Synth_Set_Std (Std : Integer) return Integer;
+
+   --  Initialize analysis, load the bundled standard libraries, and
+   --  configure diagnostics. 0 = success.
    function Synth_Init return Integer;
 
    --  Analyze FILE into the work library. The caller must provide files in

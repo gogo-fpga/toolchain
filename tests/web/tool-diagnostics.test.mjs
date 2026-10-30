@@ -12,6 +12,19 @@ function readFixture(name) {
 
 test("parses source locations and tool errors into editor diagnostics", () => {
   assert.deepEqual(
+    parseToolDiagnostics(
+      "ghdl",
+      "src/top.vhd:9:3: error: no declaration for \"missing\"",
+    ),
+    [{
+      file: "src/top.vhd",
+      line: 9,
+      column: 3,
+      severity: "error",
+      message: 'error: no declaration for "missing"',
+    }],
+  );
+  assert.deepEqual(
     parseToolDiagnostics("yosys", "src/top.v:7:12: ERROR: syntax error, unexpected end of file"),
     [{
       file: "src/top.v",

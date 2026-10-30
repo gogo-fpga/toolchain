@@ -27,6 +27,9 @@ test("build-web rejects missing or tampered build metadata", async (t) => {
       resolve(temporaryRoot, "wasi/decoders"),
       { recursive: true },
     );
+    mkdirSync(resolve(temporaryRoot, "ghdl-wasm"));
+    writeFileSync(resolve(temporaryRoot, "ghdl-wasm/ghdl-synth.wasm"), "wasm");
+    writeFileSync(resolve(temporaryRoot, "ghdl-wasm/libraries.tar.gz"), "libraries");
     for (const name of [
       "openFPGALoader.mjs",
       "openFPGALoader.wasm",
@@ -35,6 +38,23 @@ test("build-web rejects missing or tampered build metadata", async (t) => {
       cpSync(resolve(sourceArtifacts, name), resolve(testArtifacts, name));
     }
     const infoPath = resolve(testArtifacts, "build-info.json");
+    const metadata = spawnSync(
+      "python3",
+      [
+        resolve(repoRoot, "scripts/build-info.py"),
+        "write",
+        "--root",
+        repoRoot,
+        "--artifacts",
+        testArtifacts,
+        "--variant",
+        "C",
+        "--async-mode",
+        "jspi",
+      ],
+      { cwd: repoRoot, encoding: "utf8" },
+    );
+    assert.equal(metadata.status, 0, `${metadata.stdout}${metadata.stderr}`);
     const originalInfo = readFileSync(infoPath, "utf8");
     const cases = [
       {
@@ -51,21 +71,21 @@ test("build-web rejects missing or tampered build metadata", async (t) => {
       },
       {
         name: "script hash mismatch",
-        expected: /Build metadata field 'build_script_sha256' does not match/,
+        expected: /Build metadata build_script_sha256 does not match current build script/,
         mutate: (info) => {
           info.build_script_sha256 = "0".repeat(64);
         },
       },
       {
         name: "submodule hash mismatch",
-        expected: /Build metadata field 'submodule_shas' does not match/,
+        expected: /Build metadata submodule_shas does not match superproject gitlinks/,
         mutate: (info) => {
           info.submodule_shas["vendor/libusb"] = "0".repeat(40);
         },
       },
       {
         name: "artifact hash mismatch",
-        expected: /Build metadata field 'artifacts' does not match/,
+        expected: /Build metadata artifacts do not match downloaded files/,
         mutate: (info) => {
           info.artifacts["openFPGALoader.wasm"] = "0".repeat(64);
         },
@@ -91,6 +111,7 @@ test("build-web rejects missing or tampered build metadata", async (t) => {
             env: {
               ...process.env,
               BUILD_ROOT: temporaryRoot,
+              BUILD_INFO_CHECK: "artifacts",
             },
           },
         );

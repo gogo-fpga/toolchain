@@ -16,6 +16,14 @@ const validProject = {
 
 test("project schema accepts the supported shape", () => {
   assert.deepEqual(validateProject(validProject), { ok: true, errors: [] });
+  assert.equal(
+    validateProject({ ...validProject, vhdlStandard: "2019" }).ok,
+    true,
+  );
+  assert.equal(
+    validateProject({ ...validProject, vhdlStandard: "1993" }).ok,
+    false,
+  );
 });
 
 test("project schema rejects unknown keys and versions", () => {

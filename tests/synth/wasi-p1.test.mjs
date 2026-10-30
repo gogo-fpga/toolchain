@@ -492,6 +492,33 @@ test("WASI preview1 errno cases preserve the requested file operations", () => {
   const missing = createHarnessResult(missingModule, {});
   assert.equal(missing.exitCode, 44, "Opening a missing file must return NOENT");
 
+  const encoder = new TextEncoder();
+  const openRelative = (pathname) => {
+    const pathBytes = encoder.encode(pathname);
+    const module = wasmHarness(
+      [
+        { name: "path_open", type: PATH_OPEN_TYPE },
+        { name: "proc_exit", type: PROC_EXIT_TYPE },
+      ],
+      [
+        ...i32(3), ...i32(0), ...i32(100), ...i32(pathBytes.length), ...i32(0),
+        ...i64(0), ...i64(0), ...i32(0), ...i32(64), ...call(0), ...call(1),
+      ],
+      [{ offset: 100, bytes: [...pathBytes] }],
+    );
+    return module;
+  };
+  const parentTraversal = createHarnessResult(
+    openRelative("nested/inner/../../target"),
+    { nested: { inner: {} }, target: "" },
+  );
+  assert.equal(parentTraversal.exitCode, 0, "Parent traversal within the preopen must work");
+  const escapeTraversal = createHarnessResult(
+    openRelative("../target"),
+    { target: "" },
+  );
+  assert.equal(escapeTraversal.exitCode, 76, "Parent traversal must not escape the preopen");
+
   const seekAndReadModule = wasmHarness(
     [
       { name: "path_open", type: PATH_OPEN_TYPE },

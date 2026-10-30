@@ -7,6 +7,7 @@ const project = {
   name: "blink",
   board: "tangnano9k",
   top: "top",
+  vhdlStandard: "2008",
   files: [{ path: "src/top.v" }, { path: "build/top.fs" }],
 };
 

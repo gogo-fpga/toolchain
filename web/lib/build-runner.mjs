@@ -74,7 +74,13 @@ export function createBuildRunner({
       operation.worker = buildWorker;
       const synthesized = await request(
         buildWorker,
-        { type: "build", board: input.board, top: input.top, files: input.files },
+        {
+          type: "build",
+          board: input.board,
+          top: input.top,
+          vhdlStandard: input.vhdlStandard,
+          files: input.files,
+        },
         callbacks,
         operation,
       );

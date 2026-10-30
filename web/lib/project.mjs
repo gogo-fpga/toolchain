@@ -1,6 +1,13 @@
 import { getBoard } from "./boards.mjs";
 
-const PROJECT_KEYS = new Set(["version", "name", "board", "top", "files"]);
+const PROJECT_KEYS = new Set([
+  "version",
+  "name",
+  "board",
+  "top",
+  "files",
+  "vhdlStandard",
+]);
 const FILE_KEYS = new Set(["path"]);
 const ALLOWED_EXTENSIONS = new Set([
   ".v",
@@ -118,6 +125,13 @@ export function validateProject(project) {
 
   if (typeof project.top !== "string" || project.top.trim().length === 0) {
     errors.push("トップモジュール名を指定してください。");
+  }
+
+  if (
+    project.vhdlStandard !== undefined &&
+    !["2008", "2019"].includes(project.vhdlStandard)
+  ) {
+    errors.push("VHDL 標準は 2008 または 2019 にしてください。");
   }
 
   if (!Array.isArray(project.files)) {

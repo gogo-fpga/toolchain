@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import tarfile
 from pathlib import Path
+from pathlib import PurePosixPath
 
 from zstd_cli import require_pinned_zstd_version
 
@@ -82,6 +83,61 @@ def create_share_tar(output, yosys_share):
                     archive.addfile(info, source)
 
 
+def create_libraries_tar(output, libraries_archive):
+    if libraries_archive.is_symlink() or not libraries_archive.is_file():
+        raise SystemExit(f"GHDL library archive is missing: {libraries_archive}")
+
+    try:
+        with tarfile.open(libraries_archive, mode="r:gz") as source_archive:
+            members = []
+            for source_info in source_archive.getmembers():
+                name = PurePosixPath(source_info.name)
+                if source_info.name in ("", ".", "./"):
+                    continue
+                if name.is_absolute() or ".." in name.parts:
+                    raise SystemExit(
+                        f"Unsafe GHDL library archive path: {source_info.name}"
+                    )
+                if source_info.isdir():
+                    kind = "directory"
+                elif source_info.isfile():
+                    kind = "file"
+                else:
+                    raise SystemExit(
+                        f"Unsupported GHDL library archive entry: {source_info.name}"
+                    )
+                members.append((name.as_posix(), kind, source_info))
+            if not members:
+                raise SystemExit(f"GHDL library archive is empty: {libraries_archive}")
+
+            with tarfile.open(output, mode="w", format=tarfile.USTAR_FORMAT) as archive:
+                for name, kind, source_info in sorted(members):
+                    info = tarfile.TarInfo(name + ("/" if kind == "directory" else ""))
+                    info.uid = 0
+                    info.gid = 0
+                    info.uname = ""
+                    info.gname = ""
+                    info.mtime = 0
+                    info.mode = 0o755 if kind == "directory" else 0o644
+                    if kind == "directory":
+                        info.type = tarfile.DIRTYPE
+                        info.size = 0
+                        archive.addfile(info)
+                    else:
+                        content = source_archive.extractfile(source_info)
+                        if content is None:
+                            raise SystemExit(
+                                f"Could not read GHDL library archive entry: {name}"
+                            )
+                        info.type = tarfile.REGTYPE
+                        info.size = source_info.size
+                        archive.addfile(info, content)
+    except (OSError, tarfile.TarError) as error:
+        raise SystemExit(
+            f"Could not read GHDL library archive {libraries_archive}: {error}"
+        ) from error
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
@@ -102,13 +158,18 @@ def main():
     asset_root = Path(os.environ.get("S5_ASSET_DIR", "build/wasi"))
     if not asset_root.is_absolute():
         asset_root = ROOT / asset_root
+    ghdl_asset_root = Path(os.environ.get("GHDL_ASSET_DIR", "build/ghdl-wasm"))
+    if not ghdl_asset_root.is_absolute():
+        ghdl_asset_root = ROOT / ghdl_asset_root
     yosys_build = asset_root / "yosys"
     nextpnr_build = asset_root / "nextpnr"
+    ghdl_wasm = ghdl_asset_root / "ghdl-synth.wasm"
+    ghdl_libraries = ghdl_asset_root / "libraries.tar.gz"
     yosys_share = yosys_build / "share"
     chipdb_source = nextpnr_build / "share/himbaechel/gowin"
     yosys = yosys_build / "yosys.wasm"
     nextpnr = nextpnr_build / "nextpnr-himbaechel-gowin.wasm"
-    for path in (yosys, nextpnr):
+    for path in (yosys, nextpnr, ghdl_wasm, ghdl_libraries):
         require_file(path)
     for family in CHIPDB_FAMILIES:
         require_file(chipdb_source / f"chipdb-{family}.bin")
@@ -121,6 +182,8 @@ def main():
     (output / "chipdb").mkdir(parents=True)
     shutil.copyfile(yosys, output / "yosys.wasm")
     shutil.copyfile(nextpnr, output / "nextpnr-himbaechel-gowin.wasm")
+    shutil.copyfile(ghdl_wasm, output / "ghdl-synth.wasm")
+    create_libraries_tar(output / "libraries.tar", ghdl_libraries)
     create_share_tar(output / "yosys-share.tar", yosys_share)
     for family in CHIPDB_FAMILIES:
         shutil.copyfile(

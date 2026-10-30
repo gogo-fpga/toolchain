@@ -1,7 +1,7 @@
 const locationPattern = /^(.+\.(?:v|sv|vhd|vhdl|cst)):(\d+)(?::(\d+))?:\s*(.*)$/i;
 
 export function parseToolDiagnostics(tool, text) {
-  if (!["yosys", "nextpnr", "gowin_pack"].includes(tool)) {
+  if (!["ghdl", "yosys", "nextpnr", "gowin_pack"].includes(tool)) {
     throw new TypeError(`Unsupported diagnostic tool: ${tool}`);
   }
   const diagnostics = [];

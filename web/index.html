@@ -32,15 +32,20 @@
               <span>ボード</span>
               <select id="board-select" name="board" required></select>
             </label>
+            <label id="vhdl-standard-control" class="board-picker" for="vhdl-standard" hidden>
+              <span>VHDL 標準</span>
+              <select id="vhdl-standard">
+                <option value="2008">2008</option>
+                <option value="2019">2019</option>
+              </select>
+            </label>
             <div class="header-actions">
               <div class="synthesis-control">
                 <button id="synthesis-button" type="button" disabled>
                   合成・配置配線
                 </button>
                 <p id="synthesis-stage" role="status" aria-live="polite"></p>
-                <p id="synthesis-reason" class="synthesis-reason">
-                  VHDL の合成は T3 で対応予定です
-                </p>
+                <p id="synthesis-reason" class="synthesis-reason"></p>
                 <p id="synthesis-asset-size"></p>
               </div>
               <button id="program-button" type="submit" disabled>書き込む</button>
@@ -424,6 +429,13 @@
           <select id="new-project-language">
             <option value="verilog">Verilog</option>
             <option value="vhdl">VHDL</option>
+          </select>
+        </label>
+        <label id="new-project-standard-field" class="field" for="new-project-standard" hidden>
+          <span>VHDL 標準</span>
+          <select id="new-project-standard">
+            <option value="2008">2008</option>
+            <option value="2019">2019</option>
           </select>
         </label>
         <p id="new-project-error" role="status" aria-live="polite"></p>

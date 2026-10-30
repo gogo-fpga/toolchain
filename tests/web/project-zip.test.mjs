@@ -102,6 +102,27 @@ test("project ZIP preserves text and binary file bytes", () => {
   }
 });
 
+test("project ZIP preserves the selected VHDL standard", () => {
+  const { project, files } = makeProject();
+  project.vhdlStandard = "2019";
+  const imported = importProjectZip(exportProjectZip(project, files));
+  assert.equal(imported.project.vhdlStandard, "2019");
+});
+
+test("legacy project ZIPs default the VHDL standard to 2008", () => {
+  const template = createBlinkTemplate("tangnano9k", "verilog");
+  delete template.project.vhdlStandard;
+  const imported = importProjectZip(
+    makeZip(manifestEntries(
+      template.project,
+      Object.fromEntries(
+        [...template.files].map(([path, content]) => [path, strToU8(content)]),
+      ),
+    )),
+  );
+  assert.equal(imported.project.vhdlStandard, "2008");
+});
+
 test("project ZIP export rejects a file map that differs from the manifest", () => {
   const { project, files } = makeProject();
   files.delete("src/top.v");

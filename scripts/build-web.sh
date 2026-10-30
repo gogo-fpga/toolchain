@@ -39,6 +39,12 @@ for decoder in zstd-decoder.wasm xz-decoder.wasm; do
     exit 1
   fi
 done
+for artifact in ghdl-synth.wasm libraries.tar.gz; do
+  if [[ ! -s "$build_root/ghdl-wasm/$artifact" ]]; then
+    printf 'Missing required GHDL WASM asset: %s\n' "$build_root/ghdl-wasm/$artifact" >&2
+    exit 1
+  fi
+done
 
 python3 "$root/scripts/build-info.py" "$build_info_action" \
   --root "$root" \
@@ -61,6 +67,8 @@ mkdir -p "$dist/lib/decoders"
 cp "$build_root/wasi/decoders/zstd-decoder.wasm" "$dist/lib/decoders/"
 cp "$build_root/wasi/decoders/xz-decoder.wasm" "$dist/lib/decoders/"
 scripts/build-pack-assets.sh --dist-output "$dist/pack"
+S5_ASSET_DIR="$build_root/wasi" \
+GHDL_ASSET_DIR="$build_root/ghdl-wasm" \
 python3 "$root/scripts/build-synth-assets.py" \
   --output "$build_root/synth" \
   --dist-output "$dist/synth"

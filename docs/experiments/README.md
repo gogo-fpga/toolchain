@@ -19,6 +19,6 @@
 | [S9 GHDL WASM Os + LTO の凍結基準](S9-ghdl-os-lto-criteria.md) | Os + LTO 候補の安定性・採否条件 | 測定前に固定 |
 | [S9B GHDL WASM 最適化マトリクス](S9B-ghdl-matrix.md) | GHDL WASM の最適化設定の安定性、size、Node 時間を比較 | 採用：Os（ユーザーの判断、基準からの逸脱） |
 | [S9B GHDL WASM 最適化マトリクスの凍結基準](S9B-ghdl-matrix-criteria.md) | 最適化候補の安定性・比較・採否条件 | 測定前に固定 |
-| [S0 GHDL WASM 合成のビルドと smoke](S0-ghdl-wasm.md) | GHDL 6.0.0 の WASM 合成、VHDL fixture、Tang Nano 20K bitstream の比較 | Phase 1 完了 |
+| [S0 GHDL WASM 合成のビルドと smoke](S0-ghdl-wasm.md) | GHDL 6.0.0 の WASM 合成、VHDL fixture、Tang Nano bitstream、T3-2 のブラウザー統合 | 完了 |
 
 仮想デバイスによる測定値は、実機の値として扱いません。
