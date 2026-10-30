@@ -49,11 +49,11 @@ jobs:
 
       - name: 文書に個人環境のパスがない
         run: |
-          # S8 の生ログは CI の実行環境パスを含めて原文のまま保存する。
+          # verbatim public GitHub Actions log evidence; runner paths are part of the record
           if git grep -nE '/home/[A-Za-z0-9_-]+/|~/work/' -- \
             docs README.md RESEARCH.md AGENTS.md .agents \
             ':!.agents/skills/yomiyasu' \
-            ':!docs/experiments/S8/raw/historical-log-extracts.txt'; then
+            ':!docs/experiments/S8/raw/**'; then
             echo "::error::文書から VM・個人環境のパスを削除してください。"
             exit 1
           fi
