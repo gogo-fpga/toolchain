@@ -3,7 +3,8 @@ set -euo pipefail
 
 usage() {
   printf 'Usage: %s [--async=jspi|asyncify] [--variant=ID[+FACTOR...]]\n' "${0##*/}" >&2
-  printf 'S1b factors: B, O2, O3, Oz, LTOL, LTOA, EHX, MG, M64, DL, MI, CL, EC, TD2, DE0, ST1M, P2P, SIMD\n' >&2
+  printf 'Base profiles: B = -Os without LTO (S1b baseline); C = -Os + LTOA for JSPI (S7 adopted default)\n' >&2
+  printf 'S1b factors: O2, O3, Oz, LTOL, LTOA, EHX, MG, M64, DL, MI, CL, EC, TD2, DE0, ST1M, P2P, SIMD\n' >&2
   exit 2
 }
 
@@ -96,12 +97,16 @@ base_seen=
 IFS=+ read -r -a profile_parts <<< "$variant_id"
 for factor in "${profile_parts[@]}"; do
   case "$factor" in
+    # C is S7's adopted -Os + LTOA profile for JSPI; asyncify keeps the S1b baseline.
     B|C)
       [[ -z "$base_seen" ]] || {
         printf 'A profile may name only one base (B or C): %s\n' "$variant_id" >&2
         exit 2
       }
       base_seen="$factor"
+      if [[ "$factor" == C && "$async_mode" == jspi ]]; then
+        lto=all
+      fi
       ;;
     O2|O3|Oz)
       ((opt_factors += 1))
