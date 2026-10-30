@@ -1,5 +1,4 @@
 #!/bin/sh
-# S8 R5
 set -eu
 
 usage() {
