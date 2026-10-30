@@ -192,10 +192,14 @@ function buildNativeFs(template, destination, board, top, vhdlTop, additions = {
     );
 
     const pnr = runNative(workdir, pnrArgs(board));
+    const pnrFailure = [
+      pnr.error?.message,
+      pnr.stderr,
+    ].filter(Boolean).join("\n");
     assert.equal(
       pnr.status,
       0,
-      `Native nextpnr failed for ${destination}:\n${pnr.stderr}`,
+      `Native nextpnr failed for ${destination}:\n${pnrFailure}`,
     );
     writeFileSync(
       path.join(workdir, "top.json"),
