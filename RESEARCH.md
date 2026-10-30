@@ -120,7 +120,7 @@ S5B では Os、LTO、OsLTO を追加比較し、出力同一性、A/A build、�
 
 ### S8: CI ビルドの高速化
 
-CI 高速化の凍結基準を [S8 実験記録](docs/experiments/S8-ci-speed.md) に記録しました。計測は未実施です。
+S8 v2 では warm の合計時間中央値が 12.233 分、Yosys cache-miss run が 28.183 分でした。全測定 run は成功しましたが、nextpnr chipdb の SHA-256 が一致せず S1 は不合格、max RSS と cache 合計は未確認です。cache=false run も未測定のため、凍結基準による採否は保留します。詳細と raw data は [S8 実験記録](docs/experiments/S8-ci-speed.md) と CSV を参照してください。
 
 ### Pyodide 上の Apicula `gowin_pack`
 
