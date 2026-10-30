@@ -47,6 +47,10 @@ def check_artifact(mode, binary, output):
         or artifact.get("size") != actual_size
     ):
         raise SystemExit(f"Build artifact integrity check failed: {binary}")
+    if mode == "native":
+        abc_binary = binary.with_name("yosys-abc")
+        if not abc_binary.is_file():
+            raise SystemExit(f"Native ABC helper is missing: {abc_binary}")
     print(f"Build artifact integrity verified: {binary}")
 
 

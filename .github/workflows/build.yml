@@ -517,6 +517,7 @@ jobs:
         with:
           path: |
             build/native/yosys
+            build/native/yosys-abc
             build/native/share/
             build/native/build-info.json
           key: yosys-native-out-ubuntu-26.04-${{ steps.synth-key.outputs.revision }}-${{ steps.synth-key.outputs.pin }}-${{ hashFiles('scripts/build-synth-wasm.sh', 'scripts/build-synth-info.py') }}
@@ -529,11 +530,12 @@ jobs:
             --check --mode native \
             --binary build/native/yosys \
             --output build/native/build-info.json \
+            && test -x build/native/yosys-abc \
             && test -d build/native/share/gowin; then
             echo "valid=true" >> "$GITHUB_OUTPUT"
           else
             echo "valid=false" >> "$GITHUB_OUTPUT"
-            rm -f build/native/yosys build/native/build-info.json
+            rm -f build/native/yosys build/native/yosys-abc build/native/build-info.json
             rm -rf build/native/share
           fi
 
@@ -560,6 +562,7 @@ jobs:
         with:
           path: |
             build/native/yosys
+            build/native/yosys-abc
             build/native/share/
             build/native/build-info.json
           key: yosys-native-out-ubuntu-26.04-${{ steps.synth-key.outputs.revision }}-${{ steps.synth-key.outputs.pin }}-${{ hashFiles('scripts/build-synth-wasm.sh', 'scripts/build-synth-info.py') }}
@@ -591,7 +594,9 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Native Yosys share を確認
-        run: test -d build/native/share/gowin
+        run: |
+          test -d build/native/share/gowin
+          test -x build/native/yosys-abc
 
       - name: Native Yosys 成果物を保存
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -599,6 +604,7 @@ jobs:
           name: ci-yosys-native-${{ github.run_id }}
           path: |
             build/native/yosys
+            build/native/yosys-abc
             build/native/share/
             build/native/build-info.json
           if-no-files-found: error
@@ -635,7 +641,7 @@ jobs:
           path: build/native
 
       - name: Native Yosys の実行権限を設定
-        run: chmod +x build/native/yosys
+        run: chmod +x build/native/yosys build/native/yosys-abc
 
       - name: WASM/native 合成を比較
         run: node --test tests/synth/yosys.test.mjs
