@@ -29,6 +29,8 @@ IDCODE と書き込み先は、[移植元の RESEARCH.md](https://github.com/gog
 
   現行既定 WASM の SHA-256 `61c4943252821a0d1405133c11690b7718fb5af28c86bf102e926ccba780a642` は S7 B+LTOA の `5ccccd017186a7a8d137f9791e08a53cf2fedaa5aaa59143028def8908557812` と異なりますが、差は `-ffile-prefix-map=$build_root=/build` が残す `/build/jspi-pthread/` と `/build/B+LTOA/` の出力下位パス、およびそれに伴う data offset です（MJS は両方 `f66be852ed33c8245fe781d900a7124186a6d3cd611a81849e1019ae080d8d44`）。確認では `--variant=B+LTOA` が S7 の WASM/MJS SHA `5ccccd017186a7a8d137f9791e08a53cf2fedaa5aaa59143028def8908557812` / `f66be852ed33c8245fe781d900a7124186a6d3cd611a81849e1019ae080d8d44` を、`--variant=B` が S7 B の `ecf7617859639422050c1098edc1dac04e943def90cb5a7328b8035714cb42b7` / `9005540841199936d9f983124e7a890e3661bd21f250b11e580346e8e7c0df27` を再現し、既定 profile の A/A も `61c4943252821a0d1405133c11690b7718fb5af28c86bf102e926ccba780a642` / `f66be852ed33c8245fe781d900a7124186a6d3cd611a81849e1019ae080d8d44` で一致しました。4条件の `$REPO_ROOT` 再生成コマンド、`flags.make`／`link.txt` の差分件数、`wasm-dis`／`strings` の差分件数は [S7 実験記録の既定 profile 確認](docs/experiments/S7-openfpgaloader-chromium.md#jspi-既定-profile-の再現確認)に記録しました。
 
+asyncify は S1b のフラグを維持し、現行スクリプトと origin/main の `flags.make` / `link.txt` は build root 置換後の diff が各 0 行（configure-level の一致でバイト同一性は未確認）だったが、この VM での full link は 1:18:51・peak RSS 15.3 GB で終了コード 2 により失敗し、バイト同一性は本リポジトリでは試していない（origin/main でも同じ失敗となるかは未確認）。
+
 これらは移植元の記録に基づく知見です。新しい Emscripten やブラウザーでの再検証は、このリポジトリーではまだ実施していません。
 
 vendor submodule の commit は次のとおりです。pin checker がこの表と gitlink の一致を検査します。

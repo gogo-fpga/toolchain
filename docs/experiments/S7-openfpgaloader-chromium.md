@@ -182,6 +182,8 @@ BUILD_ROOT="$REPO_ROOT/build/ofl-default-oslto-aa" JOBS=2 "$REPO_ROOT/scripts/bu
 
 1回目と A/A の build log は `$REPO_ROOT/build/ofl-default-oslto-default.build.log`、`$REPO_ROOT/build/ofl-default-oslto-aa.build.log` にある。factor build のログは同じ `build/` 直下の `ofl-default-oslto-factor-check.build.log` と `ofl-default-oslto-factor-B.build.log` に保存した。
 
+asyncify は S1b のフラグを維持し、現行スクリプトと origin/main の `flags.make` / `link.txt` は build root 置換後の diff が各 0 行（configure-level の一致でバイト同一性は未確認）だったが、この VM での full link は 1:18:51・peak RSS 15.3 GB で終了コード 2 により失敗し、バイト同一性は本リポジトリでは試していない（origin/main でも同じ失敗となるかは未確認）。
+
 ### 負の対照
 
 B と選定変種 B+LTOA のそれぞれで Tang Nano 9K SRAM を用い、`.fs` の先頭ビットと WASM code section を壊した。4 対照すべてが失敗を検出した。負の対照は正式な timing 行列には含めない。
