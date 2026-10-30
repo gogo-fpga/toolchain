@@ -34,6 +34,7 @@ TAGGED_SUBMODULES = (
     "yosys",
     "nextpnr",
     "ghdl",
+    "iverilog",
     "zstd",
     "xz-embedded",
 )

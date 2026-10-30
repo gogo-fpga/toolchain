@@ -42,3 +42,7 @@
 	path = vendor/ghdl
 	url = https://github.com/ghdl/ghdl.git
 	shallow = true
+[submodule "vendor/iverilog"]
+	path = vendor/iverilog
+	url = https://github.com/steveicarus/iverilog.git
+	shallow = true
