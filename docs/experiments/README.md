@@ -14,7 +14,7 @@
 | [S5B Yosys・nextpnr の Os／LTO／Os+LTO 比較](S5B-os-lto-chromium.md) | Chromium の性能、WASM サイズ、ビルド安定性と出力同一性の追加比較 | 完了 |
 | [S6 zstd・xz 展開器のビルドオプション比較](S6-decoder-build-options.md) | Chromium での展開時間、WASM サイズ、A/A と Node テストによる安定性を比較。凍結基準を満たす候補がなく B を維持 | 完了 |
 | [S7 openFPGALoader の Chromium ビルドオプション比較](S7-openfpgaloader-chromium.md) | fake USB の実内容検証付きで5変種を比較し、凍結規則により B+LTOA を既定に採用。以前の既定は `scripts/build-wasm.sh --variant=B` で再現 | 完了 |
-| [S8 CI ビルド時間の短縮](S8-ci-speed.md) | CI cache と並列 job の安定性・所要時間を測定 | 基準記録済み |
+| [S8 CI ビルド時間の短縮](S8-ci-speed.md) | CI cache と並列 job の安定性・所要時間を測定 | 採用（2026-10-30、ユーザー判断「A」。凍結基準に未達項目あり） |
 | [S0 GHDL WASM 合成のビルドと smoke](S0-ghdl-wasm.md) | GHDL 6.0.0 の WASM 合成、VHDL fixture、Tang Nano 20K bitstream の比較 | Phase 1 完了 |
 
 仮想デバイスによる測定値は、実機の値として扱いません。

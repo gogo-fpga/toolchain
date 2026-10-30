@@ -245,11 +245,16 @@ S4 の max RSS は workflow の summary step を stdout にも出す修正後、
 
 ## 結論
 
-測定対象の成功 run は WASM/native compare を含めて完了した。S8 で確認した hash-seed 起因の chipdb 差は `PYTHONHASHSEED=0` 固定で再現しなくなり、R7/R8 と local seed-0 の chipdb hash は一致した。計測済み build の max RSS は12 GiB以下だが、cache hit で省略された Yosys build の RSS と cache 合計容量は未確認である。cache=false fresh build も未測定で、GHDL native `.cf` と build log は既知の非再現中間物として除外した。凍結基準の未計測条件があるため M1-M4 の採否は保留する。
+測定対象の成功 run は WASM/native compare を含めて完了した。S8 で確認した hash-seed 起因の chipdb 差は `PYTHONHASHSEED=0` 固定で再現しなくなり、R7/R8 と local seed-0 の chipdb hash は一致した。計測した nextpnr / GHDL build の max RSS は12 GiB以下で、ローカルの corrupted-cache check も成功した。ユーザーは2026-10-30、測定後に判断「A」として S8 を採用した。凍結基準はすべて満たしていない。未確認なのは、cache=false run、cache 合計サイズ、CI での corrupted-cache 検出、output-cache hit run で省略された Yosys build の max RSS の4項目である。GHDL native `.cf` と build log は既知の非再現中間物として記録した。
 
 ## 未確認の点
 
-cache=false fresh-build 時の SHA と速度、S5 の cache 合計容量、cache hit で省略された Yosys build と Build job の max RSS は未確認である。
+以下の4項目は未確認である。
+
+- `cache=false` run の fresh build 結果（SHA と速度）
+- cache の合計サイズ
+- CI での corrupted-cache 検出（ローカルの corrupted-cache check は成功）
+- output-cache hit run で省略された Yosys build の max RSS
 
 ## ログ
 
