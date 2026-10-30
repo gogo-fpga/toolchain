@@ -129,7 +129,7 @@ S9B の6例だけを合計した各 repeat の run 時間について、中央�
 | Chromium | Tang Nano 9K | 1014.760 / 507.735 / 817.665 | 995.880 / 520.945 / 782.285 |
 | Chromium | Tang Nano 20K | 1001.890 / 1006.045 / 1365.795 | 1021.690 / 998.715 / 1365.815 |
 
-後段の値は Chromium/WASI pipeline の時間であり、Node GHDL の値ではない。Node GHDL / Os / Tang Nano 1K / repeat 1 の `pack_ms` は 7042.380 ms で、他の同じ group の値 263.025-306.285 ms より大きい。これは最初の pipeline run であり、`createBuildRunner` が pack worker を遅延初期化するため、初回初期化を含む値と整合する。値は除外せず CSV に残した。
+後段の値は Chromium/WASI pipeline の時間であり、Node GHDL の値ではない。Node GHDL / Os / Tang Nano 1K / repeat 1 の `pack_ms` は 7042.380 ms だった。同じ group の中央値は312.395 ms、rangeは6779.355 ms である。これは最初の pipeline run であり、pack worker の遅延初期化は候補だが、初期化時間を分離しておらず原因は未確認である。値は除外せず CSV に残した。
 
 ## 正しさ、負の対照、失敗した試行
 
