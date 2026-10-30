@@ -628,7 +628,7 @@ async function runNodeMeasurements(cases, expected, compiled, repeatsCount) {
   return rows;
 }
 
-async function runChromiumMeasurements(page, cases, compiled, repeatsCount) {
+async function runChromiumMeasurements(page, cases, compiled, expected, repeatsCount) {
   const rows = [];
   for (const testCase of cases) {
     for (let repeat = 1; repeat <= repeatsCount; repeat += 1) {
@@ -848,6 +848,7 @@ async function main() {
       browserState.page,
       cases,
       compiledBrowser,
+      expected,
       repeats,
     );
     rows = [...nodeRows, ...chromiumRows];
