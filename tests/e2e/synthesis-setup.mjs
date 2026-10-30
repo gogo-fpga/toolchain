@@ -137,10 +137,15 @@ function buildNativeFs(template, destination, board, top, vhdlTop, additions = {
       ["-a", "--std=08", ...vhdlPaths],
       { cwd: workdir, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 },
     );
+    const analysisFailure = [
+      analysis.error?.message,
+      analysis.signal ? `signal: ${analysis.signal}` : "",
+      analysis.stderr,
+    ].filter(Boolean).join("\n");
     assert.equal(
       analysis.status,
       0,
-      `Native GHDL analysis failed for ${destination}:\n${analysis.stderr ?? ""}`,
+      `Native GHDL analysis failed for ${destination}:\n${analysisFailure}`,
     );
     const synthesis = spawnSync(
       nativeGhdl,
