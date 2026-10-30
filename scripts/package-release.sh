@@ -354,15 +354,16 @@ if [[ ! -s "$source_root/vendor/ghdl/.gitcommit" ||
 fi
 
 python3 - "$source_root/RELEASE-SOURCE.json" "$version" "$commit" \
-  "$source_date_epoch" "$emsdk_version" "$root/dist/build-info.json" <<'PY'
+  "$source_date_epoch" "$emsdk_version" "$root/dist/build-info.json" "$iverilog_pin" <<'PY'
 import json
 import sys
 from pathlib import Path
 
 output = Path(sys.argv[1])
-version, commit, source_date_epoch, emsdk_version, build_info_path = sys.argv[2:]
+version, commit, source_date_epoch, emsdk_version, build_info_path, iverilog_pin = sys.argv[2:]
 build_info = json.loads(Path(build_info_path).read_text(encoding="utf-8"))
 submodule_shas = build_info["submodule_shas"]
+submodule_shas["iverilog"] = iverilog_pin
 
 data = {
     "version": version,
