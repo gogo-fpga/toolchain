@@ -8,5 +8,6 @@ end entity;
 
 architecture rtl of package_top is
 begin
-  y <= invert(a);
+  u_gate : entity work.bit_ops_gate
+    port map (a => a, y => y);
 end architecture;

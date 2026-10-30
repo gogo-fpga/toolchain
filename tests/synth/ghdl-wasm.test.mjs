@@ -515,17 +515,20 @@ function runWasm(top, files) {
   const [topPointer, topLength] = pushString(top.toLowerCase());
   let result = 0;
   let error;
+  const synthStartedAt = performance.now();
   try {
     result = exports.synth_api__synth_top(topPointer, topLength);
   } catch (caught) {
     error = caught.isExit ? `EXIT(${caught.exitCode})` : caught.message;
   }
+  const synthDurationMs = performance.now() - synthStartedAt;
   exports.free(topPointer);
   return {
     status: error || result !== 0 ? result || 1 : 0,
     output: diagnostics(),
     error,
     stage: "synthesize",
+    synthDurationMs,
   };
 }
 
@@ -595,7 +598,7 @@ const positiveFixtures = [
   { label: "generic entity", top: "generic_mux", files: ["generic_mux.vhd"] },
   { label: "FSM", top: "fsm", files: ["fsm.vhd"] },
   {
-    label: "package and entity in dependency order",
+    label: "package dependency and entity instantiation",
     top: "package_top",
     files: ["bit_ops.vhd", "package_top.vhd"],
   },
@@ -610,6 +613,15 @@ for (const fixture of positiveFixtures) {
   test(`GHDL WASM synthesizes ${fixture.label}`, () => {
     const files = fixture.files.map((name) => ({ name }));
     const wasm = runWasm(fixture.top, files);
+    if (process.env.GHDL_WASM_TIMING_RUN) {
+      console.log(
+        `S9B_TIMING ${JSON.stringify({
+          run: process.env.GHDL_WASM_TIMING_RUN,
+          fixture: fixture.label,
+          duration_ms: wasm.synthDurationMs,
+        })}`,
+      );
+    }
     assert.equal(
       wasm.status,
       0,
