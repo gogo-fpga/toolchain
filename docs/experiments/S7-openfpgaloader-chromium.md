@@ -78,7 +78,7 @@ mise exec -- node scripts/bench-s7-openfpgaloader.mjs \
 - 基準 commit は `092a31bd1fa03ed900ae7eab2b3b4ad926bb80d6`。実験用 build root は `$REPO_ROOT/build/s7/build-roots/<変種>` とし、各 build の出力を新規に作成した。
 - Linux x86_64、Intel Xeon CPU D-1531 @ 2.20 GHz、12 論理 CPU、RAM 30 GiB。Node.js v24.22.1、Playwright 1.64.1、Emscripten 6.0.13、Binaryen `wasm-dis` 133、Chromium 156.0.8078.4 を使用した。
 - 関連 submodule は emsdk `35659964bc2762fffec0d257997fb61475f765b7`、openFPGALoader `befbab4f646207dbaf1daf8b144dd980ad283dd5`、libusb `87a55632db62c9bdc58cd31d3ccfa673f1bb017f`、libftdi `92d657bcb543a9622947d984d4a8e725fb680e8c`、zlib `da607da739fa6047df13e66a2af6b8bec7c2a498`。
-- 引数なしの既定 build を新しい `$REPO_ROOT/build/s7/default-confirmation/jspi-pthread` に作り、WASM は `84cb4077c3d02ab5392d47798e6a10d540ad8db9e547424926501bdaaccd285c`、MJS は `9005540841199936d9f983124e7a890e3661bd21f250b11e580346e8e7c0df27` となった。`build-info.json` の値とも一致し、指定された origin/main の SHA と byte-for-byte で一致した。wall time は 145.47 秒、peak RSS は 255,784 KiB。既定 build 設定は変更していない。
+- S7 基準時点の引数なし既定 build を新しい `$REPO_ROOT/build/s7/default-confirmation/jspi-pthread` に作り、WASM は `84cb4077c3d02ab5392d47798e6a10d540ad8db9e547424926501bdaaccd285c`、MJS は `9005540841199936d9f983124e7a890e3661bd21f250b11e580346e8e7c0df27` となった。`build-info.json` の値とも一致し、指定された origin/main の SHA と byte-for-byte で一致した。wall time は 145.47 秒、peak RSS は 255,784 KiB。これは測定時点の既定 build の記録である。
 - 各変種の build は別の `BUILD_ROOT` に出力し、`/usr/bin/time -v` で計測した。B の実行例は次のとおり。A/A では別の build root を使い、各変種を2回 build して SHA を比較した。
 
 ```sh
@@ -155,7 +155,32 @@ build wall と RSS は各変種の最初の smoke build の値であり、正式
 
 ### 選定
 
-B+O3+LTOA は sim が 4/5 のため、他の測定値にかかわらず安定性 gate 4 に不合格で、選定対象外とした。B2 は noise floor のみを求める基準である。選定可能な変更候補 B+O3 は B より 11.285 ms（0.073%）速いだけで、`N` と 3% の両条件を満たさない。B+LTOA は B より 496.820 ms（3.207%）速く、`N = 55.165 ms` を超え、3% 条件も満たす。よって凍結規則による選定は **B+LTOA**。既定 build は変更していない。
+B+O3+LTOA は sim が 4/5 のため、他の測定値にかかわらず安定性 gate 4 に不合格で、選定対象外とした。B2 は noise floor のみを求める基準である。選定可能な変更候補 B+O3 は B より 11.285 ms（0.073%）速いだけで、`N` と 3% の両条件を満たさない。B+LTOA は B より 496.820 ms（3.207%）速く、`N = 55.165 ms` を超え、3% 条件も満たす。よって凍結規則による選定は **B+LTOA**。この選定を反映し、引数なしの JSPI build では B+LTOA を既定にする。以前の既定 build は `scripts/build-wasm.sh --variant=B` で再現できる。
+
+### JSPI 既定 profile の再現確認
+
+引数なしの JSPI build は、出力先 `build/jspi-pthread` と metadata の variant `C` を保ったまま、`-Os` と全対象への LTO を使う。出力 WASM の SHA-256 `61c4943252821a0d1405133c11690b7718fb5af28c86bf102e926ccba780a642` は S7 の B+LTOA 成果物 `5ccccd017186a7a8d137f9791e08a53cf2fedaa5aaa59143028def8908557812` と異なるが、`-ffile-prefix-map=$build_root=/build` が出力下位ディレクトリー名 `/build/jspi-pthread/` と `/build/B+LTOA/` を埋め込むためである。MJS の SHA-256 はどちらも `f66be852ed33c8245fe781d900a7124186a6d3cd611a81849e1019ae080d8d44` で一致し、パスの正規化は行っていない。
+
+`strings` と WAT の diff では、埋め込みパスと、その長さの違いに伴う data offset のみが変化した。
+
+4条件の再現コマンドは次のとおり。各 build の出力は別の `BUILD_ROOT` に保存した。
+
+```sh
+export REPO_ROOT="$(git rev-parse --show-toplevel)"
+BUILD_ROOT="$REPO_ROOT/build/ofl-default-oslto-factor-check" JOBS=2 "$REPO_ROOT/scripts/build-wasm.sh" --variant=B+LTOA
+BUILD_ROOT="$REPO_ROOT/build/ofl-default-oslto-factor-B" JOBS=2 "$REPO_ROOT/scripts/build-wasm.sh" --variant=B
+BUILD_ROOT="$REPO_ROOT/build/ofl-default-oslto-default" JOBS=2 "$REPO_ROOT/scripts/build-wasm.sh"
+BUILD_ROOT="$REPO_ROOT/build/ofl-default-oslto-aa" JOBS=2 "$REPO_ROOT/scripts/build-wasm.sh"
+```
+
+| 条件 | 結果 |
+|---|---|
+| 1. `--variant=B+LTOA` | `$REPO_ROOT/build/ofl-default-oslto-factor-check/B+LTOA/` の WASM `5ccccd017186a7a8d137f9791e08a53cf2fedaa5aaa59143028def8908557812`、MJS `f66be852ed33c8245fe781d900a7124186a6d3cd611a81849e1019ae080d8d44`。S7 の `$REPO_ROOT/build/s7/build-roots/B+LTOA/B+LTOA/` と両方一致した。 |
+| 2. `--variant=B` | `$REPO_ROOT/build/ofl-default-oslto-factor-B/B/` の WASM `ecf7617859639422050c1098edc1dac04e943def90cb5a7328b8035714cb42b7`、MJS `9005540841199936d9f983124e7a890e3661bd21f250b11e580346e8e7c0df27`。S7 の `$REPO_ROOT/build/s7/build-roots/B/B/` と両方一致した。旧 `jspi-pthread` build の WASM `84cb4077c3d02ab5392d47798e6a10d540ad8db9e547424926501bdaaccd285c` とは不一致だが、MJS は旧値 `9005540841199936d9f983124e7a890e3661bd21f250b11e580346e8e7c0df27` と一致した。 |
+| 3. 既定 build と S7 B+LTOA | `$REPO_ROOT/build/ofl-default-oslto-default/jspi-pthread/` の WASM `61c4943252821a0d1405133c11690b7718fb5af28c86bf102e926ccba780a642`、MJS `f66be852ed33c8245fe781d900a7124186a6d3cd611a81849e1019ae080d8d44`。`flags.make` と `link.txt` は build path を置き換えた後の diff がそれぞれ 0 行だった。`strings` diff は削除7行・追加7行の計14行で、全行が埋め込み build path。`wasm-dis` WAT diff は削除14,038行・追加14,038行。内訳は data 24行、global 2行、`i32.const` 27,766行、memory offset 248行、`i64.const` 4行、`call` 16行、閉じ括弧16行で、後者は offset を含む差分 hunk に現れた。比較ファイルは `$REPO_ROOT/build/ofl-default-oslto-diff-s7.wat`、`ofl-default-oslto-diff-default.wat`、`ofl-default-oslto-diff-s7.strings`、`ofl-default-oslto-diff-default.strings`。 |
+| 4. 既定 build の A/A | `$REPO_ROOT/build/ofl-default-oslto-aa/jspi-pthread/` は1回目と同じ WASM `61c4943252821a0d1405133c11690b7718fb5af28c86bf102e926ccba780a642`、MJS `f66be852ed33c8245fe781d900a7124186a6d3cd611a81849e1019ae080d8d44` だった。 |
+
+1回目と A/A の build log は `$REPO_ROOT/build/ofl-default-oslto-default.build.log`、`$REPO_ROOT/build/ofl-default-oslto-aa.build.log` にある。factor build のログは同じ `build/` 直下の `ofl-default-oslto-factor-check.build.log` と `ofl-default-oslto-factor-B.build.log` に保存した。
 
 ### 負の対照
 
