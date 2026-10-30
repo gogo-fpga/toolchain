@@ -26,12 +26,34 @@
 | fastcrc | `requirements-nextpnr.txt` で固定 | MIT | native `gowin_pack` の検証依存。Pyodide には含まず、Apicula の CRC table fallback を使う | `licenses/apycula-dependencies/fastcrc-LICENSE` |
 | wasi-sdk | 34.0 / `b761e3a0721dbae9c09a0059e5fdb2bf917d1b4a8a7b430fb3b5aafb0984b2c4`。ライセンス原文の source commit: `5a0bf653a1a06e1c18867567c5937006d3394a69` | Apache-2.0 | ビルド用 SDK | `licenses/wasi-sdk-LICENSE` |
 | LLVM runtime | `895aa2c896ada719451be2e3673c83da8ddf1141` | Apache-2.0 with LLVM Exceptions | libc++、libc++abi、libunwind などを Yosys WASM に静的リンク | `licenses/wasi-sdk-llvm-LICENSE.TXT` |
-| wasi-libc | `2e6fb9d8ee0cdf9e431fbcabe8af3115de000a13` | Apache-2.0 with LLVM Exceptions、Apache-2.0、MIT と同梱部品のライセンス | libc を Yosys WASM に静的リンク | `licenses/wasi-libc-LICENSE*` |
+| wasi-libc | `2e6fb9d8ee0cdf9e431fbcabe8af3115de000a13` | Apache-2.0 with LLVM Exceptions、Apache-2.0、MIT と同梱部品のライセンス | libc を Yosys と GHDL の WASM に静的リンク | `licenses/wasi-libc-LICENSE*` |
 | Emscripten のランタイムと libc | 6.0.13 / `35659964bc2762fffec0d257997fb61475f765b7` | MIT、University of Illinois/NCSA、LLVM の Apache-2.0 with LLVM Exceptions | ランタイムと libc の一部を WASM / mjs に含む。emcc はビルド用 | `licenses/emscripten-LICENSE`、`licenses/emscripten-musl-COPYRIGHT`、`licenses/emscripten-libcxx-LICENSE.TXT`、`licenses/emscripten-libcxxabi-LICENSE.TXT`、`licenses/emscripten-llvm-libc-LICENSE.TXT`、`licenses/emscripten-compiler-rt-LICENSE.TXT`、`licenses/emscripten-libunwind-LICENSE.TXT` |
 | CodeMirror 6（`codemirror` 6.0.2、`@codemirror/state` 6.7.6、`@codemirror/view` 6.43.15、`@codemirror/language` 6.13.1、`@codemirror/legacy-modes` 6.5.5、`@codemirror/lint` 6.9.7、`@codemirror/autocomplete` 6.20.4、`@codemirror/commands` 6.11.1） | npm 固定版 | MIT | `editor.bundle.mjs` に含む | npm パッケージに同梱 |
 | fflate | 0.8.3 | MIT | `project-zip.bundle.mjs` に含む | `licenses/fflate-LICENSE` |
+| GHDL | v6.0.0 / `e589c698c351369ac5bcfe7abe1f1152ac5d4727` | GPL-2.0-or-later | GHDL WASM に静的リンク | `licenses/GHDL-COPYING.md` |
+| synth-explorer | `d4dab3def346cb9fdac5bc171d801bd091df72e1` | Apache-2.0 | build script、WASM adapter、3 patches、GHDL WASM tests から一部を採用 | `licenses/synth-explorer-LICENSE` |
+| AdaWebPack | 24.0.0 / SHA-256 `8edaae8b9987a20aec430d750f30033f12f953ce2b6437afb87fbf8cc1063796` | BSD-3-Clause | GHDL WASM の開発用 Ada compiler | `licenses/AdaWebPack-LICENSE.BSD3` |
+| GCC libgnat | GCC 14.1.0 / commit `ed10445fe222d3973ae13eda9bf211f315c5e3f9` | GPL-3.0-or-later with GCC Runtime Library Exception | GNAT runtime units を GHDL WASM に静的リンク | `licenses/GPL-3.0.txt`、`licenses/GCC-RUNTIME-LIBRARY-EXCEPTION` |
 
 Emscripten SDK の `upstream/emscripten/LICENSE` は Emscripten の MIT と University of Illinois/NCSA のライセンス本文を含む文書です。また、Node.js の一部利用と musl の MIT ライセンスへの案内も記載されています。musl の本文は `system/lib/libc/musl/COPYRIGHT` です。libc++、libc++abi、llvm-libc、compiler-rt、libunwind は SDK 内に個別のライセンスファイルがあるため、上表のとおり別に同梱します。
+
+GHDL 6.0.0 の `COPYING.md` は GPL-2.0-or-later の本文です。synth-explorer の commit `d4dab3def346cb9fdac5bc171d801bd091df72e1` から採用した Apache-2.0 ファイルは次のとおりです。
+
+- `scripts/build-ghdl-wasm.sh`
+- `scripts/ghdl-wasm/bug.adb`
+- `scripts/ghdl-wasm/grt-stdio.adb`
+- `scripts/ghdl-wasm/synth_api.ads`
+- `scripts/ghdl-wasm/synth_api.adb`
+- `patches/ghdl/blackbox-verilog.patch`
+- `patches/ghdl/grt-stdio.patch`
+- `patches/ghdl/vhdl-only-synthesis.patch`
+- `tests/synth/ghdl-wasm.test.mjs`
+
+`scripts/ghdl-wasm/rts/` の独自 runtime と WASI helper は clean-room 実装で、各ファイルの SPDX 表記に従い GPL-2.0-or-later で提供します。
+
+`ghdl-synth.wasm` は、GPL-2.0-or-later の GHDL と独自 runtime、Apache-2.0 の synth-explorer 由来部分、GPL-3.0-or-later（GCC Runtime Library Exception 付き）の libgnat を結合します。Apache-2.0 は GPL-3.0 と両立し、GPL-2.0 だけとは両立しないため、結合した `ghdl-synth.wasm` は GPL-3.0-or-later として配布します。
+
+AdaWebPack の 24.0.0 release archive にはライセンスファイルがありませんでした。BSD-3-Clause の本文は、同じ 24.0.0 upstream tag の `LICENSE.BSD3` から取得しました。
 
 Yosys と nextpnr の `COPYING` は ISC License の本文です。ABC の `copyright.txt` は University of California, Berkeley の許諾条件を記載したファイルです。Boost と Eigen のライセンス、Apycula と build dependencies のライセンス本文も `licenses/` と配布 zip に含めます。WASI SDK のアーカイブにはライセンス本文が含まれないため、wasi-sdk 34 の source commit と、その commit が参照する LLVM、wasi-libc の各 commit からライセンス文書を取得し、リポジトリーと配布 zip に収録する方針です。wasi-libc の原文には主要ライセンスだけでなく、musl、cloudlibc、musl-fts、wasi-headers の許諾文書も含まれています。
 

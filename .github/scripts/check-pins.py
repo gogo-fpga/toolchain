@@ -37,7 +37,7 @@ TAGGED_SUBMODULES = (
     "zstd",
     "xz-embedded",
 )
-BRANCH_SUBMODULES = ("libftdi", "ghdl-browser")
+BRANCH_SUBMODULES = ("libftdi",)
 ARCHIVE_TAG_SOURCES = {
     "boost": "https://github.com/boostorg/boost.git",
     "eigen": "https://gitlab.com/libeigen/eigen.git",
@@ -455,6 +455,23 @@ def ghdl_build_pin_errors(root: Path) -> list[str]:
     return errors
 
 
+def ghdl_browser_build_errors(root: Path = ROOT) -> list[str]:
+    paths = (
+        ".gitmodules",
+        ".github/dependabot.yml",
+        "scripts/build-ghdl-wasm.sh",
+        "scripts/build-info.py",
+        ".github/workflows/build.yml",
+        ".github/workflows/release.yml",
+        "scripts/package-release.sh",
+    )
+    return [
+        f"{path}: GHDL WASM build must not reference ghdl-browser"
+        for path in paths
+        if "ghdl-browser" in read_text(root / path).lower()
+    ]
+
+
 def run(*args: str, cwd: Path = ROOT) -> str:
     result = subprocess.run(
         args,
@@ -507,6 +524,7 @@ def consistency(root: Path = ROOT) -> list[str]:
         errors.extend(ghdl_build_pin_errors(root))
     except RuntimeError as error:
         errors.append(f"GHDL WASM pins: {error}")
+    errors.extend(ghdl_browser_build_errors(root))
     try:
         parse_apycula_requirements(read_text(root / APYCULA_REQUIREMENTS))
     except RuntimeError as error:

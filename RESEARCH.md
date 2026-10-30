@@ -48,7 +48,6 @@ vendor submodule の commit は次のとおりです。pin checker がこの表�
 | yosys | v0.70 | `28ba3cb926fe376fa05ebfc1b921747d011d4557` | `https://github.com/YosysHQ/yosys.git` |
 | nextpnr | nextpnr-0.11.1 | `62e659ed6748e9f60b2a4aa25dd4fe79a9605881` | `https://github.com/YosysHQ/nextpnr.git` |
 | ghdl | v6.0.0 | `e589c698c351369ac5bcfe7abe1f1152ac5d4727` | `https://github.com/ghdl/ghdl.git` |
-| ghdl-browser | main | `e98e5a6c6fd6c48a789705ae9900c6b34b3cb414` | `https://github.com/UnsignedChad/ghdl-browser.git` |
 
 WASI SDK の固定値は pin checker とビルドスクリプトが読む次の表を正とします。
 
@@ -68,7 +67,7 @@ T0 では書き込み部だけが実装されています。合成、配置配�
 | ツール | 主な言語 | ライセンス | 確認した WASM の事例 | 方針と段階 |
 |---|---|---|---|---|
 | Yosys + ABC | C、C++ | Yosys: ISC。ABC: Berkeley の許諾条件 | [YoWASP](https://yowasp.org/) は Yosys を WASI で提供。[synth-explorer](https://github.com/cachanova/synth-explorer) は WASI SDK 33 で合成用 Yosys を構築 | T2。YoWASP とネイティブ版を比較し、必要な `synth_gowin` を含む upstream ビルドを検証する |
-| GHDL | Ada、C | GPL-2.0-or-later | [synth-explorer](https://github.com/cachanova/synth-explorer) は GHDL 5.0.1 で合成し、Verilog を別 Worker の Yosys に渡す。[ghdl-browser](https://github.com/UnsignedChad/ghdl-browser) と [ghdl-wasm](https://github.com/UnsignedChad/ghdl-wasm) は解析・シミュレーションの事例 | T3。`--synth --out=verilog` で Verilog に変換し、Yosys に渡す。GPL-3.0 の ghdl-yosys-plugin は Yosys WASM に組み込まず、ISC の Yosys を保つ。詳しくは[広域調査](docs/research/oss-survey.md)を参照 |
+| GHDL | Ada、C | GPL-2.0-or-later | [synth-explorer](https://github.com/cachanova/synth-explorer) は GHDL 5.0.1 で合成し、Verilog を別 Worker の Yosys に渡す | T3。`--synth --out=verilog` で Verilog に変換し、Yosys に渡す。GPL-3.0 の ghdl-yosys-plugin は Yosys WASM に組み込まず、ISC の Yosys を保つ。詳しくは[広域調査](docs/research/oss-survey.md)を参照 |
 | nextpnr-himbaechel（Gowin） | C++ | ISC | [YoWASP](https://yowasp.org/) が nextpnr の WASI 版を提供 | T2。必要な Gowin device database のみを含め、4 ボードの配置配線を検証する |
 | Apicula / `gowin_pack` | Python | Apicula: MIT。Pyodide: MPL-2.0 | S3 で Node.js/Pyodide の native parity を確認し、配布 wheel を追加する。Worker は S4 | S3。4ボードの `.fs` 一致、実行時間、配布サイズを測定する |
 | openFPGALoader | C++ | Apache-2.0 | 移植元で Emscripten と WebUSB による WASM 化を実装 | T0 の書き込み部として移植済み。以降も upstream のソースを使う |
@@ -82,6 +81,14 @@ T0 では書き込み部だけが実装されています。合成、配置配�
 | [sv-elab（旧 yosys-slang）](https://github.com/povik/sv-elab) | C++ | ISC | この調査では WASM 版を確認できていない | 将来。SystemVerilog 対応の段階で調査する。詳しくは[広域調査](docs/research/oss-survey.md)を参照 |
 
 ### GHDL v6.0.0
+
+2026-10-30、ユーザーは選択肢 C（`ghdl-browser` への依存をなくし、GHDL 6.0.0 のソースから frontend を構成する）を決めました。理由は、`ghdl-browser` の README は GPL-2.0 と記す一方、LICENSE ファイルがなく、多くのファイルにライセンスヘッダーもないため、同じ WASM に含める Apache-2.0 の synth-explorer 由来コードとの適合性を確定できないことです。調査では、GHDL 6.0.0 の gitlink `e589c698c351369ac5bcfe7abe1f1152ac5d4727` を使う既存ビルドに、v5.0.1 ベースの `vhdl-sem.adb`、`vhdl-sem_names.adb`、`vhdl-sem_lib.adb`、`files_map.adb`、`dyn_tables.adb` が残っていることも分かりました。これらは GHDL 6.0.0 の原本に置き換え、frontend の unit 一覧は既存 build の `.ali` 一覧から作り、ソースは `vendor/ghdl/src` から取得します。
+
+runtime は、AdaWebPack の `No_Exception_Propagation` 制約に違反する GCC の OS・Calendar unit を追加せず、GHDL 6.0.0 と `synth_api` が参照する最小の spec/body を `scripts/ghdl-wasm/rts/` に実装しました。ファイル操作には WASI libc の C 関数を使います。`Ada.Command_Line` の引数数は 0、`Ada.Calendar.Clock` は `SOURCE_DATE_EPOCH` 由来の固定値、タイムゾーン差は 0 です。依存のない `Ada.Strings.Unbounded` など、制約下でコンパイルできる単位は GCC libgnat の原文を使用します。
+
+`error: cannot find "std" library` の原因は Ada 側の file predicate ではなく、WASI SDK の `O_RDONLY` 値と Ada runtime の想定値の不一致でした。C の `stat` predicate は成功していましたが、Ada から `open` に渡された flags は 0 で、WASI SDK の `O_RDONLY` は `0x04000000` でした。操作別の C helper が SDK の `O_RDONLY` / `O_WRONLY` macro を使うようにし、WASI trace で `std-obj08.cf` と library source の `path_open` / `fd_read` を確認しました。Verilog の短縮出力は別の問題で、GHDL の `Outputs.Close` が stdout を close せず、呼び出しから戻る前に stdio buffer が flush されていませんでした。C bridge が `__ghdl_get_stdout` で stdout を unbuffered にし、fixture test は native/WASM の Verilog が byte-identical であることを assert します。2つの clean build は WASM と libraries archive の双方が byte-identical でした。GHDL fixture と4 board の VHDL-to-`.fs` native/WASI 比較は、それぞれ5回連続で成功しました。詳細と hash、ログは [S0 GHDL build-and-smoke 記録](docs/experiments/S0-ghdl-wasm.md) にあります。
+
+ghdl-browser は README に `GPL-2.0` とだけ記され、LICENSE file がないため、Apache-2.0 の synth-explorer 由来コードと同じ WASM に含める根拠が不明確でした。2026-10-30、ユーザーは選択肢 C（依存の完全除去）を選びました。[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) に GHDL、GCC libgnat、AdaWebPack、synth-explorer のライセンスと配布方法を記載しました。AdaWebPack 24.0.0 の release archive にライセンスファイルがないため、BSD-3-Clause 本文には同じ upstream tag の `LICENSE.BSD3` を使いました。独自の clean-room runtime には GPL-2.0-or-later を適用し、Apache-2.0 部分を含む結合 WASM の配布条件は GPL-3.0-or-later です。ライセンス同梱と source archive の検証結果は [S0 GHDL build-and-smoke 記録](docs/experiments/S0-ghdl-wasm.md) にあります。
 
 GHDL v5.1.1..v6.0.0 の 665 commits には合成と Verilog 出力の修正があり、`keep` などの VHDL attribute も Verilog に出力されるようになりました。NEWS の VHDL-2019 対応は初期サポートであり、合成範囲は本リポジトリでは試していないため、VHDL-2008 を既定とし、VHDL-2019 は IEEE library の資材増加と版選択 UI の追加を踏まえて後から選択肢にします。既存の S0 は v6.0.0 の WASM/native 一致を確認したもので、v5.1.1 との比較ではありません。変更の要点と回帰候補は [S0 GHDL build-and-smoke 記録](docs/experiments/S0-ghdl-wasm.md) にまとめました。
 
@@ -270,7 +277,6 @@ GHDL、NVC、Icarus Verilog など GPL のツールを WASM にビルドして R
 - Tang Nano の IDCODE とフラッシュ情報の個体差。移植元の調査値はありますが、実機での照合はしていません。
 - 合成・配置配線 WASM の実行可否、実行時間、メモリー量、成果物サイズ。YoWASP と synth-explorer の記録を本リポジトリーで再現していません。
 - WASI SDK 33 での LTO とネイティブ WASM 例外の問題。synth-explorer の報告を確認しただけで、再現していません。
-- GHDL WASM 化に必要なパッチと、本リポジトリーで対応する設計の範囲。合成から Verilog を出す経路は[広域調査](docs/research/oss-survey.md)の先行例を確認しましたが、こちらではまだ検証していません。
 - NVC で `--disable-llvm` を指定したときの解釈実行経路と WASM 互換性。確認した `configure.ac` は LLVM を既定で有効にし、`--enable-llvm` を宣言しています。
 - Apicula と Pyodide の組み合わせ、必要な Python 依存、実行時間、配布サイズ。
 - VeriSim の Icarus Verilog 構成を本リポジトリーへ適用した場合の機能範囲と実行時間。

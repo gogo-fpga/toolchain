@@ -8,7 +8,6 @@ updates:
     allow:
       # dependency-name は .gitmodules の path と一致させます。
       - dependency-name: "vendor/yomiyasu"
-      - dependency-name: "vendor/ghdl-browser"
     schedule:
       interval: "weekly"
     cooldown:

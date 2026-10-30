@@ -35,7 +35,7 @@ jobs:
           git submodule update --init --depth 1 -- \
             vendor/emsdk vendor/libftdi vendor/libusb vendor/openFPGALoader \
             vendor/yomiyasu vendor/zlib vendor/yosys vendor/nextpnr \
-            vendor/zstd vendor/xz-embedded vendor/ghdl vendor/ghdl-browser
+            vendor/zstd vendor/xz-embedded vendor/ghdl
           git -C vendor/yosys submodule update --init --depth 1 -- \
             abc libs/cxxopts libs/fmt libs/tomlplusplus libs/boost_regex libs/symfpu
 

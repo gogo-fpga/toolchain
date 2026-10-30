@@ -27,7 +27,31 @@ submodules=(
   vendor/nextpnr
   vendor/zstd
   vendor/xz-embedded
+  vendor/ghdl
 )
+ghdl_license_files=(
+  licenses/GHDL-COPYING.md
+  licenses/GPL-3.0.txt
+  licenses/synth-explorer-LICENSE
+  licenses/AdaWebPack-LICENSE.BSD3
+  licenses/GCC-RUNTIME-LIBRARY-EXCEPTION
+)
+
+check_ghdl_licenses() {
+  local path
+  for path in "${ghdl_license_files[@]}"; do
+    if [[ ! -s "$root/$path" ]]; then
+      printf 'Required GHDL license file is missing or empty: %s\n' "$root/$path" >&2
+      return 1
+    fi
+  done
+}
+
+if [[ ${CHECK_GHDL_LICENSES_ONLY:-0} == 1 ]]; then
+  check_ghdl_licenses
+  printf 'GHDL license files: OK\n'
+  exit 0
+fi
 yosys_nested_submodules=(
   abc
   libs/cxxopts
@@ -143,6 +167,11 @@ license_copies=(
   "$root/licenses/apycula-LICENSE:apycula-LICENSE"
   "$root/licenses/apycula-dependencies/fastcrc-LICENSE:fastcrc-LICENSE"
   "$root/licenses/apycula-dependencies/msgspec-LICENSE:msgspec-LICENSE"
+  "$root/licenses/GHDL-COPYING.md:GHDL-COPYING.md"
+  "$root/licenses/GPL-3.0.txt:GPL-3.0.txt"
+  "$root/licenses/synth-explorer-LICENSE:synth-explorer-LICENSE"
+  "$root/licenses/AdaWebPack-LICENSE.BSD3:AdaWebPack-LICENSE.BSD3"
+  "$root/licenses/GCC-RUNTIME-LIBRARY-EXCEPTION:GCC-RUNTIME-LIBRARY-EXCEPTION"
   "$root/licenses/apycula-dependencies/numpy-LICENSE:numpy-LICENSE"
   "$root/licenses/pyodide-MPL-2.0.txt:pyodide-MPL-2.0.txt"
   "$root/licenses/CPython-PSF-License.txt:CPython-PSF-License.txt"
@@ -173,6 +202,7 @@ for entry in "${license_copies[@]}"; do
   fi
   cp "$source_file" "$web_root/licenses/$destination_name"
 done
+check_ghdl_licenses
 
 symlink_file="$(find "$web_root" -type l -print -quit)"
 if [[ -n "$symlink_file" ]]; then
@@ -207,6 +237,12 @@ for path in "${submodules[@]}"; do
     exit 1
   fi
 done
+ghdl_pin="${submodule_shas[vendor/ghdl]}"
+if [[ "$ghdl_pin" != "$(git -C "$root/vendor/ghdl" rev-parse HEAD)" ]]; then
+  printf 'GHDL submodule checkout does not match its gitlink: %s\n' "$ghdl_pin" >&2
+  exit 1
+fi
+printf '%s\n' "$ghdl_pin" > "$source_root/vendor/ghdl/.gitcommit"
 
 printf '%s\n' "$yosys_commit" > "$source_root/vendor/yosys/.gitcommit"
 nextpnr_pin="$(python3 "$root/.github/scripts/check-pins.py" nextpnr-pin)"
@@ -232,6 +268,46 @@ for path in "${yosys_nested_submodules[@]}"; do
     printf '%s\n' "$sha" > "$source_root/vendor/yosys/abc/.gitcommit"
   fi
 done
+
+source_required_files=(
+  "$source_root/scripts/build-ghdl-wasm.sh"
+  "$source_root/scripts/ghdl-wasm/frontend-sources.txt"
+  "$source_root/scripts/ghdl-wasm/bug.adb"
+  "$source_root/scripts/ghdl-wasm/grt-stdio.adb"
+  "$source_root/scripts/ghdl-wasm/synth-vhdl_foreign.adb"
+  "$source_root/scripts/ghdl-wasm/version.ads"
+  "$source_root/scripts/ghdl-wasm/synth_api.ads"
+  "$source_root/scripts/ghdl-wasm/synth_api.adb"
+  "$source_root/tests/synth/ghdl-wasm.test.mjs"
+  "$source_root/patches/ghdl/blackbox-verilog.patch"
+  "$source_root/patches/ghdl/grt-stdio.patch"
+  "$source_root/patches/ghdl/vhdl-only-synthesis.patch"
+)
+for required_file in "${source_required_files[@]}"; do
+  if [[ ! -s "$required_file" ]]; then
+    printf 'Source archive is missing a required GHDL file: %s\n' "$required_file" >&2
+    exit 1
+  fi
+done
+while IFS= read -r -d '' runtime_file; do
+  runtime_relative="${runtime_file#"$root/"}"
+  if [[ ! -s "$source_root/$runtime_relative" ]]; then
+    printf 'Source archive is missing a GHDL WASM runtime file: %s\n' \
+      "$runtime_relative" >&2
+    exit 1
+  fi
+done < <(find "$root/scripts/ghdl-wasm/rts" -type f -print0 | sort -z)
+for license_file in "${ghdl_license_files[@]}"; do
+  if [[ ! -s "$source_root/$license_file" ]]; then
+    printf 'Source archive is missing a required GHDL license: %s\n' "$license_file" >&2
+    exit 1
+  fi
+done
+if [[ ! -s "$source_root/vendor/ghdl/.gitcommit" ||
+  "$(cat "$source_root/vendor/ghdl/.gitcommit")" != "$ghdl_pin" ]]; then
+  printf 'Source archive GHDL checkout marker is missing or incorrect.\n' >&2
+  exit 1
+fi
 
 python3 - "$source_root/RELEASE-SOURCE.json" "$version" "$commit" \
   "$source_date_epoch" "$emsdk_version" "$root/dist/build-info.json" <<'PY'
@@ -301,6 +377,7 @@ labels = {
     "vendor/nextpnr": "nextpnr",
     "vendor/zstd": "zstd",
     "vendor/xz-embedded": "xz-embedded",
+    "vendor/ghdl": "GHDL",
 }
 rows = []
 for path in submodules:

@@ -1003,8 +1003,8 @@ jobs:
           submodules: false
           persist-credentials: false
 
-      - name: GHDL と ghdl-browser の submodule を取得
-        run: git submodule update --init --depth 1 -- vendor/ghdl vendor/ghdl-browser
+      - name: GHDL submodule を取得
+        run: git submodule update --init --depth 1 -- vendor/ghdl
 
       - name: GNAT を確認
         run: |
@@ -1024,7 +1024,6 @@ jobs:
         name: GHDL の cache key を作成
         run: |
           echo "ghdl=$(git rev-parse HEAD:vendor/ghdl)" >> "$GITHUB_OUTPUT"
-          echo "browser=$(git rev-parse HEAD:vendor/ghdl-browser)" >> "$GITHUB_OUTPUT"
           wasi_pin="$(python3 .github/scripts/check-pins.py wasi-sdk-pin)"
           echo "wasi=$(printf '%s' "$wasi_pin" | sha256sum | awk '{print $1}')" >> "$GITHUB_OUTPUT"
 
@@ -1037,7 +1036,7 @@ jobs:
             build/cache/ghdl-wasm/
             build/cache/ghdl-host-packages/
             build/wasi-sdk-*
-          key: ghdl-wasm-ubuntu-26.04-${{ steps.ghdl-key.outputs.ghdl }}-${{ steps.ghdl-key.outputs.browser }}-${{ steps.ghdl-key.outputs.wasi }}-${{ hashFiles('scripts/build-ghdl-wasm.sh', 'patches/ghdl/**', 'scripts/ghdl-wasm/**') }}
+          key: ghdl-wasm-ubuntu-26.04-${{ steps.ghdl-key.outputs.ghdl }}-${{ steps.ghdl-key.outputs.wasi }}-${{ hashFiles('scripts/build-ghdl-wasm.sh', 'scripts/ghdl-wasm/**', 'patches/ghdl/**') }}
 
       - name: Pinned WASI SDK 34 を取得
         run: |
@@ -1106,7 +1105,7 @@ jobs:
             build/cache/ghdl-wasm/
             build/cache/ghdl-host-packages/
             build/wasi-sdk-*
-          key: ghdl-wasm-ubuntu-26.04-${{ steps.ghdl-key.outputs.ghdl }}-${{ steps.ghdl-key.outputs.browser }}-${{ steps.ghdl-key.outputs.wasi }}-${{ hashFiles('scripts/build-ghdl-wasm.sh', 'patches/ghdl/**', 'scripts/ghdl-wasm/**') }}
+          key: ghdl-wasm-ubuntu-26.04-${{ steps.ghdl-key.outputs.ghdl }}-${{ steps.ghdl-key.outputs.wasi }}-${{ hashFiles('scripts/build-ghdl-wasm.sh', 'scripts/ghdl-wasm/**', 'patches/ghdl/**') }}
 
       - name: 成果物の SHA-256 を記録
         if: always()
