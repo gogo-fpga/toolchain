@@ -96,6 +96,8 @@ GHDL v5.1.1..v6.0.0 の 665 commits には合成と Verilog 出力の修正が�
 
 2026-10-30、ユーザーの判断に基づき、S9 では GHDL WASM の既定を `-Os -flto` にする前に安定性を確かめました。比較基準は PR #31 の head `a4d826b` の既定値（Ada `-O1`、`wasi.c` `-O2`、LTO なし）です。候補の最初の build は pinned WASI SDK の `wasm-ld` で `sqrtf` と `sqrt` の重複シンボルが発生して失敗しました。凍結基準の最初の条件を満たさなかったため、後続の再現性・合成・出力一致試験とサイズ・時間の測定は行っていません。Os + LTO は採用せず、既定値を変更しませんでした。詳細と失敗ログは [S9 実験記録](docs/experiments/S9-ghdl-os-lto.md) にあります。
 
+S9B は2026-10-30、ユーザーの判断により B0（Ada `-O1`、`wasi.c` `-O2`、LTO なし）と O1、O2、O3、Os、O3 + LTO を比較しました。O1、O2、O3、Os は clean build の再現性、5回の GHDL WASM test、6 fixture の native / WASM parity、4 board parity、負の対照をすべて通過。O3 + LTO は `sqrtf` と `sqrt` の重複シンボルで link に失敗しました。Node 時間は記録のみで、Os の6例合計 median は296.015 ms、B0 は298.664 msです。既存の GHDL WASM Chromium harness がなく、採用基準のブラウザー測定を行えないため、最適化候補の採用判定を保留し、B0 を維持します。詳細、SHA-256、size、median、spread、log path は [S9B 実験記録](docs/experiments/S9B-ghdl-matrix.md) と raw CSV に記録しました。
+
 ### Yosys v0.70 と WASI SDK
 
 Yosys v0.70 は CMake でビルドします。upstream の [`CMakeLists.txt`](https://github.com/YosysHQ/yosys/blob/28ba3cb926fe376fa05ebfc1b921747d011d4557/CMakeLists.txt#L159-L169) は `CMAKE_SYSTEM_NAME` が `WASI` の場合の設定を持ちますが、Emscripten 用の分岐はありません。このため、合成・配置配線ツールには WASI SDK を使い、書き込み部の Emscripten と使い分けます。
