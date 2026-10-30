@@ -166,3 +166,26 @@ clean build B は404秒で成功し、build A と `ghdl-synth.wasm`（2,066,717 
 初回の release package 検証は、既存 `dist/build-info.json` の `build_script_sha256` が現在の `scripts/build-wasm.sh` と一致せず失敗した。古い `build/jspi-pthread` を使う `scripts/build-web.sh` も build metadata の不一致で停止したため、`JOBS=2 mise exec -- scripts/build-wasm.sh --variant=C` で現在の script から再ビルドし、`python3 scripts/build-info.py check-artifacts --root "$PWD" --artifacts build/C` で出力 metadata を検証した。その artifacts と build-info を `dist/` に反映してから `mise exec -- scripts/package-release.sh v0.0.0-test` を実行すると、web zip と source tar.gz の両方を生成できた。ビルド記録は `build/ghdl-release-refresh-wasm.log`、package 記録は `build/ghdl-release-package-test.log` にある。
 
 source archive を展開せずに内容を調べ、`vendor/ghdl/.gitcommit` が pinned commit `e589c698c351369ac5bcfe7abe1f1152ac5d4727` と一致すること、`vendor/ghdl/src/vhdl/vhdl-sem.adb`、`patches/ghdl/`、`scripts/build-ghdl-wasm.sh`、`scripts/ghdl-wasm/` と全 runtime file が含まれることを確認した。web zip には GHDL、GPL-3.0、synth-explorer、AdaWebPack、GCC Runtime Library Exception の5つのライセンス本文がある。ライセンス負例と source archive の検査は成功した。
+
+## T3-2: ブラウザー IDE への統合
+
+T3-2 では GHDL 6.0.0 の WASM host を `web/lib/ghdl-host.mjs` に分離し、`runGhdlSynth` を実装した。host は WASI Preview 1 の memory tree を使い、呼び出しごとに新しい instance を作る。Node.js API には依存しない。`tests/synth/ghdl-wasm.test.mjs` はこの host を使い、9件すべて成功した。VHDL-2019 fixture は GHDL 6 NEWS にある初期対応構文 `return identifier` を使い、native GHDL と WASM GHDL の Verilog は byte-identical だった。
+
+`synth_api` は `Synth_Set_Std` で VHDL-2008 / 2019 を選び、`Synth_Init` より前に標準を設定する。未指定時は VHDL-2008 である。v08 と v19 の IEEE library はこの変更より前から `libraries.tar.gz` に含まれていたため、standard selector のための追加 library は不要だった。VHDL の構文・意味エラーは project-relative な file path と行番号を返し、IDE の問題一覧に表示する。
+
+`web/lib/vhdl-order.mjs` は entity、package、context、package body、architecture、configuration の依存を追い、source file を小文字化比較で安定して並べる。未解決の `work` reference と file-level cycle は file path と行番号付きで報告する。Playwright は未解決 package の表示も確認した。VHDL top が Verilog child を instantiate する方向では、GHDL の patched output に `child` の blackbox declaration が含まれ、Verilog source と合わせて一度に `read_verilog` すると Yosys が `Re-definition of module \child` で失敗した。元の Verilog source を先に読み、generated VHDL files を `read_verilog -nooverwrite` で読み込むようにすると Verilog implementation が残り、この方向も合成できる。反対方向の Verilog top と VHDL child も、root VHDL entity ごとの出力を使って成功した。
+
+VHDL `keep` fixture では Yosys JSON の `modules.top.netnames` に `keep` attribute が残り、attribute のない negative control には `keep` がない。ブラウザー test は VHDL-2019、両方の mixed direction、構文・意味診断、ordering error、GHDL asset の欠落・圧縮 hash 不一致・破損 Cache Storage entry の削除と再取得も確認した。`PLAYWRIGHT_PORT=8123 GHDL_WASM_BUILD_ROOT=build/T3-2 BUILD_ROOT=build/T3-2 mise exec -- npx playwright test tests/e2e/ide.spec.mjs tests/e2e/synthesis.spec.mjs tests/e2e/vhdl.spec.mjs` は 37/37 passed で、log は `build/T3-2/playwright-e2e.log` に保存した。
+
+`GHDL_WASM_BUILD_ROOT=build/T3-2 scripts/build-ghdl-wasm.sh` で作った WASM は 2,001,408 bytes、SHA-256 `5c8df2a9102f9bdd577df7e250739876cc29642f8dd7fa0c9844799b0a817c80`。`libraries.tar.gz` は 455,929 bytes、SHA-256 `32c3586a64b5adc62d55a45aab127b18aeb2f45a8205da089d5618c6c9e10513`。browser asset は zstd 形式で配る。GHDL WASM の圧縮後サイズは 510,684 bytes、圧縮 SHA-256 `c8ae685b272138f1e1d2b52516d3471be02b14a20413cddab2deb3fecaf026ec`。deterministic ustar `libraries.tar` は 3,901,440 bytes、SHA-256 `5f08af4dd4ecb42959faf2286b1dba0055ae0b6642c906e60e3688b7ecd04e07`、zstd は 218,323 bytes、圧縮 SHA-256 `a8f99b0cf038d01bcc37078188eef86739b59f10f0999527ad07a7098b898f76`。`build/T3-2/synth/manifest.json` は展開後と圧縮後のサイズ、SHA-256 を記録する。Worker はこれらを検証し、Cache Storage の破損 entry を捨てて再取得する。
+
+四つの board すべてで VHDL template の browser `.fs` が native GHDL → native Yosys → native nextpnr → native `gowin_pack` の期待値と byte-identical だった。Playwright の `tests/e2e/synthesis-setup.mjs` が期待値を作り、`tests/e2e/vhdl.spec.mjs` が比較する。生成物のサイズと SHA-256 は次のとおり。
+
+| Board | `.fs` bytes | SHA-256 |
+|---|---:|---|
+| Tang Nano 1K | 351,954 | `751a5f3d266c7172723cf043adb02d47c7bc9d5304924459e032c79fc08e46f7` |
+| Tang Nano 4K | 1,167,294 | `769cf0ee2d2fa5f91b0095ff68cc80442b6954e3155b6c14e3a17d25a51a54a7` |
+| Tang Nano 9K | 2,069,320 | `12f29894546d06b3e3510060d2688b820ccde7dbc5463b58459bb88bc20f9933` |
+| Tang Nano 20K | 4,618,782 | `16f96233dbbc90af33256cae3bdc9a12e245e9afbc480e756af47941abf72e3c` |
+
+成功時の desktop / 390px screenshot は各 board の `build/T3-2/screenshots/<board>-vhdl-success-{desktop,390}.png`、診断表示は `vhdl-error-diagnostics-{desktop,390}.png`、VHDL-2019 selector は `vhdl-2019-selector-{desktop,390}.png` にある。Chromium の性能計測と実機試験は本タスクでは行っていない。実機の動作は本リポジトリでは試していない。

@@ -50,19 +50,20 @@ test("IDE loads without console errors and highlights Verilog keywords", async (
   expect(errors).toEqual([]);
 });
 
-test("VHDL projects explain why browser synthesis is disabled", async ({ page }) => {
+test("VHDL projects enable browser synthesis and select a language standard", async ({ page }) => {
   await openIde(page);
   await page.locator("#new-project-button").click();
-  await page.locator("#new-project-name").fill("zz-vhdl-disabled");
+  await page.locator("#new-project-name").fill("zz-vhdl-enabled");
   await page.locator("#new-project-board").selectOption("tangnano1k");
   await page.locator("#new-project-language").selectOption("vhdl");
+  await expect(page.locator("#new-project-standard-field")).toBeVisible();
+  await page.locator("#new-project-standard").selectOption("2019");
   await page.locator("#new-project-create").click();
-  await expect(page.locator("#project-name")).toHaveText("zz-vhdl-disabled");
-  await expect(page.locator("#synthesis-button")).toBeDisabled();
-  await expect(page.locator("#synthesis-reason")).toHaveText(
-    "VHDL の合成は T3 で対応予定です",
-  );
-  await page.screenshot({ path: resolve(screenshots, "s4-vhdl-disabled.png") });
+  await expect(page.locator("#project-name")).toHaveText("zz-vhdl-enabled");
+  await expect(page.locator("#synthesis-button")).toBeEnabled();
+  await expect(page.locator("#synthesis-reason")).toHaveText("");
+  await expect(page.locator("#vhdl-standard")).toBeVisible();
+  await expect(page.locator("#vhdl-standard")).toHaveValue("2019");
 });
 
 test("syntax errors fail the build and appear in the problems panel", async ({
@@ -174,7 +175,7 @@ test("file paths are validated with Japanese feedback", async ({ page }) => {
 test("narrow layout opens and closes both side panes", async ({ page }) => {
   await page.setViewportSize({ width: 600, height: 900 });
   await openIde(page);
-  const boardPicker = await page.locator(".board-picker").boundingBox();
+  const boardPicker = await page.locator('label[for="board-select"]').boundingBox();
   const headerActions = await page.locator(".header-actions").boundingBox();
   expect(headerActions.y).toBeGreaterThanOrEqual(boardPicker.y + boardPicker.height);
   await editAndWaitForSave(page);

@@ -111,8 +111,8 @@ jobs:
 
   build:
     name: Build
-    needs: [changes, synth, synth-compare, nextpnr, nextpnr-compare]
-    if: needs.changes.outputs.build == 'true' && needs.synth.result == 'success' && needs.synth-compare.result == 'success' && needs.nextpnr.result == 'success' && needs.nextpnr-compare.result == 'success'
+    needs: [changes, synth, synth-compare, nextpnr, nextpnr-compare, ghdl]
+    if: needs.changes.outputs.build == 'true' && needs.synth.result == 'success' && needs.synth-compare.result == 'success' && needs.nextpnr.result == 'success' && needs.nextpnr-compare.result == 'success' && needs.ghdl.result == 'success'
     runs-on: ubuntu-26.04
     timeout-minutes: 60
     permissions:
@@ -178,6 +178,12 @@ jobs:
         with:
           name: ci-nextpnr-web-assets-${{ github.run_id }}
           path: build/wasi/nextpnr
+
+      - name: GHDL WASM 資材を取得
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ci-ghdl-wasm-${{ github.run_id }}
+          path: build/ghdl-wasm
 
       - name: WASI decoder のブラウザー用資材を取得
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2

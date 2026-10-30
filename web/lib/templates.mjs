@@ -125,6 +125,7 @@ export function createBlinkTemplate(boardId, language) {
     name: "blink",
     board: boardId,
     top: "top",
+    vhdlStandard: "2008",
     files: [
       { path: sourcePath },
       { path: `constraints/${boardId}.cst` },

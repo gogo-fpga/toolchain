@@ -75,6 +75,8 @@ required_files=(
   "$root/dist/serve.py"
   "$root/dist/synth/manifest.json"
   "$root/dist/synth/yosys.wasm.zst"
+  "$root/dist/synth/ghdl-synth.wasm.zst"
+  "$root/dist/synth/libraries.tar.zst"
   "$root/dist/synth/nextpnr-himbaechel-gowin.wasm.zst"
   "$root/dist/lib/decoders/zstd-decoder.wasm"
   "$root/dist/lib/decoders/xz-decoder.wasm"
@@ -271,6 +273,7 @@ done
 
 source_required_files=(
   "$source_root/scripts/build-ghdl-wasm.sh"
+  "$source_root/scripts/build-synth-assets.py"
   "$source_root/scripts/ghdl-wasm/frontend-sources.txt"
   "$source_root/scripts/ghdl-wasm/bug.adb"
   "$source_root/scripts/ghdl-wasm/grt-stdio.adb"
@@ -279,6 +282,8 @@ source_required_files=(
   "$source_root/scripts/ghdl-wasm/synth_api.ads"
   "$source_root/scripts/ghdl-wasm/synth_api.adb"
   "$source_root/tests/synth/ghdl-wasm.test.mjs"
+  "$source_root/web/lib/ghdl-host.mjs"
+  "$source_root/web/lib/vhdl-order.mjs"
   "$source_root/patches/ghdl/blackbox-verilog.patch"
   "$source_root/patches/ghdl/grt-stdio.patch"
   "$source_root/patches/ghdl/vhdl-only-synthesis.patch"

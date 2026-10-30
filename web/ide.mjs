@@ -109,6 +109,8 @@ export function initializeIde({
   const newProjectNameInput = document.querySelector("#new-project-name");
   const newProjectBoardSelect = document.querySelector("#new-project-board");
   const newProjectLanguageSelect = document.querySelector("#new-project-language");
+  const newProjectStandardField = document.querySelector("#new-project-standard-field");
+  const newProjectStandardSelect = document.querySelector("#new-project-standard");
   const newProjectError = document.querySelector("#new-project-error");
   const newProjectCreateButton = document.querySelector("#new-project-create");
   const newProjectCancelButton = document.querySelector("#new-project-cancel");
@@ -124,6 +126,8 @@ export function initializeIde({
   const synthesisStage = document.querySelector("#synthesis-stage");
   const synthesisReason = document.querySelector("#synthesis-reason");
   const synthesisAssetSize = document.querySelector("#synthesis-asset-size");
+  const vhdlStandardControl = document.querySelector("#vhdl-standard-control");
+  const vhdlStandardSelect = document.querySelector("#vhdl-standard");
   const programButton = document.querySelector("#program-button");
 
   let project = null;
@@ -214,16 +218,19 @@ export function initializeIde({
   }
 
   function updateSynthesisControls() {
-    const hasVerilog = (project?.files ?? []).some(({ path }) => /\.v$/i.test(path));
+    const hasVerilog = (project?.files ?? []).some(({ path }) =>
+      /\.(?:v|sv)$/i.test(path)
+    );
     const hasVhdl = (project?.files ?? []).some(({ path }) => /\.(?:vhd|vhdl)$/i.test(path));
     const board = BOARDS.find(({ id }) => id === boardSelect.value);
-    const supported = hasVerilog && !hasVhdl && Boolean(board);
+    const supported = (hasVerilog || hasVhdl) && Boolean(board);
     synthesisButton.disabled = !supported && !buildRunning;
-    synthesisReason.textContent = hasVhdl
-      ? "VHDL の合成は T3 で対応予定です"
-      : supported
-        ? ""
-        : "Verilog プロジェクトを開いてください。";
+    synthesisReason.textContent = supported ? "" : "HDL プロジェクトを開いてください。";
+    vhdlStandardControl.hidden = !hasVhdl;
+    if (project) {
+      project.vhdlStandard ??= "2008";
+      vhdlStandardSelect.value = project.vhdlStandard;
+    }
     if (board) {
       void fetch(new URL("./synth/manifest.json", import.meta.url))
         .then((response) => response.json())
@@ -234,6 +241,10 @@ export function initializeIde({
             "yosys-share.tar",
             `chipdb/chipdb-${board.nextpnrFamily}.bin`,
           ]);
+          if (hasVhdl) {
+            paths.add("ghdl-synth.wasm");
+            paths.add("libraries.tar");
+          }
           const size = manifest.assets
             .filter(({ path }) => paths.has(path))
             .reduce((total, asset) => total + asset.size, 0);
@@ -266,11 +277,25 @@ export function initializeIde({
         .filter(({ path }) => !path.startsWith("build/"))
         .map(({ path }) => ({ path, content: fileContents.get(path) }));
       const result = await buildRunner.build(
-        { board: boardSelect.value, top: "top", files },
+        {
+          board: boardSelect.value,
+          top: project.top,
+          vhdlStandard: project.vhdlStandard ?? "2008",
+          files,
+        },
         {
           onStage: (stage) => {
-            const labels = ["合成", "配置配線", "ビットストリーム"];
-            const activeIndex = { synth: 0, pnr: 1, pack: 2 }[stage];
+            const hasVhdl = files.some(({ path }) => /\.(?:vhd|vhdl)$/i.test(path));
+            const labels = [
+              ...(hasVhdl ? ["VHDL"] : []),
+              "合成",
+              "配置配線",
+              "ビットストリーム",
+            ];
+            const indexes = hasVhdl
+              ? { vhdl: 0, synth: 1, pnr: 2, pack: 3 }
+              : { synth: 0, pnr: 1, pack: 2 };
+            const activeIndex = indexes[stage];
             synthesisStage.textContent = labels
               .map((label, index) => index <= activeIndex ? label : "")
               .filter(Boolean)
@@ -309,13 +334,17 @@ export function initializeIde({
         }),
       );
       synthesisStage.textContent = "ビルド完了";
-      appendProjectLog(`合成 ${result.timings.synth.toFixed(0)} ms、配置配線 ${result.timings.pnr.toFixed(0)} ms、ビットストリーム ${result.timings.pack.toFixed(0)} ms`);
+      appendProjectLog(
+        `${result.timings.vhdl === undefined ? "" : `VHDL ${result.timings.vhdl.toFixed(0)} ms、`}` +
+        `合成 ${result.timings.synth.toFixed(0)} ms、配置配線 ${result.timings.pnr.toFixed(0)} ms、ビットストリーム ${result.timings.pack.toFixed(0)} ms`,
+      );
     } catch (error) {
       if (error.name !== "AbortError") {
         for (const [tool, text] of toolText) {
           diagnostics.push(...parseToolDiagnostics(tool, text));
         }
         const failedTool = {
+          vhdl: "ghdl",
           synth: "yosys",
           pnr: "nextpnr",
           pack: "gowin_pack",
@@ -689,6 +718,7 @@ export function initializeIde({
     renderFileList();
     renderFileTabs();
     updateEditor();
+    updateSynthesisControls();
     renderFsSource(true);
     await refreshProjectSwitcher();
     scheduleSave();
@@ -706,6 +736,7 @@ export function initializeIde({
     renderFileList();
     renderFileTabs();
     updateEditor();
+    updateSynthesisControls();
     renderFsSource(true);
     void refreshProjectSwitcher();
     scheduleSave();
@@ -726,6 +757,7 @@ export function initializeIde({
 
   function activateProject(loaded) {
     project = loaded.project;
+    project.vhdlStandard ??= "2008";
     fileContents = loaded.files;
     projectName.textContent = project.name;
     boardSelect.value = project.board;
@@ -802,6 +834,10 @@ export function initializeIde({
         newProjectLanguageSelect.value,
       );
       created.project.name = name;
+      created.project.vhdlStandard =
+        newProjectLanguageSelect.value === "vhdl"
+          ? newProjectStandardSelect.value
+          : "2008";
       await store.save(created.project, created.files);
       newProjectDialog.close();
       newProjectNameInput.value = "";
@@ -892,8 +928,17 @@ export function initializeIde({
   newProjectButton.addEventListener("click", () => {
     newProjectError.textContent = "";
     newProjectBoardSelect.value = boardSelect.value;
+    newProjectStandardField.hidden = newProjectLanguageSelect.value !== "vhdl";
     newProjectDialog.showModal();
     newProjectNameInput.focus();
+  });
+  newProjectLanguageSelect.addEventListener("change", () => {
+    newProjectStandardField.hidden = newProjectLanguageSelect.value !== "vhdl";
+  });
+  vhdlStandardSelect.addEventListener("change", () => {
+    if (!project) return;
+    project.vhdlStandard = vhdlStandardSelect.value;
+    scheduleSave();
   });
   newProjectCreateButton.addEventListener("click", () => {
     void createProject();

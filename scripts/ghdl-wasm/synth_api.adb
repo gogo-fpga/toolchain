@@ -4,6 +4,7 @@
 -- you may not use this file except in compliance with the License.
 -- https://www.apache.org/licenses/LICENSE-2.0
 -- SPDX-License-Identifier: Apache-2.0
+-- Modified by gogo-fpga/toolchain to select the VHDL standard at runtime.
 
 with Errorout;
 with Errorout.Console;
@@ -30,6 +31,23 @@ with Outputs;
 with Synth.Vhdl_Foreign;
 
 package body Synth_Api is
+   Selected_Std : Integer := 8;
+
+   function Synth_Set_Std (Std : Integer) return Integer is
+   begin
+      case Std is
+         when 8 =>
+            Selected_Std := Std;
+            Flags.Vhdl_Std := Flags.Vhdl_08;
+         when 19 =>
+            Selected_Std := Std;
+            Flags.Vhdl_Std := Flags.Vhdl_19;
+         when others =>
+            return -1;
+      end case;
+      return 0;
+   end Synth_Set_Std;
+
    function Synth_Init return Integer is
       Ok : Boolean;
    begin
@@ -37,7 +55,9 @@ package body Synth_Api is
       --  default null handler (which traps on the first reported error).
       Errorout.Console.Install_Handler;
       Options.Initialize;
-      Flags.Vhdl_Std := Flags.Vhdl_08;
+      if Synth_Set_Std (Selected_Std) /= 0 then
+         return -1;
+      end if;
       Flags.Flag_Elaborate := True;
       Flags.Flag_Elaborate_With_Outdated := False;
       Flags.Flag_Only_Elab_Warnings := False;

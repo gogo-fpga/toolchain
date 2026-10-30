@@ -553,6 +553,7 @@ extra_objects+=("$work_dir/ghdl-wasm-wasi.o")
   -Wl,--no-entry -Wl,--allow-undefined -Wl,--export-memory \
   -Wl,--export=malloc -Wl,--export=free -Wl,--export=__wasm_call_ctors \
   -Wl,--export=ghdlwasm_init \
+  -Wl,--export=synth_api__synth_set_std \
   -Wl,--export=synth_api__synth_init \
   -Wl,--export=synth_api__analyze_file \
   -Wl,--export=synth_api__synth_top \
