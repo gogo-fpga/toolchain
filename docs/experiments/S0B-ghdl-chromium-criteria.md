@@ -7,7 +7,7 @@
 ## 対象
 
 - 版：PR #33 の head の既定ビルド（Os）。比較の記録用に `scripts/build-ghdl-wasm.sh --variant=B0` のビルド。
-- 例：`tests/synth/ghdl-wasm.test.mjs` の正例 6 つと、4 ボードの VHDL テンプレート（`createBlinkTemplate(board, "vhdl")`）。
+- 例：`tests/synth/ghdl-wasm.test.mjs` の正例 7 つ（S9B の 6 つと、T3 その 2 で加えた VHDL-2019 の `VHDL-2019 named return identifier`。この例だけ `standard: "2019"` で実行し、ネイティブ版は `--std=19` と比べる）と、4 ボードの VHDL テンプレート（`createBlinkTemplate(board, "vhdl")`）。S9B と比べるときは、6 つの例だけの合計も別に書く。
 
 ## 測り方
 
@@ -28,3 +28,4 @@
 - `docs/experiments/S0B-ghdl-chromium.md` と `docs/experiments/S0B/results.csv`（案、環境、例、回、順番、compile ms、run ms、Verilog SHA-256、一致、メモリー）。
 - 中央値、最小、最大、幅を案・例ごとに書く。Os と B0 の差は記録として書き、採否の言葉は使わない。
 - 環境：Chromium と Node の版、CPU、コア数、メモリー、base commit。
+- この節の例の数は、測定を始める前（2026-10-30）に 6 から 7 に直した。理由：T3 その 2 で正例が 1 つ増えたため。
