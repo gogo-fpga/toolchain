@@ -20,5 +20,7 @@
 | [S9B GHDL WASM 最適化マトリクス](S9B-ghdl-matrix.md) | GHDL WASM の最適化設定の安定性、size、Node 時間を比較 | 採用：Os（ユーザーの判断、基準からの逸脱） |
 | [S9B GHDL WASM 最適化マトリクスの凍結基準](S9B-ghdl-matrix-criteria.md) | 最適化候補の安定性・比較・採否条件 | 測定前に固定 |
 | [S0 GHDL WASM 合成のビルドと smoke](S0-ghdl-wasm.md) | GHDL 6.0.0 の WASM 合成、VHDL fixture、Tang Nano bitstream、T3-2 のブラウザー統合 | 完了 |
+| [S0B GHDL WASM の Chromium / Node 測定](S0B-ghdl-chromium.md) | 7 fixture と4ボードの VHDL template を Node / Chromium で測定。raw CSV は本文から参照 | 記録のみ（既定 Os を変更しない） |
+| [S0B GHDL Chromium 測定の凍結基準](S0B-ghdl-chromium-criteria.md) | GHDL WASM の Node / Chromium 測定条件と正しさの確認 | 測定前に固定 |
 
 仮想デバイスによる測定値は、実機の値として扱いません。
