@@ -1,6 +1,6 @@
 # S9B GHDL WASM 最適化マトリクス
 
-- 状態: 中止（安定性評価は完了。Chromium の測定環境がなく、採用判定は行わない）
+- 状態: 採用：Os（ユーザーの判断、基準からの逸脱）
 - 日付: 2026-10-30
 - 担当: Devin
 - 関連: [S9B 凍結基準](S9B-ghdl-matrix-criteria.md)、S9 の [凍結基準](S9-ghdl-os-lto-criteria.md) と [記録](S9-ghdl-os-lto.md)
@@ -9,7 +9,7 @@
 
 S9 の Os + LTO 候補はリンクに失敗した。そこで、ユーザーの判断に基づき、LTO を使わない O1、O2、O3、Os と O3 + LTO を、PR #31 の既定値 B0 と比較する。まず再現性、6 例の合成、4 ボードの `.fs` parity、負の対照を調べ、すべてを通過した候補だけを速度評価に進める。
 
-S9B の凍結基準では、速度の採否判定に S7 と同じ Chromium / Playwright の測定が必要である。既存の GHDL WASM 用ブラウザー測定 harness がなく、追加実装には大きな作業が必要と判明したため、Chromium の測定は行わない。Node の時間は記録だけに使い、B0 を維持する。
+S9B の凍結基準では、速度の採否判定に S7 と同じ Chromium / Playwright の測定が必要である。既存の GHDL WASM 用ブラウザー測定 harness がなく、追加実装には大きな作業が必要と判明したため、Chromium の測定は行わなかった。測定後の2026-10-30、ユーザーは凍結した速度基準から逸脱し、成果物サイズを理由に Os を既定として採用する判断をした。Node の時間は判断に使っていない。
 
 ## 採否の基準（測定前に固定）
 
@@ -93,11 +93,21 @@ Node の測定は記録のみとし、Chromium の採用判断には使わない
 | O3 | 309.304 (296.179-316.683; 20.504) ms |
 | Os | 296.015 (284.525-310.812; 26.287) ms |
 
-Os の Node median は B0 より約0.9%小さいが、Node の記録値は採用条件ではない。6 fixture ごとの5回分の生データ、実行順、build size は [CSV](S9B/results.csv) に記録した。各回の実行 log は `build/S9B/<variant>/tests-5x.log` にある。
+O2 と Os の `ghdl-synth.wasm` は別々の build root（`build/S9B/O2-*` と `build/S9B/Os-*`）で byte-identical となり、SHA-256 は両方 `c74fb667cc939089d8ea2d5e165948932c5dab099b9ca66d953ee5f84752748d` だった。一方、Node の6例合計 median は O2 が319.443 ms、Os が296.015 msで7.9%離れた。Node の変種間の時間差はノイズの範囲とみなし、採用には使わなかった。
+
+Os は B0 に比べ raw が2,001,285 bytes（-3.2%、B0 は2,066,717）、gzip が611,812 bytes（-4.1%、B0 は638,186）、zstd が510,680 bytes（-4.3%、B0 は533,797）だった。`libraries.tar.gz` は両方455,929 bytes。成果物だけが一致した事実から、AdaWebPack llvm-gcc が Ada の `-Os` を `-O2` と同じ生成コードにした可能性があるが、object file と最適化 pass は調べていないため推測である。Chromium の速度基準は未評価であり、T3-2 の UI 統合後にブラウザー内測定を再検討する。6 fixture ごとの5回分の生データ、実行順、build size は [CSV](S9B/results.csv) に記録した。各回の実行 log は `build/S9B/<variant>/tests-5x.log` にある。
 
 ### Chromium 測定と採否
 
-S7 と同じ方法で GHDL WASM を load して測る既存の Chromium / Playwright harness は見つからず、作成には大きな作業が必要である。凍結基準に従い、Chromium 計測は行わず、Node を代用しない。候補の Chromium median と B0 の5回幅を比較できないため、候補に採用資格があるとは判定しない。GHDL WASM の既定は B0 のままとする。
+S7 と同じ方法で GHDL WASM を load して測る既存の Chromium / Playwright harness は見つからず、作成には大きな作業が必要である。凍結基準に従い、Chromium 計測は行わず、Node を代用しない。候補の Chromium median と B0 の5回幅を比較できなかったため、凍結基準による速度採用資格は判定していない。測定後、ユーザーが成果物サイズを理由に Os を選ぶ判断をした。
+
+## 既定変更後の確認
+
+2026-10-30、引数なしで `scripts/build-ghdl-wasm.sh` を実行した clean build は、`build/S9B/Os-A` の成果物と byte-identical だった。`ghdl-synth.wasm` は2,001,285 bytes、SHA-256 `c74fb667cc939089d8ea2d5e165948932c5dab099b9ca66d953ee5f84752748d`、`libraries.tar.gz` は455,929 bytes、SHA-256 `32c3586a64b5adc62d55a45aab127b18aeb2f45a8205da089d5618c6c9e10513` である。build-info は variant `Os`、Ada / `wasi.c` とも `-Os`、LTO なしを記録した。log は `build/S9B/default-Os-build.log`。
+
+`--variant=B0` でも clean build し、`ghdl-synth.wasm` は2,066,717 bytes、SHA-256 `aa851b370a40ce4bf8bce6143a0293840c31ee13c5161e6597fedc8d4538400d`、`libraries.tar.gz` は同じ SHA-256 と455,929 bytesとなった。build-info は Ada `-O1`、`wasi.c` `-O2`、LTO なしを記録した。log は `build/S9B/B0-explicit-build.log`。
+
+新しい既定 build を使った `tests/synth/ghdl-wasm.test.mjs` は1回で8/8成功した。6つの正例すべてで native / WASM の Verilog が byte-identical となり、syntax error と semantic error の負の対照も成功した。log は `build/S9B/default-Os/tests-default.log`。4 board の `.fs` parity は S9B の Os で既に確認済みであり、新しい既定 WASM がその Os artifact と byte-identical であることを再確認した。raw CSV の値は変更していない。
 
 ## 捨てた試行と経緯
 
@@ -110,11 +120,11 @@ S7 と同じ方法で GHDL WASM を load して測る既存の Chromium / Playwr
 
 ## 結論
 
-安定性条件は O1、O2、O3、Os が通過した。O3 + LTO は link に失敗した。Chromium の測定値がないため、凍結基準の速度採用条件を評価できない。Node の測定値だけで候補を採用せず、既定は B0（Ada `-O1`、`wasi.c` `-O2`、LTO なし）に保つ。S9B の結果は既定変更の根拠にならない。
+採用：Os（ユーザーの判断、基準からの逸脱）。O1、O2、O3、Os は安定性条件を通過し、O3 + LTO は link に失敗した。Chromium の測定は行っておらず、凍結した速度基準を満たした候補としての採用ではない。ユーザーは、B0 より raw / gzip / zstd の各サイズが小さいことを理由に Os を選んだ。Node 時間は判断に使っていない。既定 build を Os（Ada と `wasi.c` が `-Os`、LTO なし）にし、`--variant=B0` で旧既定を再現できるようにする。T3-2 UI 統合後の Chromium 測定を follow-up とする。
 
 ## 未確認の点
 
-- O1、O2、O3、Os の Chromium 合成時間、候補と B0 の相対差、B0 の Chromium 5回幅。
+- O1、O2、O3、Os の Chromium 合成時間、候補と B0 の相対差、B0 の Chromium 5回幅。T3-2 UI 統合後に再測定を検討する。
 - O3 + LTO の再現性、test、native parity、size。第1条件の失敗後は試していない。
 - Os + LTO は S9 の失敗を引き継いだため、本 matrix で再実行していない。
 
