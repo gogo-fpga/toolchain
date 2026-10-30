@@ -864,6 +864,7 @@ def main() -> int:
     subparsers.add_parser("wasi-sdk-pin", help="print the pinned WASI SDK values")
     subparsers.add_parser("yosys-pin", help="print the pinned Yosys values")
     subparsers.add_parser("nextpnr-pin", help="print the pinned nextpnr values")
+    subparsers.add_parser("iverilog-pin", help="print the pinned Icarus Verilog values")
     archive_pin = subparsers.add_parser("archive-pin", help="print a pinned source archive")
     archive_pin.add_argument("dependency", choices=tuple(ARCHIVE_TAG_SOURCES))
     subparsers.add_parser("pnr-cache-pin", help="print the PnR dependency cache inputs")
@@ -892,6 +893,10 @@ def main() -> int:
         return 0
     if args.command == "nextpnr-pin":
         pin = parse_research_dependency(read_text(ROOT / "RESEARCH.md"), "nextpnr")
+        print("\t".join((pin["version"], pin["commit"], pin["url"])))
+        return 0
+    if args.command == "iverilog-pin":
+        pin = parse_research_dependency(read_text(ROOT / "RESEARCH.md"), "iverilog")
         print("\t".join((pin["version"], pin["commit"], pin["url"])))
         return 0
     if args.command == "archive-pin":

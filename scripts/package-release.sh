@@ -302,6 +302,8 @@ for path in "${yosys_nested_submodules[@]}"; do
 done
 
 source_required_files=(
+  "$source_root/scripts/build-iverilog-wasm.sh"
+  "$source_root/scripts/build-iverilog-info.py"
   "$source_root/scripts/build-ghdl-wasm.sh"
   "$source_root/scripts/build-synth-assets.py"
   "$source_root/scripts/ghdl-wasm/frontend-sources.txt"
@@ -315,6 +317,7 @@ source_required_files=(
   "$source_root/web/lib/ghdl-host.mjs"
   "$source_root/web/lib/vhdl-order.mjs"
   "$source_root/patches/ghdl/blackbox-verilog.patch"
+  "$source_root/patches/iverilog/static-wasi.patch"
   "$source_root/patches/ghdl/grt-stdio.patch"
   "$source_root/patches/ghdl/vhdl-only-synthesis.patch"
 )

@@ -1,1 +1,2 @@
 .github/scripts/data/jisx0213-2004-std.txt whitespace=-blank-at-eol
+patches/iverilog/static-wasi.patch whitespace=-blank-at-eol,-space-before-tab

@@ -111,8 +111,8 @@ jobs:
 
   build:
     name: Build
-    needs: [changes, synth, synth-compare, nextpnr, nextpnr-compare, ghdl]
-    if: needs.changes.outputs.build == 'true' && needs.synth.result == 'success' && needs.synth-compare.result == 'success' && needs.nextpnr.result == 'success' && needs.nextpnr-compare.result == 'success' && needs.ghdl.result == 'success'
+    needs: [changes, synth, synth-compare, nextpnr, nextpnr-compare, ghdl, iverilog]
+    if: needs.changes.outputs.build == 'true' && needs.synth.result == 'success' && needs.synth-compare.result == 'success' && needs.nextpnr.result == 'success' && needs.nextpnr-compare.result == 'success' && needs.ghdl.result == 'success' && needs.iverilog.result == 'success'
     runs-on: ubuntu-26.04
     timeout-minutes: 60
     permissions:
@@ -1169,6 +1169,71 @@ jobs:
           else
             echo "Step timings unavailable (unknown)." >> "$GITHUB_STEP_SUMMARY"
           fi
+
+  iverilog:
+    name: Icarus Verilog WASI build and comparison
+    needs: changes
+    if: needs.changes.outputs.build == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: false
+          persist-credentials: false
+
+      - name: Icarus Verilog submodule を取得
+        run: git submodule update --init --depth 1 -- vendor/iverilog
+
+      - name: Node.js を設定
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+
+      - name: ビルド依存を導入
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bison flex gperf
+
+      - id: iverilog-key
+        name: Icarus Verilog の cache key を作成
+        run: |
+          echo "iverilog=$(git rev-parse HEAD:vendor/iverilog)" >> "$GITHUB_OUTPUT"
+          wasi_pin="$(python3 .github/scripts/check-pins.py wasi-sdk-pin)"
+          echo "wasi=$(printf '%s' "$wasi_pin" | sha256sum | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
+      - id: iverilog-cache-restore
+        name: Icarus Verilog build inputs を cache から復元
+        if: github.event_name != 'schedule' && (github.event_name != 'workflow_dispatch' || inputs.cache)
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            build/cache/wasi-sdk-*
+            build/wasi-sdk-*
+          key: iverilog-wasi-ubuntu-26.04-${{ steps.iverilog-key.outputs.iverilog }}-${{ steps.iverilog-key.outputs.wasi }}-${{ hashFiles('scripts/build-iverilog-wasm.sh', 'scripts/build-iverilog-info.py', 'patches/iverilog/**') }}
+
+      - id: iverilog-build
+        name: Icarus Verilog WASM と native 版をビルド
+        run: |
+          scripts/build-iverilog-wasm.sh
+          scripts/build-iverilog-wasm.sh --native
+
+      - id: iverilog-tests
+        name: Icarus Verilog WASM/native を比較
+        run: node --test tests/synth/iverilog-wasm.test.mjs
+
+      - name: Icarus Verilog build inputs cache を保存
+        if: steps.iverilog-cache-restore.outputs.cache-hit != 'true' && steps.iverilog-build.outcome == 'success' && steps.iverilog-tests.outcome == 'success' && github.event_name != 'schedule' && (github.event_name != 'workflow_dispatch' || inputs.cache)
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            build/cache/wasi-sdk-*
+            build/wasi-sdk-*
+          key: iverilog-wasi-ubuntu-26.04-${{ steps.iverilog-key.outputs.iverilog }}-${{ steps.iverilog-key.outputs.wasi }}-${{ hashFiles('scripts/build-iverilog-wasm.sh', 'scripts/build-iverilog-info.py', 'patches/iverilog/**') }}
 
   pyodide-pack:
     name: Pyodide gowin_pack

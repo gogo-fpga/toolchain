@@ -140,6 +140,7 @@ export function createWasiP1ImportObject({
   stdout = () => {},
   stderr = () => {},
   clockTime = null,
+  onPollOneoff = () => {},
 } = {}) {
   const encoderOut = encoder;
   let instance;
@@ -436,6 +437,12 @@ export function createWasiP1ImportObject({
         ? BigInt(Math.floor(performance.now() * 1_000_000))
         : BigInt(Date.now()) * 1_000_000n;
       return writeU64(timePointer, now) ? ERRNO.SUCCESS : ERRNO.FAULT;
+    },
+    poll_oneoff(_subscriptionsPointer, _eventsPointer, subscriptionCount, eventCountPointer) {
+      onPollOneoff();
+      if (!inBounds(eventCountPointer, 4)) return ERRNO.FAULT;
+      if (subscriptionCount === 0) return ERRNO.INVAL;
+      return ERRNO.NOSYS;
     },
     fd_close(fd) {
       const descriptor = getDescriptor(fd);
