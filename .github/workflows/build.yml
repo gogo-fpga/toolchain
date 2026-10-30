@@ -195,9 +195,6 @@ jobs:
       - name: Web アプリを組み立て
         run: scripts/build-web.sh
 
-      - name: 成果物の SHA-256 を記録
-        run: sha256sum build/jspi-pthread/*.wasm build/jspi-pthread/*.mjs | tee -a "$GITHUB_STEP_SUMMARY"
-
       - id: fixture-key
         name: fixture cache key を作成
         run: echo "python-version=$(python3 --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
@@ -227,6 +224,27 @@ jobs:
 
       - name: Web 単体テスト
         run: node --test tests/web/*.test.mjs
+
+      - name: 成果物の SHA-256 を記録
+        if: always()
+        run: |
+          hash_file() {
+            local path="$1"
+            local result digest
+            if [[ -f "$path" ]]; then
+              result="$(sha256sum -- "$path" 2>/dev/null)" || result=""
+              digest="${result%% *}"
+              if [[ "$digest" =~ ^[[:xdigit:]]{64}$ ]]; then
+                printf 'S8-SHA256 build %s %s\n' "$digest" "$path"
+                return 0
+              fi
+            fi
+            printf 'S8-SHA256 build MISSING %s\n' "$path"
+          }
+          {
+            hash_file build/jspi-pthread/openFPGALoader.wasm
+            hash_file build/jspi-pthread/openFPGALoader.mjs
+          } | tee -a "$GITHUB_STEP_SUMMARY" || true
 
       - name: CI ビルド成果物を保存
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -419,6 +437,59 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: 成果物の SHA-256 を記録
+        if: always()
+        env:
+          CACHE_HIT: ${{ steps.synth-wasi-output-cache-restore.outputs.cache-hit }}
+          CACHE_VALID: ${{ steps.synth-wasi-output-cache-check.outputs.valid }}
+        run: |
+          hash_file() {
+            local job="$1"
+            local path="$2"
+            local result digest
+            if [[ -f "$path" ]]; then
+              result="$(sha256sum -- "$path" 2>/dev/null)" || result=""
+              digest="${result%% *}"
+              if [[ "$digest" =~ ^[[:xdigit:]]{64}$ ]]; then
+                printf 'S8-SHA256 %s %s %s\n' "$job" "$digest" "$path"
+                return 0
+              fi
+            fi
+            printf 'S8-SHA256 %s MISSING %s\n' "$job" "$path"
+          }
+          hash_tree() {
+            local job="$1"
+            local path="$2"
+            local result line digest file
+            if [[ -d "$path" ]]; then
+              result="$(find "$path" -type f -print 2>/dev/null | LC_ALL=C sort | xargs -r sha256sum 2>/dev/null)" || result=""
+              if [[ -n "$result" ]]; then
+                while IFS= read -r line; do
+                  digest="${line%% *}"
+                  file="${line#*  }"
+                  printf 'S8-SHA256 %s %s %s\n' "$job" "$digest" "$file"
+                done <<< "$result"
+                return 0
+              fi
+            fi
+            printf 'S8-SHA256 %s MISSING %s\n' "$job" "$path"
+          }
+          shopt -s nullglob
+          decoder_wasms=(build/wasi/decoders/*.wasm)
+          {
+            printf 'S8-CACHE synth hit=%s valid=%s\n' "${CACHE_HIT:-false}" "${CACHE_VALID:-not-checked}"
+            hash_file synth build/wasi/yosys/yosys.wasm
+            hash_tree synth build/wasi/yosys/share
+            hash_file synth build/wasi/yosys/build-info.json
+            if ((${#decoder_wasms[@]})); then
+              for path in "${decoder_wasms[@]}"; do
+                hash_file synth "$path"
+              done
+            else
+              printf 'S8-SHA256 synth MISSING build/wasi/decoders/*.wasm\n'
+            fi
+          } | tee -a "$GITHUB_STEP_SUMMARY" || true
+
       - name: 合成成果物を保存
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -598,6 +669,51 @@ jobs:
           test -d build/native/share/gowin
           test -x build/native/yosys-abc
 
+      - name: 成果物の SHA-256 を記録
+        if: always()
+        env:
+          CACHE_HIT: ${{ steps.synth-native-output-cache-restore.outputs.cache-hit }}
+          CACHE_VALID: ${{ steps.synth-native-output-cache-check.outputs.valid }}
+        run: |
+          hash_file() {
+            local job="$1"
+            local path="$2"
+            local result digest
+            if [[ -f "$path" ]]; then
+              result="$(sha256sum -- "$path" 2>/dev/null)" || result=""
+              digest="${result%% *}"
+              if [[ "$digest" =~ ^[[:xdigit:]]{64}$ ]]; then
+                printf 'S8-SHA256 %s %s %s\n' "$job" "$digest" "$path"
+                return 0
+              fi
+            fi
+            printf 'S8-SHA256 %s MISSING %s\n' "$job" "$path"
+          }
+          hash_tree() {
+            local job="$1"
+            local path="$2"
+            local result line digest file
+            if [[ -d "$path" ]]; then
+              result="$(find "$path" -type f -print 2>/dev/null | LC_ALL=C sort | xargs -r sha256sum 2>/dev/null)" || result=""
+              if [[ -n "$result" ]]; then
+                while IFS= read -r line; do
+                  digest="${line%% *}"
+                  file="${line#*  }"
+                  printf 'S8-SHA256 %s %s %s\n' "$job" "$digest" "$file"
+                done <<< "$result"
+                return 0
+              fi
+            fi
+            printf 'S8-SHA256 %s MISSING %s\n' "$job" "$path"
+          }
+          {
+            printf 'S8-CACHE synth-native hit=%s valid=%s\n' "${CACHE_HIT:-false}" "${CACHE_VALID:-not-checked}"
+            hash_file synth-native build/native/yosys
+            hash_file synth-native build/native/yosys-abc
+            hash_tree synth-native build/native/share
+            hash_file synth-native build/native/build-info.json
+          } | tee -a "$GITHUB_STEP_SUMMARY" || true
+
       - name: Native Yosys 成果物を保存
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -761,6 +877,33 @@ jobs:
             report_time 'nextpnr WASI' "$GITHUB_WORKSPACE/build/timings/nextpnr-wasi.time.log"
             report_time 'nextpnr native' "$GITHUB_WORKSPACE/build/timings/nextpnr-native.time.log"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 成果物の SHA-256 を記録
+        if: always()
+        env:
+          CACHE_HIT: ${{ steps.nextpnr-cache-restore.outputs.cache-hit }}
+        run: |
+          hash_file() {
+            local path="$1"
+            local result digest
+            if [[ -f "$path" ]]; then
+              result="$(sha256sum -- "$path" 2>/dev/null)" || result=""
+              digest="${result%% *}"
+              if [[ "$digest" =~ ^[[:xdigit:]]{64}$ ]]; then
+                printf 'S8-SHA256 nextpnr %s %s\n' "$digest" "$path"
+                return 0
+              fi
+            fi
+            printf 'S8-SHA256 nextpnr MISSING %s\n' "$path"
+          }
+          {
+            printf 'S8-CACHE nextpnr hit=%s valid=not-checked\n' "${CACHE_HIT:-false}"
+            hash_file build/wasi/nextpnr/nextpnr-himbaechel-gowin.wasm
+            hash_file build/wasi/nextpnr/share/himbaechel/gowin/chipdb-GW1N-9C.bin
+            hash_file build/wasi/nextpnr/share/himbaechel/gowin/chipdb-GW1NS-4.bin
+            hash_file build/wasi/nextpnr/share/himbaechel/gowin/chipdb-GW1NZ-1.bin
+            hash_file build/wasi/nextpnr/share/himbaechel/gowin/chipdb-GW2A-18C.bin
+          } | tee -a "$GITHUB_STEP_SUMMARY" || true
 
       - name: nextpnr 成果物を保存
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -964,6 +1107,31 @@ jobs:
             build/cache/ghdl-host-packages/
             build/wasi-sdk-*
           key: ghdl-wasm-ubuntu-26.04-${{ steps.ghdl-key.outputs.ghdl }}-${{ steps.ghdl-key.outputs.browser }}-${{ steps.ghdl-key.outputs.wasi }}-${{ hashFiles('scripts/build-ghdl-wasm.sh', 'patches/ghdl/**', 'scripts/ghdl-wasm/**') }}
+
+      - name: 成果物の SHA-256 を記録
+        if: always()
+        run: |
+          hash_tree() {
+            local job="$1"
+            local path="$2"
+            local result line digest file
+            if [[ -d "$path" ]]; then
+              result="$(find "$path" -type f -print 2>/dev/null | LC_ALL=C sort | xargs -r sha256sum 2>/dev/null)" || result=""
+              if [[ -n "$result" ]]; then
+                while IFS= read -r line; do
+                  digest="${line%% *}"
+                  file="${line#*  }"
+                  printf 'S8-SHA256 %s %s %s\n' "$job" "$digest" "$file"
+                done <<< "$result"
+                return 0
+              fi
+            fi
+            printf 'S8-SHA256 %s MISSING %s\n' "$job" "$path"
+          }
+          {
+            hash_tree ghdl build/ghdl-wasm
+            hash_tree ghdl build/ghdl-native
+          } | tee -a "$GITHUB_STEP_SUMMARY" || true
 
       - name: GHDL WASM 成果物を保存
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
