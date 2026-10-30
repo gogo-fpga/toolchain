@@ -137,10 +137,15 @@ function buildNativeFs(template, destination, board, top, vhdlTop, additions = {
       ["-a", "--std=08", ...vhdlPaths],
       { cwd: workdir, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 },
     );
+    const analysisFailure = [
+      analysis.error?.message,
+      analysis.signal ? `signal: ${analysis.signal}` : "",
+      analysis.stderr,
+    ].filter(Boolean).join("\n");
     assert.equal(
       analysis.status,
       0,
-      `Native GHDL analysis failed for ${destination}:\n${analysis.stderr ?? ""}`,
+      `Native GHDL analysis failed for ${destination}:\n${analysisFailure}`,
     );
     const synthesis = spawnSync(
       nativeGhdl,
@@ -175,17 +180,26 @@ function buildNativeFs(template, destination, board, top, vhdlTop, additions = {
         maxBuffer: 16 * 1024 * 1024,
       },
     );
+    const yosysFailure = [
+      yosys.error?.message,
+      yosys.signal ? `signal: ${yosys.signal}` : "",
+      yosys.stderr,
+    ].filter(Boolean).join("\n");
     assert.equal(
       yosys.status,
       0,
-      `Native Yosys synthesis failed for ${destination}:\n${yosys.stderr ?? ""}`,
+      `Native Yosys synthesis failed for ${destination}:\n${yosysFailure}`,
     );
 
     const pnr = runNative(workdir, pnrArgs(board));
+    const pnrFailure = [
+      pnr.error?.message,
+      pnr.stderr,
+    ].filter(Boolean).join("\n");
     assert.equal(
       pnr.status,
       0,
-      `Native nextpnr failed for ${destination}:\n${pnr.stderr}`,
+      `Native nextpnr failed for ${destination}:\n${pnrFailure}`,
     );
     writeFileSync(
       path.join(workdir, "top.json"),
