@@ -42,7 +42,3 @@
 	path = vendor/ghdl
 	url = https://github.com/ghdl/ghdl.git
 	shallow = true
-[submodule "vendor/ghdl-browser"]
-	path = vendor/ghdl-browser
-	url = https://github.com/UnsignedChad/ghdl-browser.git
-	shallow = true

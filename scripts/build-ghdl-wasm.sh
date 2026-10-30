@@ -9,7 +9,6 @@
 set -euo pipefail
 
 readonly ghdl_pin=e589c698c351369ac5bcfe7abe1f1152ac5d4727
-readonly browser_pin=e98e5a6c6fd6c48a789705ae9900c6b34b3cb414
 readonly gcc_pin=ed10445fe222d3973ae13eda9bf211f315c5e3f9
 readonly adawebpack_version=24.0.0
 readonly adawebpack_sha256=8edaae8b9987a20aec430d750f30033f12f953ce2b6437afb87fbf8cc1063796
@@ -62,16 +61,8 @@ if [[ ! -f vendor/ghdl/configure || ! -f vendor/ghdl/src/synth/synthesis.adb ]];
   printf 'Initialize the pinned vendor/ghdl submodule before building.\n' >&2
   exit 1
 fi
-if [[ ! -f vendor/ghdl-browser/scripts/setup-frontend-build.sh ]]; then
-  printf 'Initialize the pinned vendor/ghdl-browser submodule before building.\n' >&2
-  exit 1
-fi
 if [[ $(git -C vendor/ghdl rev-parse HEAD) != "$ghdl_pin" ]]; then
   printf 'GHDL pin mismatch: expected %s\n' "$ghdl_pin" >&2
-  exit 1
-fi
-if [[ $(git -C vendor/ghdl-browser rev-parse HEAD) != "$browser_pin" ]]; then
-  printf 'ghdl-browser pin mismatch: expected %s\n' "$browser_pin" >&2
   exit 1
 fi
 
@@ -266,17 +257,8 @@ if [[ $(git -C "$gcc_source" rev-parse HEAD) != "$gcc_commit" ]]; then
 fi
 
 readonly ghdl_source="$root/vendor/ghdl"
-readonly browser_copy="$work_dir/ghdl-browser"
-mkdir -p "$browser_copy"
-git -C vendor/ghdl-browser archive --format=tar "$browser_pin" | tar -xf - -C "$browser_copy"
-mkdir -p "$browser_copy/vendor/adawebpack-bin"
-ln -s "$adawebpack" "$browser_copy/vendor/adawebpack-bin/adawebpack"
-ln -s "$ghdl_source" "$browser_copy/vendor/ghdl"
-# shellcheck disable=SC2016
-sed -i \
-  's|GCC_ADA="/usr/lib/gcc/x86_64-linux-gnu/14/adainclude/"|GCC_ADA="${GCC_ADA_SOURCE:?}"|' \
-  "$browser_copy/scripts/setup-frontend-build.sh"
-export GCC_ADA_SOURCE="$gcc_source/gcc/ada/libgnat"
+readonly frontend="$work_dir/ghdl-wasm-full"
+mkdir -p "$frontend"
 
 prefix_flags="-ffile-prefix-map=$root=/src -ffile-prefix-map=$build_root=/build"
 prefix_args=("-ffile-prefix-map=$root=/src" "-ffile-prefix-map=$build_root=/build")
@@ -318,38 +300,28 @@ if [[ ! -x "$gprbuild_bin" ]]; then
   exit 1
 fi
 
-rm -f "$browser_copy/patches/dyn_htables.patch"
-(
-  cd "$browser_copy"
-  bash scripts/setup-frontend-build.sh
-)
-readonly frontend="$browser_copy/build/ghdl-wasm-full"
 readonly stub_ada="$adawebpack/lib/rts-native/adainclude"
 readonly ghdl_libgnat="$gcc_source/gcc/ada/libgnat"
 
-rm -f "$frontend"/trans*.ad? "$frontend"/translation.ad? "$frontend"/ortho_wasm*.ad?
-rm -f "$frontend"/ortho_front.ad? "$frontend"/ortho_nodes.ad?
-rm -f "$frontend"/ghdlsynth.ad? "$frontend"/ghdlsynth_maybe.ad?
-rm -f "$frontend"/libghdl.ad? "$frontend"/ortho_ident.ad?
-cp "$ghdl_source/src/synth/synthesis.ads" "$ghdl_source/src/synth/synthesis.adb" "$frontend/"
-cp "$ghdl_source/src/libraries.ads" "$ghdl_source/src/libraries.adb" "$frontend/"
-rm -f "$frontend"/verilog*.ad? "$frontend"/synth-verilog*.ad?
+while IFS= read -r unit; do
+  [[ -z "$unit" || "$unit" == \#* ]] && continue
+  mapfile -d '' source_units < <(
+    find "$ghdl_source/src" -type f \
+      \( -name "$unit.ads" -o -name "$unit.adb" \) -print0 | sort -z
+  )
+  if [[ ${#source_units[@]} -eq 0 ]]; then
+    printf 'GHDL frontend unit is missing from the pinned source tree: %s\n' "$unit" >&2
+    exit 1
+  fi
+  for source in "${source_units[@]}"; do
+    if [[ -e "$frontend/${source##*/}" ]]; then
+      printf 'Duplicate GHDL frontend source basename: %s\n' "${source##*/}" >&2
+      exit 1
+    fi
+    cp "$source" "$frontend/"
+  done
+done < "$root/scripts/ghdl-wasm/frontend-sources.txt"
 patch --directory "$frontend" --strip=0 < "$root/patches/ghdl/vhdl-only-synthesis.patch"
-patch --directory "$frontend" --strip=0 < "$root/patches/ghdl/dyn-htables-v6.patch"
-
-for unit in \
-  grt-types.ads grt-c.ads grt-vhdl_types.ads grt-stdio.ads grt-severity.ads \
-  grt-asserts.ads grt-asserts.adb \
-  grt-fcvt.ads grt-fcvt.adb grt-to_strings.ads grt-to_strings.adb \
-  grt-files.ads grt-files.adb grt-files_operations.ads grt-files_operations.adb \
-  grt-table.ads grt-table.adb grt-arith.ads grt-arith.adb \
-  grt-algos.ads grt-algos.adb grt-astdio.ads grt-astdio.adb \
-  grt-strings.ads grt-strings.adb grt-vstrings.ads grt-vstrings.adb \
-  grt-rstrings.ads grt-rstrings.adb grt-dynload.ads; do
-  cp "$ghdl_source/src/grt/$unit" "$frontend/"
-done
-cp "$ghdl_source/src/grt/grt-readline_none.ads" \
-  "$ghdl_source/src/grt/grt-readline_none.adb" "$frontend/"
 cp "$root/scripts/ghdl-wasm/synth-vhdl_foreign.adb" "$frontend/"
 cp "$native_build/grt-readline.ads" "$frontend/"
 patch --directory "$frontend" --strip=0 < "$root/patches/ghdl/grt-stdio.patch"
@@ -359,8 +331,11 @@ cp "$root/scripts/ghdl-wasm/bug.adb" "$frontend/"
 cp "$root/scripts/ghdl-wasm/version.ads" "$frontend/"
 cp "$root/scripts/ghdl-wasm/synth_api.ads" \
   "$root/scripts/ghdl-wasm/synth_api.adb" "$frontend/"
+cp "$root/scripts/ghdl-wasm/rts/simple_io.adb" "$frontend/"
 
 runtime_source_units=(
+  a-strfix.ads a-strfix.adb a-strsea.ads a-strsea.adb
+  a-strunb.ads a-strunb.adb
   a-chahan.ads a-chahan.adb a-chlat1.ads a-strmap.ads a-strmap.adb a-stmaco.ads
   s-bitops.ads s-bitops.adb s-bytswa.ads s-imglli.ads s-imglli.adb s-vs_lli.ads
   s-expont.ads s-expont.adb s-explli.ads s-explli.adb
@@ -371,25 +346,51 @@ runtime_source_units=(
 for unit in "${runtime_source_units[@]}"; do
   cp "$ghdl_libgnat/$unit" "$stub_ada/"
 done
-sed -i "s/1970/$source_date_year/g" "$stub_ada/a-calend.adb"
+runtime_ada_units=(
+  a-calend.ads a-calend.adb a-catizo.ads a-catizo.adb
+  g-dirope.ads g-dirope.adb g-os_lib.ads g-os_lib.adb
+  a-chlat1.adb a-stmaco.adb s-bytswa.adb
+  ghdl_wasm_epoch.adb gnat.ads gnat.adb i-c.ads i-c.adb
+  i-cstrea.ads i-cstrea.adb
+)
+for unit in "${runtime_ada_units[@]}"; do
+  cp "$root/scripts/ghdl-wasm/rts/$unit" "$stub_ada/"
+done
+sed "s/@SOURCE_DATE_EPOCH@/$SOURCE_DATE_EPOCH/" \
+  "$root/scripts/ghdl-wasm/rts/ghdl_wasm_epoch.ads.in" \
+  > "$stub_ada/ghdl_wasm_epoch.ads"
 sed -i '/function Swap128/,/end Swap128;/d' "$stub_ada/g-bytswa.adb"
 sed -i '/function Swap128/d' "$stub_ada/g-bytswa.ads"
 sed -i '/subtype U128/d;/function Bswap_128/d;/__builtin_bswap128/d' "$stub_ada/s-bytswa.ads"
+sed -i '/^package Ada.Characters.Latin_1 is/a\   pragma Elaborate_Body;' \
+  "$stub_ada/a-chlat1.ads"
+sed -i '/^package Ada.Strings.Maps.Constants is/a\   pragma Elaborate_Body;' \
+  "$stub_ada/a-stmaco.ads"
+sed -i '/^package System.Byte_Swapping is/a\   pragma Elaborate_Body;' \
+  "$stub_ada/s-bytswa.ads"
 
 readonly stub_objects="$frontend/.objs/stubali"
 mkdir -p "$stub_objects"
 (
   cd "$stub_objects"
   for unit in \
-    i-c i-cstrea gnat a-calend a-catizo a-comlin a-strunb g-dirope g-os_lib \
+    gnat i-c ghdl_wasm_epoch i-cstrea a-chlat1 a-stmaco s-bytswa \
+    a-calend a-catizo g-dirope g-os_lib \
+    a-strsea a-strfix a-strunb \
     a-chahan a-chlat1 a-strmap a-stmaco s-bitops s-bytswa s-imglli s-vs_lli \
     s-expont s-explli s-vallli g-sechas g-sehash g-sha1 g-bytswa g-hesora; do
     source="$stub_ada/$unit.ads"
+    if [[ "$unit" == ghdl_wasm_epoch ]]; then
+      source="$stub_ada/ghdl_wasm_epoch.ads"
+    fi
+    compile_mode=()
     if [[ -f "$stub_ada/$unit.adb" ]]; then
       source="$stub_ada/$unit.adb"
+    else
+      compile_mode=(-gnatc)
     fi
     env LD_LIBRARY_PATH="$GHDL_WASM_ADAWP_LD_LIBRARY_PATH" \
-      "$adawebpack/bin/llvm-gcc" -c --target=wasm32 -O1 "${prefix_args[@]}" \
+      "$adawebpack/bin/llvm-gcc" -c "${compile_mode[@]}" --target=wasm32 -O1 "${prefix_args[@]}" \
       -gnatg -gnatyN -gnatws -I"$stub_ada" "$source"
   done
 )
@@ -443,6 +444,10 @@ mkdir -p "$gnat_objects"
   cd "$gnat_objects"
   "$sdk_dir/bin/llvm-ar" x "$adawebpack/lib/rts-native/adalib/libgnat.a"
   for object in *.o; do
+    if [[ "$object" == s-memory.o ]]; then
+      rm -f "$object"
+      continue
+    fi
     file "$object" | grep -q WebAssembly || rm -f "$object"
   done
   "$sdk_dir/bin/llvm-ar" rcs libgnat_wasm.a ./*.o
@@ -453,8 +458,12 @@ while IFS= read -r object; do
   if file "$object" | grep -q WebAssembly; then
     extra_objects+=("$object")
   fi
-done < <(find "$stub_objects" -name '*.o' ! -name 'g-os_lib.o' -print | sort)
-"$sdk_dir/bin/clang" --target=wasm32 -nostdlib \
+done < <(find "$stub_objects" -name '*.o' -print | sort)
+"$sdk_dir/bin/clang" --target=wasm32-wasip1 -nostartfiles -O2 \
+  "${prefix_args[@]}" -c "$root/scripts/ghdl-wasm/rts/wasi.c" \
+  -o "$work_dir/ghdl-wasm-wasi.o"
+extra_objects+=("$work_dir/ghdl-wasm-wasi.o")
+"$sdk_dir/bin/clang" --target=wasm32-wasip1 -nostartfiles \
   -Wl,--no-entry -Wl,--allow-undefined -Wl,--export-memory \
   -Wl,--export=malloc -Wl,--export=free -Wl,--export=__wasm_call_ctors \
   -Wl,--export=ghdlwasm_init \
@@ -500,8 +509,7 @@ tar --create --file "$work_dir/libraries.tar" \
   --directory "$library_stage" .
 gzip --no-name --best --stdout "$work_dir/libraries.tar" > "$output_dir/libraries.tar.gz"
 {
-  printf 'ghdl_commit\t%s\n' "$ghdl_pin"
-  printf 'ghdl_browser_commit\t%s\n' "$browser_pin"
+printf 'ghdl_commit\t%s\n' "$ghdl_pin"
   printf 'gcc_libgnat_tag_object\t%s\n' "$gcc_pin"
   printf 'gcc_libgnat_commit\t%s\n' "$gcc_commit"
   printf 'source_date_epoch\t%s\n' "$SOURCE_DATE_EPOCH"
@@ -524,6 +532,6 @@ gzip --no-name --best --stdout "$work_dir/libraries.tar" > "$output_dir/librarie
 end_time=$(date +%s)
 printf 'Build wall time: %s seconds\n' "$((end_time - start_time))"
 printf 'Ada Calendar fixed year: %s\n' "$source_date_year"
-printf 'GHDL %s / ghdl-browser %s / AdaWebPack %s / GCC libgnat %s\n' \
-  "$ghdl_pin" "$browser_pin" "$adawebpack_version" "$gcc_pin"
+printf 'GHDL %s / AdaWebPack %s / GCC libgnat %s\n' \
+  "$ghdl_pin" "$adawebpack_version" "$gcc_pin"
 du -h "$output_dir/ghdl-synth.wasm" "$output_dir/libraries.tar.gz"

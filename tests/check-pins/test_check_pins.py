@@ -199,6 +199,17 @@ class CheckPinsTests(unittest.TestCase):
             )
         )
 
+    def test_ghdl_browser_build_reference_is_rejected(self):
+        script = self.root / "scripts/build-ghdl-wasm.sh"
+        script.write_text(
+            script.read_text(encoding="utf-8") + "\nsource vendor/ghdl-browser/setup.sh\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(
+            ["scripts/build-ghdl-wasm.sh: GHDL WASM build must not reference ghdl-browser"],
+            check_pins.ghdl_browser_build_errors(self.root),
+        )
+
     def test_missing_shallow_is_rejected(self):
         path = self.root / ".gitmodules"
         path.write_text(path.read_text(encoding="utf-8").replace("\tshallow = true\n", ""), encoding="utf-8")
@@ -430,8 +441,6 @@ class CheckPinsTests(unittest.TestCase):
                 refs.append(args[3])
                 if branch_error:
                     raise subprocess.CalledProcessError(2, args)
-                if module_urls.get(args[2]) == "ghdl-browser":
-                    return self.pinned["ghdl-browser"] + "\tHEAD\n"
                 return branch_output or ""
             raise AssertionError(f"unexpected command: {args}")
 
@@ -477,10 +486,6 @@ class CheckPinsTests(unittest.TestCase):
         self.assertEqual(
             ("libusb", "v1.0.0", "v1.0.0", "最新"),
             next(row for row in rows if row[0] == "libusb"),
-        )
-        self.assertEqual(
-            ("ghdl-browser (branch)", self.pinned["ghdl-browser"][:12], self.pinned["ghdl-browser"][:12], "最新"),
-            next(row for row in rows if row[0] == "ghdl-browser (branch)"),
         )
 
     def test_yosys_tag_and_wasi_sdk_are_monitored(self):

@@ -6,14 +6,18 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
+  closeSync,
+  cpSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readFileSync,
   readdirSync,
   rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
+import { WASI } from "node:wasi";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
@@ -27,6 +31,13 @@ const nativePath = path.join(buildRoot, "ghdl-native/bin/ghdl");
 const wasmModule = new WebAssembly.Module(readFileSync(wasmPath));
 const vhdlRoot = "/ghdl/lib/ghdl";
 const decoder = new TextDecoder("latin1");
+const wasmSandboxes = new Set();
+
+process.on("exit", () => {
+  for (const sandbox of wasmSandboxes) {
+    rmSync(sandbox, { recursive: true, force: true });
+  }
+});
 
 assert.ok(statSync(libDir).isDirectory(), `GHDL libraries are missing: ${libDir}`);
 assert.ok(statSync(nativePath).isFile(), `Native GHDL is missing: ${nativePath}`);
@@ -131,11 +142,34 @@ function loadLibraryTree(vfs, realDir, virtualDir) {
 function runWasm(top, files) {
   const vfs = new VirtualFileSystem();
   loadLibraryTree(vfs, libDir, vhdlRoot);
+  const sandboxRoot = mkdtempSync(path.join(tmpdir(), "ghdl-wasm-"));
+  const wasiWorkDir = sandboxRoot;
+  const wasiGhdlDir = path.join(sandboxRoot, "ghdl");
+  wasmSandboxes.add(sandboxRoot);
+  const wasiLibraryDir = path.join(wasiGhdlDir, "lib/ghdl");
+  mkdirSync(wasiWorkDir, { recursive: true });
+  mkdirSync(wasiLibraryDir, { recursive: true });
+  cpSync(libDir, wasiLibraryDir, { recursive: true });
+  const stdoutPath = path.join(sandboxRoot, "stdout");
+  const stderrPath = path.join(sandboxRoot, "stderr");
+  writeFileSync(stdoutPath, "");
+  writeFileSync(stderrPath, "");
+  const stdoutFd = openSync(stdoutPath, "w+");
+  const stderrFd = openSync(stderrPath, "w+");
+  const wasi = new WASI({
+    version: "preview1",
+    args: [],
+    env: {},
+    preopens: { "/": sandboxRoot },
+    stdout: stdoutFd,
+    stderr: stderrFd,
+  });
   const chunks = [];
   let instance;
   let memory;
   const bytes = () => new Uint8Array(memory.buffer);
   const view = () => new DataView(memory.buffer);
+  const wasiImports = wasi.getImportObject();
   const emit = (value) => chunks.push(Buffer.isBuffer(value) ? value : Buffer.from(value, "latin1"));
   const cString = (pointer) => {
     if (!pointer) {
@@ -421,15 +455,16 @@ function runWasm(top, files) {
       view().setBigUint64(resultPointer + 8, result >> 64n, true);
     },
   };
-  instance = new WebAssembly.Instance(wasmModule, { env });
+  instance = new WebAssembly.Instance(wasmModule, { env, ...wasiImports });
+  wasi.initialize(instance);
   memory = instance.exports.memory;
   const pagesNeeded = 1024 - Math.ceil(memory.buffer.byteLength / 65536);
   if (pagesNeeded > 0) {
     memory.grow(pagesNeeded);
   }
-  try {
+  if (typeof instance.exports._initialize !== "function") {
     instance.exports.__wasm_call_ctors();
-  } catch {}
+  }
   const exports = instance.exports;
   const pushString = (value) => {
     const content = Buffer.from(value, "latin1");
@@ -438,7 +473,12 @@ function runWasm(top, files) {
     bytes()[pointer + content.length] = 0;
     return [pointer, content.length];
   };
-  const diagnostics = () => Buffer.concat(chunks).toString("latin1");
+  const diagnostics = () =>
+    Buffer.concat([
+      readFileSync(stdoutPath),
+      readFileSync(stderrPath),
+      Buffer.concat(chunks),
+    ]).toString("latin1");
 
   if (exports.ghdlwasm_init) {
     exports.ghdlwasm_init();
@@ -449,7 +489,9 @@ function runWasm(top, files) {
   }
 
   for (const file of files) {
-    vfs.add(file.name, readFileSync(path.join(fixtureRoot, file.name)));
+    const contents = readFileSync(path.join(fixtureRoot, file.name));
+    vfs.add(file.name, contents);
+    writeFileSync(path.join(wasiWorkDir, file.name), contents);
     const [pointer, length] = pushString(file.name);
     let result = 0;
     let error;
@@ -578,6 +620,11 @@ for (const fixture of positiveFixtures) {
     const native = runNative(fixture.top, files);
     assert.equal(native.status, 0, `Native synthesis failed:\n${native.output}\n${native.error ?? ""}`);
     const equal = wasm.output === native.output;
+    assert.equal(
+      wasm.output,
+      native.output,
+      `${fixture.label}: ${differenceSummary(native.output, wasm.output)}`,
+    );
     if (process.env.GHDL_WASM_EXPORT_DIR) {
       mkdirSync(process.env.GHDL_WASM_EXPORT_DIR, { recursive: true });
       writeFileSync(
