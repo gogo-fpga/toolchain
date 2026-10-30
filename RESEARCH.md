@@ -118,6 +118,10 @@ Os は Node 20K で 2,048.583 ms、zstd 合計 13,235,553 bytes でしたが、C
 
 S5B では Os、LTO、OsLTO を追加比較し、出力同一性、A/A build、連続5回の Node test、peak RSS の安定性条件を3候補すべてが満たしました。凍結した選定規則では、Chromium 20K の中央値が 2,122.105 ms（B より20.563%速い）で、zstd-19 合計も 11,327,113 bytes の OsLTO を選びます。既定の build script は [PR #24](https://github.com/gogo-fpga/toolchain/pull/24) で OsLTO に変更しました。詳細は [S5B 実験記録](docs/experiments/S5B-os-lto-chromium.md) を参照してください。
 
+### S8: CI ビルドの高速化
+
+S8 v2 の warm / Yosys cache-miss 合計時間中央値は 12.233 / 28.183 分でした。R1-R6 で見つかった chipdb 差は Apicula の hash-ordered set 反復が原因で、`PYTHONHASHSEED=0` 固定後の R7 miss / R8 hit は4 chipdb とも local seed-0 hash に一致しました。計測した nextpnr / GHDL build の max RSS は12 GiB以下で、ローカルの corrupted-cache check も成功しました。採用は、ユーザーが測定後の2026-10-30に決定したものです（判断「A」、凍結基準は未達項目あり）。未確認なのは `cache=false` run、cache 合計サイズ、CI での corrupted-cache 検出、output-cache hit run で省略された Yosys build の max RSS の4項目です。GHDL native `.cf` は timestamp が変わる既知の中間物で、WASM staging copy は正規化されます。詳細と raw data は [S8 実験記録](docs/experiments/S8-ci-speed.md) と CSV を参照してください。
+
 ### Pyodide 上の Apicula `gowin_pack`
 
 S3 では Apicula 0.35 の Python wheel を配布物に含め、Node.js の Pyodide 314.0.7 から実行します。Pyodide の lock は Python 3.14.2、micropip 0.11.1、NumPy 2.4.6（SHA-256 `a292c1f5d7d8a2208cd5e94fc467604c131cabcd2fc14fed6eefde121e7fabdf`）、msgspec 0.20.0（SHA-256 `2a4075cee8afc2c0424c63ae1a9b0655e727478df7fa2eb78f86f846fc5fb4bd`）を指定します。これらの wheel hash はビルド時に Pyodide の lock から読み、Apicula wheel の hash は `requirements-nextpnr.txt` の固定値を使います。

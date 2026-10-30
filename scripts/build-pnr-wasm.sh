@@ -18,6 +18,9 @@ fi
 root=$(CDPATH='' cd "$(dirname "$0")/.." && pwd)
 cd "$root"
 
+# Apicula's chipdb generator iterates hash-ordered sets; pin the seed so chipdb output is reproducible.
+export PYTHONHASHSEED=0
+
 for tool in cmake curl git node python3 sha256sum tar; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     printf 'Required command not found: %s\n' "$tool" >&2
@@ -266,6 +269,7 @@ fi
 
 jobs=${JOBS:-2}
 native_build=build/native/nextpnr
+mkdir -p "$(dirname "$native_build")"
 native_chipdb_root=$(CDPATH='' cd "$(dirname "$native_build")" && pwd)/nextpnr/share
 native_prefix_flags="-I$root/$boost_source -ffile-prefix-map=$root=/src -ffile-prefix-map=$root/$native_build=/build -ffile-prefix-map=$root/$boost_source=/boost -ffile-prefix-map=$root/$eigen_source=/eigen -DNPNR_DISABLE_THREADS"
 cmake -S vendor/nextpnr -B "$native_build" \

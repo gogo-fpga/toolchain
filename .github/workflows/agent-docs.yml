@@ -49,8 +49,11 @@ jobs:
 
       - name: 文書に個人環境のパスがない
         run: |
+          # verbatim public GitHub Actions log evidence; runner paths are part of the record
           if git grep -nE '/home/[A-Za-z0-9_-]+/|~/work/' -- \
-            docs README.md RESEARCH.md AGENTS.md .agents ':!.agents/skills/yomiyasu'; then
+            docs README.md RESEARCH.md AGENTS.md .agents \
+            ':!.agents/skills/yomiyasu' \
+            ':!docs/experiments/S8/raw/**'; then
             echo "::error::文書から VM・個人環境のパスを削除してください。"
             exit 1
           fi

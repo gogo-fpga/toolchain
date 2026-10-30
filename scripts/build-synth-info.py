@@ -29,15 +29,44 @@ def sha256_file(path):
     return digest.hexdigest()
 
 
+def check_artifact(mode, binary, output):
+    try:
+        metadata = json.loads(output.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise SystemExit(f"Could not read build info: {output}: {error}") from error
+    if not isinstance(metadata, dict):
+        raise SystemExit(f"Build info is not a JSON object: {output}")
+    artifact = metadata.get("artifact")
+    if metadata.get("mode") != mode or not isinstance(artifact, dict):
+        raise SystemExit(f"Build info does not describe a {mode} artifact: {output}")
+    actual_sha256 = sha256_file(binary)
+    actual_size = binary.stat().st_size
+    if (
+        artifact.get("path") != binary.name
+        or artifact.get("sha256") != actual_sha256
+        or artifact.get("size") != actual_size
+    ):
+        raise SystemExit(f"Build artifact integrity check failed: {binary}")
+    if mode == "native":
+        abc_binary = binary.with_name("yosys-abc")
+        if not abc_binary.is_file():
+            raise SystemExit(f"Native ABC helper is missing: {abc_binary}")
+    print(f"Build artifact integrity verified: {binary}")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=("wasi", "native"), required=True)
     parser.add_argument("--binary", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
     binary = args.binary.resolve()
     if not binary.is_file():
         raise SystemExit(f"Build artifact is missing: {binary}")
+    if args.check:
+        check_artifact(args.mode, binary, args.output)
+        return
 
     pins = load_pin_checker()
     research = (ROOT / "RESEARCH.md").read_text(encoding="utf-8")
