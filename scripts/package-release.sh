@@ -423,6 +423,7 @@ labels = {
     "vendor/zstd": "zstd",
     "vendor/xz-embedded": "xz-embedded",
     "vendor/ghdl": "GHDL",
+    "vendor/iverilog": "Icarus Verilog",
 }
 rows = []
 for path in submodules:
