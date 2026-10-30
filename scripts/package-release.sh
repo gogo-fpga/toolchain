@@ -363,7 +363,7 @@ output = Path(sys.argv[1])
 version, commit, source_date_epoch, emsdk_version, build_info_path, iverilog_pin = sys.argv[2:]
 build_info = json.loads(Path(build_info_path).read_text(encoding="utf-8"))
 submodule_shas = build_info["submodule_shas"]
-submodule_shas["iverilog"] = iverilog_pin
+submodule_shas["vendor/iverilog"] = iverilog_pin
 
 data = {
     "version": version,
