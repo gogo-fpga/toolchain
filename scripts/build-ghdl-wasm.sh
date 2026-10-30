@@ -8,6 +8,61 @@
 # SPDX-License-Identifier: Apache-2.0
 set -euo pipefail
 
+usage() {
+  printf 'Usage: %s [--variant=B0|O1|O2|O3|Os|O3+LTO]\n' "${0##*/}" >&2
+  exit 2
+}
+
+variant=Os
+variant_seen=false
+for arg in "$@"; do
+  case "$arg" in
+    --variant=*)
+      [[ "$variant_seen" == false ]] || usage
+      variant="${arg#*=}"
+      variant_seen=true
+      ;;
+    *) usage ;;
+  esac
+done
+
+ada_opt=O1
+c_opt=O2
+lto=false
+ada_compile_flags=()
+c_compile_flags=()
+link_flags=()
+case "$variant" in
+  B0) ;;
+  O1|O2|O3|Os)
+    ada_opt="$variant"
+    c_opt="$variant"
+    ;;
+  O3+LTO)
+    ada_opt=O3
+    c_opt=O3
+    lto=true
+    link_flags=(-O3 -flto)
+    ;;
+  Os+LTO)
+    printf '%s\n' 'Os+LTO is excluded by the recorded S9 link failure.' >&2
+    exit 2
+    ;;
+  *) usage ;;
+esac
+ada_compile_flags=("-$ada_opt")
+c_compile_flags=("-$c_opt")
+gpr_lto_switch=
+ada_flag_summary="-$ada_opt"
+c_flag_summary="-$c_opt"
+if [[ "$lto" == true ]]; then
+  ada_compile_flags+=(-flto)
+  c_compile_flags+=(-flto)
+  gpr_lto_switch=', "-flto"'
+  ada_flag_summary+=' -flto'
+  c_flag_summary+=' -flto'
+fi
+
 readonly ghdl_pin=e589c698c351369ac5bcfe7abe1f1152ac5d4727
 readonly gcc_pin=ed10445fe222d3973ae13eda9bf211f315c5e3f9
 readonly adawebpack_version=24.0.0
@@ -31,13 +86,38 @@ case "$build_root" in
     ;;
 esac
 
+scratch_root=${GHDL_WASM_SCRATCH_ROOT:-"$build_root"}
+case "$scratch_root" in
+  /*) ;;
+  *) scratch_root="$root/$scratch_root" ;;
+esac
+mkdir -p "$scratch_root"
+scratch_root=$(CDPATH='' cd -- "$scratch_root" && pwd)
+tmp_root=${TMPDIR:-/tmp}
+case "$tmp_root" in
+  /*) ;;
+  *) tmp_root="$root/$tmp_root" ;;
+esac
+tmp_root=$(CDPATH='' cd -- "$tmp_root" && pwd)
+case "$scratch_root" in
+  "$root"/build|"$root"/build/*|"$tmp_root"/*) ;;
+  *)
+    printf 'GHDL_WASM_SCRATCH_ROOT must be inside %s/build or %s\n' "$root" "$tmp_root" >&2
+    exit 2
+    ;;
+esac
+if [[ "$scratch_root" == "$tmp_root" ]]; then
+  printf 'GHDL_WASM_SCRATCH_ROOT must not be the temporary directory itself.\n' >&2
+  exit 2
+fi
+
 readonly cache_root="$root/build/cache/ghdl-wasm"
 readonly host_package_cache="$root/build/cache/ghdl-host-packages"
 readonly host_tools="$root/build/host-tools"
 readonly host_lib_dir="$host_tools/usr/lib/x86_64-linux-gnu"
 readonly ada_lib_dir="$host_tools/adawebpack-libs/usr/lib/x86_64-linux-gnu"
-readonly work_dir="$build_root/ghdl-wasm-work"
-readonly native_build="$build_root/ghdl-native-build"
+readonly work_dir="$scratch_root/ghdl-wasm-work"
+readonly native_build="$scratch_root/ghdl-native-build"
 readonly native_prefix="$build_root/ghdl-native"
 readonly output_dir="$build_root/ghdl-wasm"
 readonly sdk_dir="${WASI_SDK_DIR:-$root/build/wasi-sdk-34.0-x86_64-linux}"
@@ -75,6 +155,9 @@ start_time=$(date +%s)
 source_date_epoch=$(git -C vendor/ghdl show -s --format=%ct "$ghdl_pin")
 export SOURCE_DATE_EPOCH="$source_date_epoch"
 printf 'SOURCE_DATE_EPOCH=%s (GHDL %s)\n' "$SOURCE_DATE_EPOCH" "$ghdl_pin"
+printf 'GHDL WASM variant: %s (Ada -%s, wasi.c -%s, LTO=%s)\n' \
+  "$variant" "$ada_opt" "$c_opt" "$lto"
+printf 'GHDL WASM scratch root: %s\n' "$scratch_root"
 
 expected_package_version() {
   case "$1" in
@@ -390,7 +473,9 @@ mkdir -p "$stub_objects"
       compile_mode=(-gnatc)
     fi
     env LD_LIBRARY_PATH="$GHDL_WASM_ADAWP_LD_LIBRARY_PATH" \
-      "$adawebpack/bin/llvm-gcc" -c "${compile_mode[@]}" --target=wasm32 -O1 "${prefix_args[@]}" \
+      "$adawebpack/bin/llvm-gcc" -c "${compile_mode[@]}" --target=wasm32 \
+      "${ada_compile_flags[@]}" \
+      "${prefix_args[@]}" \
       -gnatg -gnatyN -gnatws -I"$stub_ada" "$source"
   done
 )
@@ -408,7 +493,7 @@ project Ghdl_Wasm is
 
    package Compiler is
       for Switches ("Ada") use
-        ("--target=wasm32", "-O1", "-ffile-prefix-map=$root=/src",
+        ("--target=wasm32", "-$ada_opt"$gpr_lto_switch, "-ffile-prefix-map=$root=/src",
          "-ffile-prefix-map=$build_root=/build", "-I$stub_objects");
    end Compiler;
 end Ghdl_Wasm;
@@ -433,7 +518,7 @@ fi
     "$adawebpack/bin/llvm-gnatbind" -n -Lghdlwasm_ -o b_ghdlwasm.adb \
     -aO"$stub_objects" "${ali_files[@]}"
   env LD_LIBRARY_PATH="$GHDL_WASM_ADAWP_LD_LIBRARY_PATH" \
-    "$adawebpack/bin/llvm-gcc" -c --target=wasm32 -O1 "${prefix_args[@]}" \
+    "$adawebpack/bin/llvm-gcc" -c --target=wasm32 "${ada_compile_flags[@]}" "${prefix_args[@]}" \
     -gnatg -gnatyN -gnatws -I"$stub_ada" -I"$stub_objects" \
     -I"$adawebpack/lib/rts-native/adalib" b_ghdlwasm.adb
 )
@@ -459,11 +544,12 @@ while IFS= read -r object; do
     extra_objects+=("$object")
   fi
 done < <(find "$stub_objects" -name '*.o' -print | sort)
-"$sdk_dir/bin/clang" --target=wasm32-wasip1 -nostartfiles -O2 \
+"$sdk_dir/bin/clang" --target=wasm32-wasip1 -nostartfiles "${c_compile_flags[@]}" \
   "${prefix_args[@]}" -c "$root/scripts/ghdl-wasm/rts/wasi.c" \
   -o "$work_dir/ghdl-wasm-wasi.o"
 extra_objects+=("$work_dir/ghdl-wasm-wasi.o")
 "$sdk_dir/bin/clang" --target=wasm32-wasip1 -nostartfiles \
+  "${link_flags[@]}" \
   -Wl,--no-entry -Wl,--allow-undefined -Wl,--export-memory \
   -Wl,--export=malloc -Wl,--export=free -Wl,--export=__wasm_call_ctors \
   -Wl,--export=ghdlwasm_init \
@@ -510,6 +596,15 @@ tar --create --file "$work_dir/libraries.tar" \
 gzip --no-name --best --stdout "$work_dir/libraries.tar" > "$output_dir/libraries.tar.gz"
 {
 printf 'ghdl_commit\t%s\n' "$ghdl_pin"
+  printf 'variant\t%s\n' "$variant"
+  printf 'ada_compile_flags\t%s\n' "$ada_flag_summary"
+  printf 'wasi_c_compile_flags\t%s\n' "$c_flag_summary"
+  if [[ "$lto" == true ]]; then
+    printf 'wasm_link_flags\t-%s -flto\n' "$ada_opt"
+  else
+    printf 'wasm_link_flags\tnone\n'
+  fi
+  printf 'wasm_linker\t%s\n' "$sdk_dir/bin/wasm-ld"
   printf 'gcc_libgnat_tag_object\t%s\n' "$gcc_pin"
   printf 'gcc_libgnat_commit\t%s\n' "$gcc_commit"
   printf 'source_date_epoch\t%s\n' "$SOURCE_DATE_EPOCH"
