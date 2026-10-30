@@ -29,3 +29,13 @@ W4,41012642448,synth-native,Yosys native 版をビルド,4,15,1,13,14,0.000,,not
 W4,41012642448,nextpnr,WASI nextpnr と chipdb をビルド,4,15,1,10,14,2.683,,not exposed in public job log/API; step-summary only
 W4,41012642448,nextpnr,native nextpnr をビルド,4,15,1,10,14,1.350,,not exposed in public job log/API; step-summary only
 W4,41012642448,ghdl,GHDL WASM と native 版をビルド,4,15,1,11,14,4.167,,not exposed in public job log/API; step-summary only
+R7,41016216564,Yosys WASI synthesis,Yosys WASI 版をビルド,4,15,1,12,14,0.000,,"cache hit; build step skipped, no RSS sample"
+R7,41016216564,Yosys native synthesis,Yosys native 版をビルド,4,15,1,13,14,0.000,,"cache hit; build step skipped, no RSS sample"
+R7,41016216564,nextpnr WASI place and route,WASI nextpnr と chipdb をビルド,4,15,1,13,14,2.983,1249336,public job log resource summary
+R7,41016216564,nextpnr WASI place and route,native nextpnr をビルド,4,15,1,10,14,0.783,871464,public job log resource summary
+R7,41016216564,GHDL WASM synthesis,GHDL WASM と native 版をビルド,4,15,1,11,14,4.117,165868,public job log resource summary
+R8,41019492664,Yosys WASI synthesis,Yosys WASI 版をビルド,4,15,1,12,14,0.000,,"cache hit; build step skipped, no RSS sample"
+R8,41019492664,Yosys native synthesis,Yosys native 版をビルド,4,15,0,13,14,0.000,,"cache hit; build step skipped, no RSS sample"
+R8,41019492664,nextpnr WASI place and route,WASI nextpnr と chipdb をビルド,4,15,1,10,14,2.450,1249624,public job log resource summary
+R8,41019492664,nextpnr WASI place and route,native nextpnr をビルド,4,15,1,10,14,1.267,871436,public job log resource summary
+R8,41019492664,GHDL WASM synthesis,GHDL WASM と native 版をビルド,4,15,1,10,13,4.017,165980,public job log resource summary

@@ -120,7 +120,7 @@ S5B では Os、LTO、OsLTO を追加比較し、出力同一性、A/A build、�
 
 ### S8: CI ビルドの高速化
 
-S8 v2 では warm の合計時間中央値が 12.233 分、Yosys cache-miss run が 28.183 分でした。全測定 run は成功しましたが、nextpnr chipdb の SHA-256 が一致せず S1 は不合格、max RSS と cache 合計は未確認です。cache=false run も未測定のため、凍結基準による採否は保留します。詳細と raw data は [S8 実験記録](docs/experiments/S8-ci-speed.md) と CSV を参照してください。
+S8 v2 の warm / Yosys cache-miss 合計時間中央値は 12.233 / 28.183 分でした。R1-R6 で見つかった chipdb 差は Apicula の hash-ordered set 反復が原因で、`PYTHONHASHSEED=0` 固定後の R7 miss / R8 hit は4 chipdb とも local seed-0 hash に一致しました。計測した nextpnr / GHDL build の max RSS は12 GiB以下ですが、cache hit で省略された Yosys build と Build job は未計測です。GHDL native `.cf` は timestamp が変わる既知の中間物で、WASM staging copy は正規化されます。cache=false run と cache 合計は未測定のため採否は保留します。詳細と raw data は [S8 実験記録](docs/experiments/S8-ci-speed.md) と CSV を参照してください。
 
 ### Pyodide 上の Apicula `gowin_pack`
 
