@@ -363,11 +363,12 @@ jobs:
         name: Yosys WASI 版をビルド
         if: steps.synth-wasi-output-cache-restore.outputs.cache-hit != 'true' || steps.synth-wasi-output-cache-check.outputs.valid != 'true'
         run: |
-          mkdir -p build/timings
+          timing_dir="$GITHUB_WORKSPACE/build/timings"
+          mkdir -p "$timing_dir"
           printf 'nproc='
           nproc
           free -g
-          JOBS="$(nproc)" /usr/bin/time -v -o build/timings/yosys-wasi.time.log scripts/build-synth-wasm.sh
+          LC_ALL=C JOBS="$(nproc)" /usr/bin/time -v -o "$timing_dir/yosys-wasi.time.log" scripts/build-synth-wasm.sh
 
       - id: decoder-wasi-build
         name: 圧縮 decoder WASM をビルド
@@ -399,14 +400,14 @@ jobs:
           CACHE_HIT: ${{ steps.synth-wasi-output-cache-restore.outputs.cache-hit }}
           CACHE_VALID: ${{ steps.synth-wasi-output-cache-check.outputs.valid }}
         run: |
-          log=build/timings/yosys-wasi.time.log
+          log="$GITHUB_WORKSPACE/build/timings/yosys-wasi.time.log"
           {
             echo '### Yosys WASI build resources'
             if [[ "$BUILD_OUTCOME" == skipped && "$CACHE_HIT" == true && "$CACHE_VALID" == true ]]; then
               echo 'Valid output cache hit; build skipped.'
             elif [[ -f "$log" ]]; then
-              wall="$(sed -n 's/^Elapsed (wall clock) time (h:mm:ss or m:ss): //p' "$log" | tail -n 1)"
-              rss="$(sed -n 's/^Maximum resident set size (kbytes): //p' "$log" | tail -n 1)"
+              wall="$(sed -n 's/^[[:space:]]*Elapsed (wall clock) time (h:mm:ss or m:ss): //p' "$log" | tail -n 1)"
+              rss="$(sed -n 's/^[[:space:]]*Maximum resident set size (kbytes): //p' "$log" | tail -n 1)"
               if [[ -z "$wall" || -z "$rss" ]]; then
                 echo "Incomplete time log: $log" >&2
                 exit 1
@@ -546,11 +547,12 @@ jobs:
         name: Yosys native 版をビルド
         if: steps.synth-native-output-cache-restore.outputs.cache-hit != 'true' || steps.synth-native-output-cache-check.outputs.valid != 'true'
         run: |
-          mkdir -p build/timings
+          timing_dir="$GITHUB_WORKSPACE/build/timings"
+          mkdir -p "$timing_dir"
           printf 'nproc='
           nproc
           free -g
-          JOBS="$(nproc)" /usr/bin/time -v -o build/timings/yosys-native.time.log scripts/build-synth-wasm.sh --native
+          LC_ALL=C JOBS="$(nproc)" /usr/bin/time -v -o "$timing_dir/yosys-native.time.log" scripts/build-synth-wasm.sh --native
 
       - name: Yosys native output cache を保存
         if: steps.synth-native-output-cache-restore.outputs.cache-hit != 'true' && steps.synth-native-build.outcome == 'success' && github.event_name != 'schedule' && (github.event_name != 'workflow_dispatch' || inputs.cache)
@@ -569,14 +571,14 @@ jobs:
           CACHE_HIT: ${{ steps.synth-native-output-cache-restore.outputs.cache-hit }}
           CACHE_VALID: ${{ steps.synth-native-output-cache-check.outputs.valid }}
         run: |
-          log=build/timings/yosys-native.time.log
+          log="$GITHUB_WORKSPACE/build/timings/yosys-native.time.log"
           {
             echo '### Yosys native build resources'
             if [[ "$BUILD_OUTCOME" == skipped && "$CACHE_HIT" == true && "$CACHE_VALID" == true ]]; then
               echo 'Valid output cache hit; build skipped.'
             elif [[ -f "$log" ]]; then
-              wall="$(sed -n 's/^Elapsed (wall clock) time (h:mm:ss or m:ss): //p' "$log" | tail -n 1)"
-              rss="$(sed -n 's/^Maximum resident set size (kbytes): //p' "$log" | tail -n 1)"
+              wall="$(sed -n 's/^[[:space:]]*Elapsed (wall clock) time (h:mm:ss or m:ss): //p' "$log" | tail -n 1)"
+              rss="$(sed -n 's/^[[:space:]]*Maximum resident set size (kbytes): //p' "$log" | tail -n 1)"
               if [[ -z "$wall" || -z "$rss" ]]; then
                 echo "Incomplete time log: $log" >&2
                 exit 1
@@ -692,12 +694,13 @@ jobs:
         env:
           CACHE_HIT: ${{ steps.nextpnr-cache-restore.outputs.cache-hit }}
         run: |
-          mkdir -p build/timings
+          timing_dir="$GITHUB_WORKSPACE/build/timings"
+          mkdir -p "$timing_dir"
           printf 'nextpnr build cache hit=%s\n' "${CACHE_HIT:-miss}"
           printf 'nproc='
           nproc
           free -g
-          JOBS="$(nproc)" /usr/bin/time -v -o build/timings/nextpnr-wasi.time.log scripts/build-pnr-wasm.sh
+          LC_ALL=C JOBS="$(nproc)" /usr/bin/time -v -o "$timing_dir/nextpnr-wasi.time.log" scripts/build-pnr-wasm.sh
 
       - name: nextpnr build cache を保存
         if: steps.nextpnr-cache-restore.outputs.cache-hit != 'true' && steps.nextpnr-wasi-build.outcome == 'success' && github.event_name != 'schedule' && (github.event_name != 'workflow_dispatch' || inputs.cache)
@@ -715,15 +718,13 @@ jobs:
         env:
           CACHE_HIT: ${{ steps.nextpnr-cache-restore.outputs.cache-hit }}
         run: |
-          mkdir -p build/timings
+          timing_dir="$GITHUB_WORKSPACE/build/timings"
+          mkdir -p "$timing_dir"
           printf 'nextpnr build cache hit=%s\n' "${CACHE_HIT:-miss}"
           printf 'nproc='
           nproc
           free -g
-          JOBS="$(nproc)" /usr/bin/time -v -o build/timings/nextpnr-native.time.log scripts/build-pnr-wasm.sh --native
-
-      - name: WASI Preview 1 shim を検証
-        run: node --test tests/synth/wasi-p1.test.mjs
+          LC_ALL=C JOBS="$(nproc)" /usr/bin/time -v -o "$timing_dir/nextpnr-native.time.log" scripts/build-pnr-wasm.sh --native
 
       - name: nextpnr build resource summary
         if: always()
@@ -738,8 +739,8 @@ jobs:
               echo "Missing time log: $log" >&2
               return 1
             fi
-            wall="$(sed -n 's/^Elapsed (wall clock) time (h:mm:ss or m:ss): //p' "$log" | tail -n 1)"
-            rss="$(sed -n 's/^Maximum resident set size (kbytes): //p' "$log" | tail -n 1)"
+            wall="$(sed -n 's/^[[:space:]]*Elapsed (wall clock) time (h:mm:ss or m:ss): //p' "$log" | tail -n 1)"
+            rss="$(sed -n 's/^[[:space:]]*Maximum resident set size (kbytes): //p' "$log" | tail -n 1)"
             if [[ -z "$wall" || -z "$rss" ]]; then
               echo "Incomplete time log: $log" >&2
               return 1
@@ -751,8 +752,8 @@ jobs:
             printf 'Build cache restore: %s\n\n' "${CACHE_HIT:-miss}"
             echo '| Build | Wall time | Max RSS (KiB) |'
             echo '|---|---:|---:|'
-            report_time 'nextpnr WASI' build/timings/nextpnr-wasi.time.log
-            report_time 'nextpnr native' build/timings/nextpnr-native.time.log
+            report_time 'nextpnr WASI' "$GITHUB_WORKSPACE/build/timings/nextpnr-wasi.time.log"
+            report_time 'nextpnr native' "$GITHUB_WORKSPACE/build/timings/nextpnr-native.time.log"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: nextpnr 成果物を保存
@@ -831,6 +832,9 @@ jobs:
 
       - name: Native nextpnr の実行権限を設定
         run: chmod +x build/native/nextpnr/nextpnr-himbaechel-gowin
+
+      - name: WASI Preview 1 shim を検証
+        run: node --test tests/synth/wasi-p1.test.mjs
 
       - name: WASI/native P&R を比較
         run: node --test tests/synth/nextpnr.test.mjs
@@ -916,20 +920,21 @@ jobs:
       - id: ghdl-build
         name: GHDL WASM と native 版をビルド
         run: |
-          mkdir -p build/timings
+          timing_dir="$GITHUB_WORKSPACE/build/timings"
+          mkdir -p "$timing_dir"
           printf 'nproc='
           nproc
           free -g
-          JOBS="$(nproc)" /usr/bin/time -v -o build/timings/ghdl.time.log scripts/build-ghdl-wasm.sh
+          LC_ALL=C JOBS="$(nproc)" /usr/bin/time -v -o "$timing_dir/ghdl.time.log" scripts/build-ghdl-wasm.sh
 
       - name: GHDL build resource summary
         if: always()
         env:
           CACHE_HIT: ${{ steps.ghdl-cache-restore.outputs.cache-hit }}
         run: |
-          log=build/timings/ghdl.time.log
-          wall="$(sed -n 's/^Elapsed (wall clock) time (h:mm:ss or m:ss): //p' "$log" 2>/dev/null | tail -n 1)"
-          rss="$(sed -n 's/^Maximum resident set size (kbytes): //p' "$log" 2>/dev/null | tail -n 1)"
+          log="$GITHUB_WORKSPACE/build/timings/ghdl.time.log"
+          wall="$(sed -n 's/^[[:space:]]*Elapsed (wall clock) time (h:mm:ss or m:ss): //p' "$log" 2>/dev/null | tail -n 1)"
+          rss="$(sed -n 's/^[[:space:]]*Maximum resident set size (kbytes): //p' "$log" 2>/dev/null | tail -n 1)"
           if [[ -z "$wall" || -z "$rss" ]]; then
             echo "Missing or incomplete time log: $log" >&2
             exit 1
