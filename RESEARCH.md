@@ -81,6 +81,10 @@ T0 では書き込み部だけが実装されています。合成、配置配�
 | Boolector | C | 未確認 | YoWASP が WASI 版を配布 | T6。ライセンスと必要な API、solver の実行時間を確認する。詳しくは[広域調査](docs/research/oss-survey.md)を参照 |
 | [sv-elab（旧 yosys-slang）](https://github.com/povik/sv-elab) | C++ | ISC | この調査では WASM 版を確認できていない | 将来。SystemVerilog 対応の段階で調査する。詳しくは[広域調査](docs/research/oss-survey.md)を参照 |
 
+### GHDL v6.0.0
+
+GHDL v5.1.1..v6.0.0 の 665 commits には合成と Verilog 出力の修正があり、`keep` などの VHDL attribute も Verilog に出力されるようになりました。NEWS の VHDL-2019 対応は初期サポートであり、合成範囲は本リポジトリでは試していないため、VHDL-2008 を既定とし、VHDL-2019 は IEEE library の資材増加と版選択 UI の追加を踏まえて後から選択肢にします。既存の S0 は v6.0.0 の WASM/native 一致を確認したもので、v5.1.1 との比較ではありません。変更の要点と回帰候補は [S0 GHDL build-and-smoke 記録](docs/experiments/S0-ghdl-wasm.md) にまとめました。
+
 [synth-explorer の Yosys ビルド記録](https://github.com/cachanova/synth-explorer/blob/main/tools/yosys-wasm/README.md)は、WASI SDK 33 で LTO とネイティブ WASM 例外を組み合わせたときの symbol type failure を避けるため、LTO を無効にしたと報告しています。この問題を本リポジトリーで再現したわけではありません。
 
 ### Yosys v0.70 と WASI SDK

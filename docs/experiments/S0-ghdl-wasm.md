@@ -104,3 +104,13 @@ VHDL LED blink について、WASM GHDL と native GHDL の双方が出した Ve
 | 6.0.0 | 手動 archive 再梱包 | timestamp `20260308024740.000` での hash は不一致。manifest の値 `20260307174740.000` に合わせて解消 | `build/ghdl-wasm-aa-manual-repack-attempt.log` |
 
 attempt 1/2 は v5.0.1 向け dynamic table patch を v6 の `dyn_htables.ads` に適用した失敗である。full frontend は default flags、`-O0`、`-O0 -gnatd.n` の各条件で再現し、VHDL synthesis に不要な Verilog frontend を build copy から外して解消した。attempt 3 は WASI SDK の `llvm-ar` に切り替えて解消した。runtime failure は AdaWebPack calendar stub が 1970 年を返し、GHDL の `Filesystem.Year_Range` 2000..2099 に反したためで、stub を展開コピー上で固定年に変更した。初回 archive の差は `.cf` catalog の wall-clock timestamp で、staging copy の正規化により解消した。手動再梱包による A/A 証拠は破棄し、上記の直接 full build を最終証拠とした。
+
+## GHDL v6.0.0 の変更履歴の確認
+
+比較範囲は GHDL v5.1.1..v6.0.0 の **665 commits** である。upstream の URL は `.gitmodules` の `vendor/ghdl` から、比較対象の v6.0.0 は `git ls-tree` の gitlink `e589c698c351369ac5bcfe7abe1f1152ac5d4727` から確認した。[GitHub compare](https://github.com/ghdl/ghdl/compare/v5.1.1...e589c698c351369ac5bcfe7abe1f1152ac5d4727) と `vendor/ghdl/NEWS.md` の 2026-03-07 の 6.0 項目を参照した。全 commit subject は [ghdl6-subjects.tsv](S0/ghdl6-subjects.tsv) に原文で記録した。
+
+この範囲には VHDL 合成の修正と Verilog 出力の修正が含まれる。たとえば `smin` / `smax` の出力 template、dynamic insert の幅、single-user-driver 判定が修正され、VHDL の attribute（`keep` など）が Verilog に出力されるようになった。subprogram instantiation、matching case、external name、`numeric_bit` 演算、算術シフトなどの合成対応も増え、解析・合成エラー後の crash を避ける修正も含まれる。NEWS は VHDL-2019 の `--std=19` を初期サポートとして記載している。
+
+回帰時は、attribute と port の出力、式の幅や演算、初期値を含む memory、エラー入力後の処理を重点的に見る。既存の S0 は v6.0.0 の WASM と native の一致を確認するが、v5.1.1 との出力比較ではないため、v5 系からの機能・出力差は本リポジトリでは試していない。
+
+T3 の UI 統合候補は、まず VHDL の `keep` attribute が Verilog と Yosys の合成結果に届くことを fixture で確認すること、次に v6.0.0 で増えた演算・構文の合成 fixture を追加することである。VHDL-2019 は後から選択肢として提供し、既定は VHDL-2008 に保つ。理由は、現時点の対応が初期段階で本リポジトリでは合成範囲を試していないこと、2019 用 IEEE library を含めると配布資材が増えること、言語版を選ぶ UI がまだないことである。
