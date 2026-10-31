@@ -35,6 +35,7 @@ TAGGED_SUBMODULES = (
     "nextpnr",
     "ghdl",
     "iverilog",
+    "surfer",
     "zstd",
     "xz-embedded",
 )
@@ -52,6 +53,12 @@ NODE_INDEX = "https://nodejs.org/dist/index.json"
 ACTIONLINT_RELEASE = "https://api.github.com/repos/rhysd/actionlint/releases/latest"
 RUNNER_IMAGES_README = "https://raw.githubusercontent.com/actions/runner-images/main/README.md"
 WASI_SDK_RELEASE = "https://api.github.com/repos/WebAssembly/wasi-sdk/releases/latest"
+RUST_STABLE_CHANNEL = "https://static.rust-lang.org/dist/channel-rust-stable.toml"
+SURFER_TOOL_RELEASES = {
+    "trunk": "https://api.github.com/repos/trunk-rs/trunk/releases/latest",
+    "wasm-bindgen-cli": "https://api.github.com/repos/rustwasm/wasm-bindgen/releases/latest",
+    "binaryen": "https://api.github.com/repos/WebAssembly/binaryen/releases/latest",
+}
 
 
 def read_text(path: Path) -> str:
@@ -121,6 +128,38 @@ def parse_research_dependency(text: str, dependency: str) -> dict[str, str]:
         if len(cells) >= 4 and cells[0] == dependency:
             return {"version": cells[1], "commit": cells[2], "url": cells[3]}
     raise RuntimeError(f"RESEARCH.md に {dependency} の pin がありません")
+
+
+def parse_surfer_tool_pins(text: str) -> dict[str, dict[str, str]]:
+    lines = text.splitlines()
+    header_index = None
+    for index, line in enumerate(lines):
+        if not line.lstrip().startswith("|"):
+            continue
+        cells = [cell.strip().strip("`") for cell in line.strip().strip("|").split("|")]
+        if cells[:4] == ["Tool", "Version", "SHA-256", "URL"]:
+            header_index = index
+            break
+    if header_index is None:
+        raise RuntimeError("RESEARCH.md に Surfer tool pin 表がありません")
+    pins: dict[str, dict[str, str]] = {}
+    for line in lines[header_index + 2:]:
+        if not line.lstrip().startswith("|"):
+            break
+        cells = [cell.strip().strip("`") for cell in line.strip().strip("|").split("|")]
+        if len(cells) >= 4 and cells[0]:
+            pins[cells[0]] = {"version": cells[1], "sha256": cells[2], "url": cells[3]}
+    required = {"rust", "trunk", "wasm-bindgen-cli", "binaryen"}
+    if set(pins) != required:
+        raise RuntimeError(f"Surfer tool pin 表が不完全です: {sorted(pins)}")
+    if not pins["rust"]["version"] or pins["rust"]["sha256"] != "-":
+        raise RuntimeError("Rust toolchain pin が不正です")
+    for name in ("trunk", "wasm-bindgen-cli", "binaryen"):
+        if not re.fullmatch(r"[0-9a-f]{64}", pins[name]["sha256"]):
+            raise RuntimeError(f"{name} の SHA-256 が不正です")
+        if not pins[name]["url"].startswith("https://"):
+            raise RuntimeError(f"{name} の asset URL が不正です")
+    return pins
 
 
 def parse_archive_pin(text: str, dependency: str) -> dict[str, str]:
@@ -497,6 +536,22 @@ def consistency(root: Path = ROOT) -> list[str]:
 
     research = parse_research_commits(read_text(root / "RESEARCH.md"))
     try:
+        tool_pins = parse_surfer_tool_pins(read_text(root / "RESEARCH.md"))
+        if "surfer-tool-pins" not in read_text(root / "scripts/build-surfer.sh"):
+            errors.append("scripts/build-surfer.sh: pin checker の surfer-tool-pins を使っていません")
+        expected_assets = {
+            "trunk": "trunk-x86_64-unknown-linux-gnu.tar.gz",
+            "wasm-bindgen-cli": "wasm-bindgen-" + tool_pins["wasm-bindgen-cli"]["version"]
+            + "-x86_64-unknown-linux-musl.tar.gz",
+            "binaryen": "binaryen-" + tool_pins["binaryen"]["version"]
+            + "-x86_64-linux.tar.gz",
+        }
+        for name, asset in expected_assets.items():
+            if not tool_pins[name]["url"].endswith(asset):
+                errors.append(f"RESEARCH.md: {name} asset URL が pin と一致しません")
+    except RuntimeError as error:
+        errors.append(f"RESEARCH.md: {error}")
+    try:
         parse_wasi_sdk_pin(read_text(root / "RESEARCH.md"))
     except RuntimeError as error:
         errors.append(f"RESEARCH.md: {error}")
@@ -779,6 +834,31 @@ def upstream_report(root: Path = ROOT) -> str:
         print(f"Node.js: upstream を取得できません: {error}", file=sys.stderr)
         add_row("Node.js Active LTS", "取得できません", "取得できません", "要確認")
 
+    try:
+        rust_pin = parse_surfer_tool_pins(read_text(root / "RESEARCH.md"))["rust"]["version"]
+        rust_match = re.search(r'^version = "([^"]+)"', fetch(RUST_STABLE_CHANNEL), re.MULTILINE)
+        if rust_match is None:
+            raise RuntimeError("Rust stable channel version が見つかりません")
+        add_row("Rust toolchain", rust_pin, rust_match.group(1), compare_status(rust_pin, rust_match.group(1)))
+    except (OSError, urllib.error.URLError, RuntimeError) as error:
+        print(f"Rust toolchain: upstream を取得できません: {error}", file=sys.stderr)
+        add_row("Rust toolchain", "取得できません", "取得できません", "要確認")
+
+    try:
+        tool_pins = parse_surfer_tool_pins(read_text(root / "RESEARCH.md"))
+        for name, url in SURFER_TOOL_RELEASES.items():
+            release = json.loads(fetch(url))
+            tag = str(release.get("tag_name", ""))
+            latest = tag[1:] if re.fullmatch(r"v\d+(?:\.\d+)*", tag) else tag
+            fixed = tool_pins[name]["version"]
+            if not latest:
+                raise RuntimeError(f"{name} latest release tag is missing")
+            add_row(name, fixed, latest, compare_status(fixed, latest))
+    except (OSError, urllib.error.URLError, RuntimeError, json.JSONDecodeError) as error:
+        print(f"Surfer build tools: upstream を取得できません: {error}", file=sys.stderr)
+        for name in SURFER_TOOL_RELEASES:
+            add_row(name, "取得できません", "取得できません", "要確認")
+
     lint_values = dict(ACTIONLINT_ENV.findall(read_text(root / ".github/workflows/lint.yml")))
     try:
         release = json.loads(fetch(ACTIONLINT_RELEASE))
@@ -865,6 +945,7 @@ def main() -> int:
     subparsers.add_parser("yosys-pin", help="print the pinned Yosys values")
     subparsers.add_parser("nextpnr-pin", help="print the pinned nextpnr values")
     subparsers.add_parser("iverilog-pin", help="print the pinned Icarus Verilog values")
+    subparsers.add_parser("surfer-tool-pins", help="print pinned Surfer build tools")
     archive_pin = subparsers.add_parser("archive-pin", help="print a pinned source archive")
     archive_pin.add_argument("dependency", choices=tuple(ARCHIVE_TAG_SOURCES))
     subparsers.add_parser("pnr-cache-pin", help="print the PnR dependency cache inputs")
@@ -898,6 +979,17 @@ def main() -> int:
     if args.command == "iverilog-pin":
         pin = parse_research_dependency(read_text(ROOT / "RESEARCH.md"), "iverilog")
         print("\t".join((pin["version"], pin["commit"], pin["url"])))
+        return 0
+    if args.command == "surfer-tool-pins":
+        pins = parse_surfer_tool_pins(read_text(ROOT / "RESEARCH.md"))
+        values = [
+            pins["rust"]["version"],
+            pins["trunk"]["version"], pins["trunk"]["sha256"], pins["trunk"]["url"],
+            pins["wasm-bindgen-cli"]["version"], pins["wasm-bindgen-cli"]["sha256"],
+            pins["wasm-bindgen-cli"]["url"],
+            pins["binaryen"]["version"], pins["binaryen"]["sha256"], pins["binaryen"]["url"],
+        ]
+        print("\t".join(values))
         return 0
     if args.command == "archive-pin":
         pin = parse_archive_pin(read_text(ROOT / "RESEARCH.md"), args.dependency)

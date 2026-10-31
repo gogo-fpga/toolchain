@@ -1,6 +1,7 @@
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import tempfile
 import unittest
@@ -25,17 +26,24 @@ class CheckPinsTests(unittest.TestCase):
         (self.root / "scripts").mkdir(parents=True)
         (self.root / "docs/experiments").mkdir(parents=True)
         (self.root / "vendor/libusb").mkdir(parents=True)
+        (self.root / "vendor/surfer").mkdir(parents=True)
         (self.root / ".gitmodules").write_text(
             '[submodule "vendor/libusb"]\n'
             "\tpath = vendor/libusb\n"
             "\turl = https://example.invalid/libusb.git\n"
+            "\tshallow = true\n"
+            '[submodule "vendor/surfer"]\n'
+            "\tpath = vendor/surfer\n"
+            "\turl = https://gitlab.com/surfer-project/surfer.git\n"
             "\tshallow = true\n",
             encoding="utf-8",
         )
         (self.root / "RESEARCH.md").write_text(
             "| 依存 | 版 | commit | 取得元 |\n"
             "|---|---|---|---|\n"
-            "| libusb | v1.0.30 | `01234567` | https://example.invalid/libusb.git |\n",
+            "| libusb | v1.0.30 | `01234567` | https://example.invalid/libusb.git |\n"
+            "| surfer | v0.7.0 | `bd749b1f786c1c62cd67893ca71346cbe6983915` | "
+            "https://gitlab.com/surfer-project/surfer.git |\n",
             encoding="utf-8",
         )
         with (self.root / "RESEARCH.md").open("a", encoding="utf-8") as research:
@@ -52,7 +60,24 @@ class CheckPinsTests(unittest.TestCase):
                 "https://gitlab.com/libeigen/eigen/-/archive/5.0.1/eigen-5.0.1.tar.gz |\n"
                 "| adawebpack | 24.0.0 | `8edaae8b9987a20aec430d750f30033f12f953ce2b6437afb87fbf8cc1063796` | "
                 "https://github.com/godunko/adawebpack/releases/download/24.0.0/adawebpack-24.0.0.tar.gz |\n"
+                "\nSurfer WASM build tools:\n\n"
+                "| Tool | Version | SHA-256 | URL |\n"
+                "|---|---|---|---|\n"
+                "| rust | 1.99.1 | - | https://static.rust-lang.org/dist/channel-rust-stable.toml |\n"
+                "| trunk | 0.21.14 | `" + "f" * 64 + "` | "
+                "https://github.com/trunk-rs/trunk/releases/download/v0.21.14/"
+                "trunk-x86_64-unknown-linux-gnu.tar.gz |\n"
+                "| wasm-bindgen-cli | 0.2.118 | `" + "a" * 64 + "` | "
+                "https://github.com/wasm-bindgen/wasm-bindgen/releases/download/0.2.118/"
+                "wasm-bindgen-0.2.118-x86_64-unknown-linux-musl.tar.gz |\n"
+                "| binaryen | version_123 | `" + "b" * 64 + "` | "
+                "https://github.com/WebAssembly/binaryen/releases/download/version_123/"
+                "binaryen-version_123-x86_64-linux.tar.gz |\n"
             )
+        (self.root / "scripts/build-surfer.sh").write_text(
+            "python3 .github/scripts/check-pins.py surfer-tool-pins\n",
+            encoding="utf-8",
+        )
         (self.root / "scripts/build-ghdl-wasm.sh").write_text(
             "readonly adawebpack_version=24.0.0\n"
             "readonly adawebpack_sha256=8edaae8b9987a20aec430d750f30033f12f953ce2b6437afb87fbf8cc1063796\n"
@@ -144,6 +169,17 @@ class CheckPinsTests(unittest.TestCase):
                 "--add",
                 "--cacheinfo",
                 "160000,0123456789abcdef0123456789abcdef01234567,vendor/libusb",
+            ],
+            cwd=self.root,
+            check=True,
+        )
+        subprocess.run(
+            [
+                "git",
+                "update-index",
+                "--add",
+                "--cacheinfo",
+                "160000,bd749b1f786c1c62cd67893ca71346cbe6983915,vendor/surfer",
             ],
             cwd=self.root,
             check=True,
@@ -276,6 +312,13 @@ class CheckPinsTests(unittest.TestCase):
             },
             check_pins.parse_wasi_sdk_pin(research),
         )
+
+    def test_surfer_tool_pins_read_versions_hashes_and_urls(self):
+        pins = check_pins.parse_surfer_tool_pins((self.root / "RESEARCH.md").read_text(encoding="utf-8"))
+        self.assertEqual("1.99.1", pins["rust"]["version"])
+        self.assertEqual("0.21.14", pins["trunk"]["version"])
+        self.assertEqual("f" * 64, pins["trunk"]["sha256"])
+        self.assertTrue(pins["binaryen"]["url"].endswith("binaryen-version_123-x86_64-linux.tar.gz"))
 
     def test_archive_pin_parser_reads_version_checksum_and_url(self):
         research = (
@@ -420,6 +463,11 @@ class CheckPinsTests(unittest.TestCase):
             + "e" * 64
             + '"}]}'
         )
+        self.latest_tool_versions = {
+            "trunk": "v0.21.14",
+            "wasm-bindgen-cli": "0.2.118",
+            "binaryen": "version_123",
+        }
         return {
             name: f"{sha}\trefs/tags/v1.0.0\n"
             for name, sha in self.pinned.items()
@@ -466,6 +514,14 @@ class CheckPinsTests(unittest.TestCase):
                 return "## Available Images\n| `ubuntu-26.04` |\n"
             if url == check_pins.WASI_SDK_RELEASE:
                 return self.latest_wasi_sdk
+            if url == check_pins.RUST_STABLE_CHANNEL:
+                return 'version = "1.99.1"\n'
+            if url in check_pins.SURFER_TOOL_RELEASES.values():
+                name = next(
+                    name for name, release_url in check_pins.SURFER_TOOL_RELEASES.items()
+                    if release_url == url
+                )
+                return json.dumps({"tag_name": self.latest_tool_versions[name]})
             if url == check_pins.APYCULA_PYPI_RELEASE:
                 return '{"info":{"version":"0.35"}}'
             raise AssertionError(f"unexpected URL: {url}")
@@ -552,6 +608,29 @@ class CheckPinsTests(unittest.TestCase):
         self.assertEqual(
             ("Apycula", "0.35", "0.35", "最新"),
             next(row for row in rows if row[0] == "Apycula"),
+        )
+        self.assertEqual(
+            ("surfer", "v1.0.0", "v1.0.0", "最新"),
+            next(row for row in rows if row[0] == "surfer"),
+        )
+        self.assertEqual(
+            ("Rust toolchain", "1.99.1", "1.99.1", "最新"),
+            next(row for row in rows if row[0] == "Rust toolchain"),
+        )
+        for name, version in self.latest_tool_versions.items():
+            expected = version[1:] if re.fullmatch(r"v\d+(?:\.\d+)*", version) else version
+            self.assertEqual(
+                (name, expected, expected, "最新"),
+                next(row for row in rows if row[0] == name),
+            )
+
+    def test_surfer_tool_release_update_is_reported(self):
+        tags = self.prepare_upstream_fixture()
+        self.latest_tool_versions["trunk"] = "v0.22.0"
+        rows, _ = self.upstream_report(tags, self.pinned["libftdi"] + "\tHEAD\n")
+        self.assertEqual(
+            ("trunk", "0.21.14", "0.22.0", "更新あり"),
+            next(row for row in rows if row[0] == "trunk"),
         )
 
     def test_wasi_sdk_release_update_is_reported(self):

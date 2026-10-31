@@ -33,6 +33,7 @@
 | GHDL | v6.0.0 / `e589c698c351369ac5bcfe7abe1f1152ac5d4727` | GPL-2.0-or-later | GHDL WASM に静的リンク | `licenses/GHDL-COPYING.md` |
 | Icarus Verilog | v13_0 / `dfeee909ed9f20b4870dd93423156c0170c0e1ff` | GPL-2.0-or-later | `ivlpp`、`ivl`、`vvp` WASM に静的リンク | `licenses/iverilog-COPYING` |
 | Icarus Verilog `tgt-vvp` | v13_0 / `dfeee909ed9f20b4870dd93423156c0170c0e1ff` | LGPL-2.1 | `ivl` WASM に静的リンク | `licenses/iverilog-tgt-vvp-COPYING.lesser` |
+| Surfer | v0.7.0 / `bd749b1f786c1c62cd67893ca71346cbe6983915` | EUPL-1.2 | ブラウザー用波形ビューアーとして `dist/surfer/` に配布 | `licenses/surfer-LICENSE-EUPL-1.2.txt`、`dist/surfer/licenses/THIRD_PARTY_NOTICES.md` |
 | synth-explorer | `d4dab3def346cb9fdac5bc171d801bd091df72e1` | Apache-2.0 | build script、WASM adapter、3 patches、GHDL WASM tests から一部を採用 | `licenses/synth-explorer-LICENSE` |
 | AdaWebPack | 24.0.0 / SHA-256 `8edaae8b9987a20aec430d750f30033f12f953ce2b6437afb87fbf8cc1063796` | BSD-3-Clause | GHDL WASM の開発用 Ada compiler | `licenses/AdaWebPack-LICENSE.BSD3` |
 | GCC libgnat | GCC 14.1.0 / commit `ed10445fe222d3973ae13eda9bf211f315c5e3f9` | GPL-3.0-or-later with GCC Runtime Library Exception | GNAT runtime units を GHDL WASM に静的リンク | `licenses/GPL-3.0.txt`、`licenses/GCC-RUNTIME-LIBRARY-EXCEPTION` |

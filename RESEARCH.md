@@ -49,6 +49,7 @@ vendor submodule の commit は次のとおりです。pin checker がこの表�
 | nextpnr | nextpnr-0.11.1 | `62e659ed6748e9f60b2a4aa25dd4fe79a9605881` | `https://github.com/YosysHQ/nextpnr.git` |
 | ghdl | v6.0.0 | `e589c698c351369ac5bcfe7abe1f1152ac5d4727` | `https://github.com/ghdl/ghdl.git` |
 | iverilog | v13_0 | `dfeee909ed9f20b4870dd93423156c0170c0e1ff` | `https://github.com/steveicarus/iverilog.git` |
+| surfer | v0.7.0 | `bd749b1f786c1c62cd67893ca71346cbe6983915` | `https://gitlab.com/surfer-project/surfer.git` |
 
 WASI SDK の固定値は pin checker とビルドスクリプトが読む次の表を正とします。
 
@@ -58,6 +59,15 @@ WASI SDK の固定値は pin checker とビルドスクリプトが読む次の�
 | boost | 1.92.0 | `ea7b982002cc9dfbe59b0b217b206f470dc75f3de0bb2973d844118934d82411` | `https://github.com/boostorg/boost/releases/download/boost-1.92.0/boost-1.92.0-b2-nodocs.tar.xz` |
 | eigen | 5.0.1 | `e9c326dc8c05cd1e044c71f30f1b2e34a6161a3b6ecf445d56b53ff1669e3dec` | `https://gitlab.com/libeigen/eigen/-/archive/5.0.1/eigen-5.0.1.tar.gz` |
 | adawebpack | 24.0.0 | `8edaae8b9987a20aec430d750f30033f12f953ce2b6437afb87fbf8cc1063796` | `https://github.com/godunko/adawebpack/releases/download/24.0.0/adawebpack-24.0.0.tar.gz` |
+
+Surfer WASM build tools:
+
+| Tool | Version | SHA-256 | URL |
+|---|---|---|---|
+| rust | 1.99.1 | - | `https://static.rust-lang.org/dist/channel-rust-stable.toml` |
+| trunk | 0.21.14 | `f2b4680cd239693a646a2795e4633c625328d7b2a044fbe749fa3a2fe9e7036b` | `https://github.com/trunk-rs/trunk/releases/download/v0.21.14/trunk-x86_64-unknown-linux-gnu.tar.gz` |
+| wasm-bindgen-cli | 0.2.118 | `00b519c9fc2d6e087265da1a00f29160bfcc6a823993482bc2e691910287427b` | `https://github.com/wasm-bindgen/wasm-bindgen/releases/download/0.2.118/wasm-bindgen-0.2.118-x86_64-unknown-linux-musl.tar.gz` |
+| binaryen | version_123 | `e959f2170af4c20c552e9de3a0253704d6a9d2766e8fdb88e4d6ac4bae9388fe` | `https://github.com/WebAssembly/binaryen/releases/download/version_123/binaryen-version_123-x86_64-linux.tar.gz` |
 
 libftdi は `developer.intra2net.com` に Dependabot が接続できないため、`.gitmodules` の URL と branch から upstream 先端を調べ、「固定版の更新確認」ワークフローで監視します。
 
@@ -102,6 +112,8 @@ S9B は2026-10-30、ユーザーの判断により B0（Ada `-O1`、`wasi.c` `-O
 S0B は T3-2 の統合後に GHDL WASM の Os と B0 を Node / Chromium で各5回測った記録です。7つの positive fixture と4ボードの VHDL template について、native Verilog は220/220、native `.fs` は80/80 run で一致しました。S9B の6 fixture 合計は Node で Os 206.149 ms、B0 211.939 ms、Chromium で Os 261.820 ms、B0 238.565 msでした。これは T3-2 の別 base と成果物による記録値で、採否には使いません。**S0B は記録のみであり、この結果によって既定の Os は変更しません。** compile 時間、各例の中央値・範囲、4 board の後段 timing、失敗した attempt は [S0B 実験記録](docs/experiments/S0B-ghdl-chromium.md) と [raw CSV](docs/experiments/S0B/results.csv) にあります。
 
 Icarus Verilog v13_0 は shallow submodule として固定しました。v13.0 の [NEWS](https://github.com/steveicarus/iverilog/blob/v13_0/NEWS) と [release note](https://github.com/steveicarus/iverilog/releases/tag/v13_0) を通読し、elaboration、event scheduling、VPI、diagnostic の修正、malformed input による crash・memory leak の修正、wire を使用前に宣言する breaking change を確認しました。release note に特定の security advisory はなく、今回追加で採用する新機能はありません。上流 `COPYING` は GPL-2.0-or-later、`tgt-vvp/COPYING.lesser` は LGPL-2.1 です。両方の原文を `licenses/` に含め、Release と source archive の license check に加えました。以前の固定版がないため、更新前との比較はありません。
+
+Surfer v0.7.0 は `https://gitlab.com/surfer-project/surfer.git` の shallow submodule とし、peeled commit `bd749b1f786c1c62cd67893ca71346cbe6983915` に固定しました。upstream の workspace license は EUPL-1.2 です。Rust 1.99.1、Trunk 0.21.14、wasm-bindgen-cli 0.2.118、Binaryen version_123 を SHA-256 とともに固定し、Cargo metadata の WASM 向け normal dependency graph からライセンス一覧を生成します。配布する Surfer は WebGL を必要とし、COOP/COEP 配信下の同一 origin iframe から blob URL の VCD を読み込めます。WASM build は単一スレッドです。別々の clean build 2 回で 453 files の path、size、SHA-256 が一致し、headless Chromium の Surfer E2E は5回の反復すべてに成功しました。local と CI の hash 比較は未確認です。配布前に Service Worker 登録を除き、Surfer は UI にまだ組み込まず、T4 Stack step 2 で扱います。
 
 WASI SDK 34.0 の [C++ exception documentation](https://raw.githubusercontent.com/WebAssembly/wasi-sdk/wasi-sdk-34/CppExceptions.md) と [release](https://github.com/WebAssembly/wasi-sdk/releases/tag/wasi-sdk-34) を確認しました。pin 済み SDK には `eh/libc++abi.a` と `eh/libunwind.a` があり、`-fwasm-exceptions`、`-mllvm -wasm-use-legacy-eh=false`、`-lunwind` で `ivl` / `vvp` を link できます。EH probe は pinned Node 24 と Chromium で実行し、双方で `WASM_EH_OK` を確認しました。例外を無効にせず、Emscripten にも切り替えていません。
 

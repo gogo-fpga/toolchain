@@ -17,6 +17,7 @@ const buildInfoScript = resolve(repoRoot, "scripts/build-info.py");
 const submodules = [
   "vendor/emsdk",
   "vendor/iverilog",
+  "vendor/surfer",
   "vendor/libftdi",
   "vendor/libusb",
   "vendor/openFPGALoader",

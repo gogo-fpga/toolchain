@@ -19,6 +19,7 @@ SUBMODULES = (
     "vendor/zlib",
     "vendor/yosys",
     "vendor/iverilog",
+    "vendor/surfer",
 )
 RELEASE_SOURCE_KEYS = {"version", "commit", "submodule_shas", "emsdk_version"}
 

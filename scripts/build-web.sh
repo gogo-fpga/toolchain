@@ -45,6 +45,11 @@ for artifact in ghdl-synth.wasm libraries.tar.gz; do
     exit 1
   fi
 done
+if [[ ! -s "$build_root/surfer/dist/index.html" ||
+  ! -s "$build_root/surfer/dist/surfer_bg.wasm" ]]; then
+  printf 'Missing required Surfer WASM distribution under %s\n' "$build_root/surfer/dist" >&2
+  exit 1
+fi
 
 python3 "$root/scripts/build-info.py" "$build_info_action" \
   --root "$root" \
@@ -72,6 +77,17 @@ GHDL_ASSET_DIR="$build_root/ghdl-wasm" \
 python3 "$root/scripts/build-synth-assets.py" \
   --output "$build_root/synth" \
   --dist-output "$dist/synth"
+mkdir -p "$dist/surfer"
+cp -R "$build_root/surfer/dist/." "$dist/surfer/"
+cp "$root/THIRD_PARTY_NOTICES.md" "$dist/THIRD_PARTY_NOTICES.md"
+mkdir -p "$dist/licenses"
+cp -R "$root/licenses/." "$dist/licenses/"
+if ! rg -q '^/\*' "$dist/_headers" ||
+  ! rg -q 'Cross-Origin-Opener-Policy: same-origin' "$dist/_headers" ||
+  ! rg -q 'Cross-Origin-Embedder-Policy: require-corp' "$dist/_headers"; then
+  printf 'COOP/COEP headers must cover the /surfer/* route.\n' >&2
+  exit 1
+fi
 python3 "$root/scripts/check-dist-size.py" "$dist"
 
 printf 'Assembled web app in %s from %s\n' "$dist" "$artifacts"

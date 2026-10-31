@@ -29,6 +29,11 @@ submodules=(
   vendor/xz-embedded
   vendor/ghdl
   vendor/iverilog
+  vendor/surfer
+)
+surfer_nested_submodules=(
+  f128
+  instruction-decoder
 )
 ghdl_license_files=(
   licenses/GHDL-COPYING.md
@@ -40,6 +45,9 @@ ghdl_license_files=(
 iverilog_license_files=(
   licenses/iverilog-COPYING
   licenses/iverilog-tgt-vvp-COPYING.lesser
+)
+surfer_license_files=(
+  licenses/surfer-LICENSE-EUPL-1.2.txt
 )
 
 check_ghdl_licenses() {
@@ -62,6 +70,16 @@ check_iverilog_licenses() {
   done
 }
 
+check_surfer_licenses() {
+  local path
+  for path in "${surfer_license_files[@]}"; do
+    if [[ ! -s "$root/$path" ]]; then
+      printf 'Required Surfer license file is missing or empty: %s\n' "$root/$path" >&2
+      return 1
+    fi
+  done
+}
+
 if [[ ${CHECK_GHDL_LICENSES_ONLY:-0} == 1 ]]; then
   check_ghdl_licenses
   printf 'GHDL license files: OK\n'
@@ -70,6 +88,11 @@ fi
 if [[ ${CHECK_IVERILOG_LICENSES_ONLY:-0} == 1 ]]; then
   check_iverilog_licenses
   printf 'Icarus Verilog license files: OK\n'
+  exit 0
+fi
+if [[ ${CHECK_SURFER_LICENSES_ONLY:-0} == 1 ]]; then
+  check_surfer_licenses
+  printf 'Surfer license files: OK\n'
   exit 0
 fi
 yosys_nested_submodules=(
@@ -90,6 +113,9 @@ done
 
 required_files=(
   "$root/dist/build-info.json"
+  "$root/dist/surfer/index.html"
+  "$root/dist/surfer/surfer_bg.wasm"
+  "$root/dist/surfer/licenses/THIRD_PARTY_NOTICES.md"
   "$root/dist/openFPGALoader.mjs"
   "$root/dist/openFPGALoader.wasm"
   "$root/dist/serve.py"
@@ -192,6 +218,7 @@ license_copies=(
   "$root/licenses/GHDL-COPYING.md:GHDL-COPYING.md"
   "$root/licenses/iverilog-COPYING:iverilog-COPYING"
   "$root/licenses/iverilog-tgt-vvp-COPYING.lesser:iverilog-tgt-vvp-COPYING.lesser"
+  "$root/licenses/surfer-LICENSE-EUPL-1.2.txt:surfer-LICENSE-EUPL-1.2.txt"
   "$root/licenses/GPL-3.0.txt:GPL-3.0.txt"
   "$root/licenses/synth-explorer-LICENSE:synth-explorer-LICENSE"
   "$root/licenses/AdaWebPack-LICENSE.BSD3:AdaWebPack-LICENSE.BSD3"
@@ -228,6 +255,7 @@ for entry in "${license_copies[@]}"; do
 done
 check_ghdl_licenses
 check_iverilog_licenses
+check_surfer_licenses
 
 symlink_file="$(find "$web_root" -type l -print -quit)"
 if [[ -n "$symlink_file" ]]; then
@@ -261,6 +289,30 @@ for path in "${submodules[@]}"; do
     printf 'Missing submodule gitlink: %s\n' "$path" >&2
     exit 1
   fi
+done
+surfer_pin="${submodule_shas[vendor/surfer]}"
+if [[ "$surfer_pin" != "$(git -C "$root/vendor/surfer" rev-parse HEAD)" ]]; then
+  printf 'Surfer submodule checkout does not match its gitlink: %s\n' "$surfer_pin" >&2
+  exit 1
+fi
+printf '%s\n' "$surfer_pin" > "$source_root/vendor/surfer/.gitcommit"
+git -C "$root/vendor/surfer" submodule update --init --depth 1 -- "${surfer_nested_submodules[@]}"
+for path in "${surfer_nested_submodules[@]}"; do
+  tree_line="$(git -C "$root/vendor/surfer" ls-tree HEAD -- "$path")"
+  if [[ -z "$tree_line" ]]; then
+    printf 'Missing Surfer nested submodule gitlink: %s\n' "$path" >&2
+    exit 1
+  fi
+  metadata="${tree_line%%$'\t'*}"
+  read -r mode object_type sha <<< "$metadata"
+  if [[ "$mode" != 160000 || "$object_type" != commit ]]; then
+    printf 'Expected a Surfer nested submodule gitlink for %s\n' "$path" >&2
+    exit 1
+  fi
+  mkdir -p "$source_root/vendor/surfer/$path"
+  git -C "$root/vendor/surfer/$path" archive --format=tar "$sha" \
+    | tar -xf - -C "$source_root/vendor/surfer/$path"
+  printf '%s\n' "$sha" > "$source_root/vendor/surfer/$path/.gitcommit"
 done
 ghdl_pin="${submodule_shas[vendor/ghdl]}"
 if [[ "$ghdl_pin" != "$(git -C "$root/vendor/ghdl" rev-parse HEAD)" ]]; then
@@ -302,6 +354,8 @@ for path in "${yosys_nested_submodules[@]}"; do
 done
 
 source_required_files=(
+  "$source_root/scripts/build-surfer.sh"
+  "$source_root/scripts/collect-surfer-licenses.py"
   "$source_root/scripts/build-iverilog-wasm.sh"
   "$source_root/scripts/build-iverilog-info.py"
   "$source_root/scripts/build-ghdl-wasm.sh"
@@ -318,6 +372,7 @@ source_required_files=(
   "$source_root/web/lib/vhdl-order.mjs"
   "$source_root/patches/ghdl/blackbox-verilog.patch"
   "$source_root/patches/iverilog/static-wasi.patch"
+  "$source_root/patches/surfer/remove-service-worker.patch"
   "$source_root/patches/ghdl/grt-stdio.patch"
   "$source_root/patches/ghdl/vhdl-only-synthesis.patch"
 )
@@ -344,6 +399,12 @@ done
 for license_file in "${iverilog_license_files[@]}"; do
   if [[ ! -s "$source_root/$license_file" ]]; then
     printf 'Source archive is missing a required Icarus Verilog license: %s\n' "$license_file" >&2
+    exit 1
+  fi
+done
+for license_file in "${surfer_license_files[@]}"; do
+  if [[ ! -s "$source_root/$license_file" ]]; then
+    printf 'Source archive is missing a required Surfer license: %s\n' "$license_file" >&2
     exit 1
   fi
 done
@@ -424,6 +485,7 @@ labels = {
     "vendor/xz-embedded": "xz-embedded",
     "vendor/ghdl": "GHDL",
     "vendor/iverilog": "Icarus Verilog",
+    "vendor/surfer": "Surfer",
 }
 rows = []
 for path in submodules:

@@ -26,5 +26,7 @@
 | [S10 Icarus Verilog WASM 化の凍結基準](S10-iverilog-wasm-criteria.md) | 3つの WASM の再現性、native parity、negative control の条件 | 測定前に固定 |
 | [S11 NVC r1.23.1 の WASM 化](S11-nvc-wasm.md) | Emscripten NVC の callback signature mismatch を特定。cast emulation 後も Node simulation が完走せず、5-file limit で停止 | 中止（5-file limit） |
 | [S11 NVC WASM 化の凍結基準](S11-nvc-wasm-criteria.md) | NVC WASM の build、parity、negative control の基準と延長条件 | 測定前に固定 |
+| [S12 Surfer WASM 化](S12-surfer-wasm.md) | Surfer v0.7.0 の WASM build、配布、browser test と再現性 | ローカル検証済み（CI hash 比較待ち） |
+| [S12 Surfer WASM 化の凍結基準](S12-surfer-wasm-criteria.md) | Surfer の再現 build、browser load、negative control の条件 | 測定前に固定 |
 
 仮想デバイスによる測定値は、実機の値として扱いません。
