@@ -127,7 +127,7 @@ jobs:
       - name: 必要な submodule を取得
         run: |
           git submodule update --init --depth 1 -- \
-            vendor/emsdk vendor/libftdi vendor/libusb vendor/openFPGALoader \
+            vendor/emsdk vendor/iverilog vendor/libftdi vendor/libusb vendor/openFPGALoader \
             vendor/yomiyasu vendor/zlib vendor/zstd vendor/yosys vendor/nextpnr
           git -C vendor/yosys submodule update --init --depth 1 -- \
             abc libs/cxxopts libs/fmt libs/tomlplusplus libs/boost_regex libs/symfpu
