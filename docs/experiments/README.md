@@ -24,7 +24,7 @@
 | [S0B GHDL Chromium 測定の凍結基準](S0B-ghdl-chromium-criteria.md) | GHDL WASM の Node / Chromium 測定条件と正しさの確認 | 測定前に固定 |
 | [S10 Icarus Verilog WASM 化](S10-iverilog-wasm.md) | Icarus v13_0 の WASI build、native parity、制限、artifact hash | 完了 |
 | [S10 Icarus Verilog WASM 化の凍結基準](S10-iverilog-wasm-criteria.md) | 3つの WASM の再現性、native parity、negative control の条件 | 測定前に固定 |
-| [S11 NVC r1.23.1 の WASM 化](S11-nvc-wasm.md) | WASI と Emscripten の configure probe、打ち切り理由と失敗ログ | 中止（凍結基準の打ち切り） |
-| [S11 NVC WASM 化の凍結基準](S11-nvc-wasm-criteria.md) | NVC WASM のビルド、parity、negative control の条件 | 測定前に固定 |
+| [S11 NVC r1.23.1 の WASM 化](S11-nvc-wasm.md) | Emscripten の configure は成功、WASM32 向け JIT build の失敗と cutoff log | 中止（延長後の cutoff） |
+| [S11 NVC WASM 化の凍結基準](S11-nvc-wasm-criteria.md) | NVC WASM の build、parity、negative control の基準と延長条件 | 測定前に固定 |
 
 仮想デバイスによる測定値は、実機の値として扱いません。

@@ -1,6 +1,6 @@
 # S11 NVC r1.23.1 の WASM 化
 
-- 状態: 中止（凍結基準の打ち切り条件）
+- 状態: 中止（延長試行で Emscripten の WASM 向け JIT build に失敗）
 - 日付: 2026-10-31
 - 関連: [凍結基準](S11-nvc-wasm-criteria.md)
 
@@ -24,7 +24,7 @@ NVC r1.23.1 を LLVM なしで WASM にし、ブラウザーと Node の WASI ho
 | Node.js | emsdk 同梱 Node v24.19.0。WASM runtime test は未実施 |
 | zstd | pinned `vendor/zstd` commit `f8745da6ff1ad1e7bab384bd1f9d742439278e99` を Emscripten 用 static library に build |
 | NVC submodule | cutoff path のため `vendor/nvc` は追加せず |
-| 出力先 | `build/S11/`。configure probe と zstd build のみ。NVC executable/WASM は未生成 |
+| 出力先 | `build/S11/`。configure probe、zstd build、延長時の Emscripten build。NVC executable/WASM は未生成 |
 | 変える条件 | WASI から Emscripten へ移行。両方で `--disable-llvm` |
 | 固定した設定 | NVC r1.23.1、Emscripten では `-pthread -fwasm-exceptions -mllvm -wasm-use-legacy-eh=false -sSTANDALONE_WASM` |
 
@@ -82,7 +82,7 @@ The requested Emscripten form included `-fwasm-exceptions` and `-sSTANDALONE_WAS
 
 | Frozen criterion | Result |
 |---|---|
-| 1. Build succeeds | Not met. WASI configure stopped at pthread detection; Emscripten configure stopped at the required `_Unwind_Backtrace` link probe |
+| 1. Build succeeds | Not met. WASI configure stopped at pthread detection; the initial Emscripten configure stopped at `_Unwind_Backtrace`; after the extension backtrace patch, configure passed but compilation failed in `jit-code.c` and `jit-ffi.c` |
 | 2. Two clean builds are byte-identical | Not run |
 | 3. Native/WASM report and waveform parity | Not run |
 | 4. Syntax, undefined entity, severity failure, corrupted-WASM controls | Not run |
@@ -115,9 +115,57 @@ The first Emscripten configure stopped earlier because libzstd was not found. Bu
 
 ## 結論と未確認事項
 
-方式 1 は ucontext と pthread の不在により使えず、方式 2 は required `_Unwind_Backtrace` link probe を通過しませんでした。凍結基準の方式 3 の打ち切り条件に該当するため、ここで実装を止めます。NVC submodule、patch、build script、host、fixtures、tests、CI は追加していません。次の4つの条件は未確認です: 2回の WASM build の再現性、native parity、negative controls、5回連続 test。
+方式 1 は ucontext と pthread の不在により使えず、最初の方式 2 の configure は required `_Unwind_Backtrace` link probe を通過しませんでした。初回の打ち切り時点では、NVC submodule、patch、build script、host、fixtures、tests、CI は追加していません。延長試行の結果は次節に記録します。
 
 NVC r1.23.1 以外の changelog、NVC WASM の import list、ブラウザー/Node runtime、VITAL library の配布条件、実機 FPGA は本リポジトリーでは試していません。
+
+## 延長試行
+
+開始は `2026-10-31T00:38:14Z`、打ち切りは `2026-10-31T00:44:05Z` です。経過時間は **5 分 51 秒**で、4 時間の上限には達していません。延長基準は `36a1afe` で固定し、その前に #37 の head を取り込む merge commit `c9a301b913a2661da81c17aa776d0745fea44971` を作成しました。最初の基準 1〜5 は変更していません。
+
+`build/S11/wasi-source` の既存 NVC ソースを使いました。この展開物には Git metadata がないため、この試行ではその commit を独立に再確認できません。以前の記録では r1.23.1 の peeled commit を `fab54a9e96964b431050d837e163c22282a1df6c` と確認しています。
+
+`patches/nvc/emscripten-disable-backtrace.patch` の 1 ファイルを適用しました。Emscripten では configure の unwinder 検査を省き、`src/debug.c` の backtrace、unwind 情報、`dlfcn.h` の参照を無効にします。元の `configure.ac` と `src/debug.c` に対する patch であり、vendor source は編集していません。
+
+Emscripten 6.0.13 の configure はこの patch で成功しました。probe は `ucontext.h` と `sys/ucontext.h` を検出し、`getcontext` は検出しませんでした。`-pthread` と `-lpthread` の probe は成功しました。NVC source には `swapcontext`、`makecontext`、`setcontext` による coroutine 切り替えが見つからず、`ucontext_t` の参照は signal/stop-world の状態取得に使われていました。このため、coroutine 置換 patch は作成していません。
+
+configure は system `pkg-config` 経由で libffi を検出しましたが、build では `src/jit/jit-ffi.c` の `<ffi.h>` が見つからず停止しました。同時に、より根本的な対象外の build blocker が確認されました。`src/jit/jit-code.c` の `code_emit_trampoline` は `ARCH_X86_64` と `ARCH_ARM64` の場合だけ `veneer` を定義し、WASM32 向けの branch がありません。`--disable-llvm` でも `src/jit/jit-code.o` が compile 対象になり、Emscripten の build は `veneer` の未宣言エラーで失敗しました。WASM 用 JIT backend の実装、または core JIT を置き換える変更は延長で許可された patch 範囲外のため、追加 patch や再 build は行わず打ち切りました。libffi 経路を塞ぐだけでは、この JIT build blocker は解消しません。
+
+再現時は repository root から、固定済み SDK の Emscripten environment と以下の configure/build command を使います。`PKG_CONFIG_PATH` と `CPPFLAGS` は既存の pinned zstd prefix を指します。Emscripten の JS と WASM 出力を許可する延長基準に従い、この試行では `-sSTANDALONE_WASM` を指定していません。
+
+```sh
+source build/emsdk-6.0.13/emsdk_env.sh
+export PKG_CONFIG_PATH="$PWD/build/S11/emscripten-deps/lib/pkgconfig"
+export CPPFLAGS="-I$PWD/build/S11/emscripten-deps/include"
+export LDFLAGS="-L$PWD/build/S11/emscripten-deps/lib -pthread -fwasm-exceptions -mllvm -wasm-use-legacy-eh=false"
+export CFLAGS="-O2 -g0 -pthread -fwasm-exceptions -mllvm -wasm-use-legacy-eh=false"
+export CXXFLAGS="-O2 -g0 -pthread -fwasm-exceptions -mllvm -wasm-use-legacy-eh=false"
+
+(cd build/S11/wasi-source && autoreconf --force --install -I m4)
+(cd build/S11/emscripten-configure-backtrace && \
+  CC=emcc CXX=em++ ../wasi-source/configure \
+    --build=x86_64-pc-linux-gnu --host=wasm32-unknown-emscripten \
+    --disable-llvm --disable-tcl --disable-vital)
+make -C build/S11/emscripten-configure-backtrace -j4
+```
+
+| 延長後の基準 | 結果 |
+|---|---|
+| 1. Build succeeds | 未達。configure は成功したが、`jit-code.c` と `jit-ffi.c` の compile に失敗 |
+| 2. 2 回の clean build が byte-identical | 未実施 |
+| 3. native/WASM の report と waveform parity | 未実施 |
+| 4. syntax/entity/severity failure と破損 WASM の負の対照 | 未実施 |
+| 5. 5 回連続テスト | 未実施 |
+
+extension の失敗ログは `build/S11/` に保持しています。
+
+| Log | SHA-256 | 結果 |
+|---|---|---|
+| `build/S11/autoreconf-emscripten-backtrace.log` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` | autoreconf 成功、出力なし |
+| `build/S11/emscripten-configure-backtrace.log` | `4bc98a4473c6bf857da1b590bc762f5a8cd9376b50e185d186314839e30ef027` | backtrace patch 適用後の Emscripten configure 成功 |
+| `build/S11/emscripten-build-backtrace.log` | `ad0202be949752b7f8749b10eab89ffcfd455257354de6a127d7618f28590aeb` | `jit-code.c` の `veneer` と `jit-ffi.c` の `ffi.h` で compile 失敗 |
+
+cutoff path として `vendor/nvc`、build script、host、fixtures、tests、CI job、license bundle は追加していません。patch は再現に必要な 1 ファイルだけです。
 
 ## ログ
 

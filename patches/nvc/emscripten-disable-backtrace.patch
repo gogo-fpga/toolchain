@@ -1,0 +1,115 @@
+--- a/configure.ac
++++ b/configure.ac
+@@ -241,17 +241,19 @@
+ AM_CONDITIONAL([ENABLE_TCL], [test x$enable_tcl = xyes])
+ 
+-AC_CHECK_HEADER([unwind.h], [],
+-  [AC_MSG_ERROR([required header unwind.h not found (try installing libunwind)])])
+-
+-AC_SEARCH_LIBS([_Unwind_Backtrace], [c++abi],
+-  [
+-    # libc++-abi needs to link -lpthread on OpenBSD
+-    if test "$ac_cv_search__Unwind_Backtrace" = "-lc++abi"; then
+-      AX_PTHREAD([LIBS="$PTHREAD_LIBS $LIBS"],
+-                 [AC_MSG_ERROR([pthread not found])])
+-    fi
+-  ],
+-  [AC_MSG_ERROR([cannot find library for _Unwind_Backtrace])],
+-  [-lpthread])
++AS_IF([test "x$host_os" != "xemscripten"], [
++  AC_CHECK_HEADER([unwind.h], [],
++    [AC_MSG_ERROR([required header unwind.h not found (try installing libunwind)])])
++
++  AC_SEARCH_LIBS([_Unwind_Backtrace], [c++abi],
++    [
++      # libc++-abi needs to link -lpthread on OpenBSD
++      if test "$ac_cv_search__Unwind_Backtrace" = "-lc++abi"; then
++        AX_PTHREAD([LIBS="$PTHREAD_LIBS $LIBS"],
++                   [AC_MSG_ERROR([pthread not found])])
++      fi
++    ],
++    [AC_MSG_ERROR([cannot find library for _Unwind_Backtrace])],
++    [-lpthread])
++])
+ 
+ case $host_os in
+--- a/src/debug.c
++++ b/src/debug.c
+@@ -32,5 +32,7 @@
+ #include <stdlib.h>
+ #include <string.h>
+ #include <sys/types.h>
++#ifndef __EMSCRIPTEN__
+ #include <unwind.h>
++#endif
+ 
+@@ -38,5 +40,7 @@
+ #include <unistd.h>
+ #include <fcntl.h>
+ #include <assert.h>
++#ifndef __EMSCRIPTEN__
+ #include <dlfcn.h>
++#endif
+ #include <errno.h>
+@@ -74,4 +78,5 @@
+ ////////////////////////////////////////////////////////////////////////////////
+ // Utilities
+ 
++#ifndef __EMSCRIPTEN__
+ typedef struct _di_lru_cache di_lru_cache_t;
+@@ -863,4 +868,5 @@
+ }
+ 
+ ////////////////////////////////////////////////////////////////////////////////
++#endif
+ // Public interface
+@@ -869,3 +875,6 @@
+ debug_info_t *debug_capture(void)
+ {
++#ifdef __EMSCRIPTEN__
++   return xcalloc(sizeof(debug_info_t));
++#else
+ #ifdef __MINGW32__
+@@ -890,3 +899,4 @@
+    in_progress = false;
+    return di;
++#endif
+ }
+@@ -910,4 +920,10 @@
+ void debug_add_unwinder(void *start, size_t len, debug_unwind_fn_t fn,
+                         void *context)
+ {
++#ifdef __EMSCRIPTEN__
++   (void)start;
++   (void)len;
++   (void)fn;
++   (void)context;
++#else
+    debug_unwinder_t *uw = xmalloc(sizeof(debug_unwinder_t));
+@@ -920,2 +936,3 @@
+    unwinders = uw;
++#endif
+ }
+@@ -923,3 +940,6 @@
+ void debug_remove_unwinder(void *start)
+ {
++#ifdef __EMSCRIPTEN__
++   (void)start;
++#else
+    for (debug_unwinder_t **p = &unwinders; *p; p = &((*p)->next)) {
+@@ -934,2 +954,3 @@
+    fatal_trace("no unwinder registered for %p", start);
++#endif
+ }
+@@ -937,3 +958,7 @@
+ const char *debug_symbol_name(void *addr)
+ {
++#ifdef __EMSCRIPTEN__
++   (void)addr;
++   return NULL;
++#else
+    debug_frame_t *frame;
+@@ -943,2 +968,3 @@
+    return frame->symbol;
++#endif
+ }
