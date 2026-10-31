@@ -153,7 +153,7 @@ make -C build/S11/emscripten-configure-backtrace -j4
 |---|---|
 | 1. Build succeeds | Pass。Emscripten NVC executable/WASM を link し、`--version` を実行した。Emscripten `make` の標準ライブラリー生成は失敗したが、必要な native standard libraries を生成して使用した |
 | 2. 2 回の clean build が byte-identical | 未実施 |
-| 3. native/WASM の report と waveform parity | 未達。native template testbench は通過したが、WASM は elaboration で trap |
+| 3. native/WASM の report と waveform parity | 未達。後述の関数ポインター cast emulation で WASM の分析と elaboration は通過したが、simulation は完走せず、report と waveform の parity は確認できていない |
 | 4. syntax/entity/severity failure と破損 WASM の負の対照 | 未実施 |
 | 5. 5 回連続テスト | 未実施 |
 
@@ -170,6 +170,8 @@ extension の失敗ログは `build/S11/` に保持しています。
 ## 再開後の検証と打ち切り地点
 
 延長試行の時計は `2026-10-31T00:38:14Z` から継続しました。最初の停止 `00:44:05Z` は `jit-code.c` の guard を backend replacement と取り違えた誤適用でした。修正指示後、`2026-10-31T01:32:23Z` に tracked counter testbench が Node で失敗したことを確認し、停止しました。経過時間は **54 分 09 秒**で、4 時間の上限には達していません。
+
+ユーザーの判断により、試行を `2026-10-31T01:53:45Z` に再開しました。これまでに使った54分09秒を4時間の予算から差し引くと、再開時の残りは **3時間05分51秒**です。ユーザー決定による逸脱として、Addendum の「counter testbench が Node で最後まで動かない」という cutoff は、残り時間内に testbench を完走させられない場合に適用すると解釈します。凍結基準ファイルは変更していません。
 
 ### interpreter-only dispatch の根拠
 
@@ -197,7 +199,7 @@ RuntimeError: null function or function signature mismatch
 Node.js v24.19.0
 ```
 
-`WORK.TEMPLATE_COUNTER_TB.elab` と VCD は作られず、simulation は始まりませんでした。`nvc-wasm-counter-test.log` でも別の小さな counter testbench が同じ trap になりました。これは「link しても counter testbench が Node で最後まで動かない」という実際の addendum cutoff です。board 別に4回繰り返す test loop は始めていません。VHDL source は全 board ID で同一であることを確認しましたが、4 board の full test は未実施です。根本原因は特定しておらず、stack trace の wasm function index から interpreter 内の特定関数が原因とは断定しません。
+`WORK.TEMPLATE_COUNTER_TB.elab` と VCD は作られず、simulation は始まりませんでした。`nvc-wasm-counter-test.log` でも別の小さな counter testbench が同じ trap になりました。これは「link しても counter testbench が Node で最後まで動かない」という実際の addendum cutoff でした。最初の停止時点では root cause を特定できませんでしたが、再開後の debug build による調査で関数ポインターの戻り値型不一致を確認しました（次節）。board 別に4回繰り返す test loop は始めていません。VHDL source は全 board ID で同一であることを確認しましたが、4 board の full test は未実施です。
 
 再現用には、`createBlinkTemplate("tangnano1k", "vhdl")` が返す `src/top.vhd` と同一であることを確認した source を `build/S11/top.vhd` に用意し、tracked testbench と次のコマンドを使いました。
 
@@ -220,6 +222,29 @@ The first command succeeds; the second exits nonzero with the recorded Node trap
 ```sh
 node --input-type=module -e 'import { createBlinkTemplate } from "./web/lib/templates.mjs"; process.stdout.write(createBlinkTemplate("tangnano1k", "vhdl").files.get("src/top.vhd"));' > build/S11/top.vhd
 ```
+
+### 追加診断と実際の cutoff
+
+ユーザー判断で試行を `2026-10-31T01:53:45Z` に再開し、残り予算は3時間05分51秒でした。Node v24.19.0 用に `-O0 -g --profiling-funcs -sASSERTIONS=2 -sSAFE_HEAP=1` で serial build したところ、analysis は成功し、elaboration は `object_copy_finish` で `RuntimeError: null function or function signature mismatch` になりました。stack は `object_copy_finish` → `tree_copy_finish` → `vhdl_architecture_instance` → `elab_architecture` を示します。`wasm-dis` で `object_copy_finish` を逆アセンブルすると `call_indirect` は1箇所だけでした。
+
+原因は NVC r1.23.1 の callback 型です。[`src/object.h:171`](https://github.com/nickg/nvc/blob/fab54a9e96964b431050d837e163c22282a1df6c/src/object.h#L171) の `object_copy_fn_t` は `bool` を返す一方、[`src/tree.h:638-639`](https://github.com/nickg/nvc/blob/fab54a9e96964b431050d837e163c22282a1df6c/src/tree.h#L638-L639) の `tree_copy_fn_t` と `type_copy_fn_t` は `void` を返します。[`src/tree.c:1405-1406`](https://github.com/nickg/nvc/blob/fab54a9e96964b431050d837e163c22282a1df6c/src/tree.c#L1405-L1406) は後者を `object_copy_fn_t` に cast して保存し、counter testbench の elaboration で実行される `vhdl_architecture_instance` は `tree_copy_cb` と `type_copy_cb` を渡します（[`src/vhdl/vhdl-inst.c:43-57,370-377`](https://github.com/nickg/nvc/blob/fab54a9e96964b431050d837e163c22282a1df6c/src/vhdl/vhdl-inst.c#L43-L57)）。[`src/object.c:1201-1205`](https://github.com/nickg/nvc/blob/fab54a9e96964b431050d837e163c22282a1df6c/src/object.c#L1201-L1205) はその callback を `object_copy_fn_t` として間接呼び出しします。よって、実際に到達した Wasm `call_indirect` が `bool` 戻り値を期待する一方、実体は `void` 戻り値であり、function signature mismatch を発生させます。これは null の JIT/VHPI hook ではなく、関数ポインターの戻り値型不一致です。
+
+`-sEMULATE_FUNCTION_POINTER_CASTS=1` を追加すると、元の elaboration trap は回避できました。しかし、この flag-only workaround では testbench を完走できませんでした。`-sSAFE_HEAP=1` の診断実行では `interp_exit` 中の alignment fault、SAFE_HEAP を外した `-sASSERTIONS=2` 実行では stack cookie overwrite、さらに `-sASSERTIONS=0 -sSTACK_OVERFLOW_CHECK=0` の実行では analysis と elaboration が成功した後、simulation が `** Fatal: (init): missing body for (null)` で停止し、330 bytes の不完全な VCD が残りました。後者の診断ログは `nvc-emulate-noassert-counter-run.log` です。[`src/jit/jit-core.c:299-357`](https://github.com/nickg/nvc/blob/fab54a9e96964b431050d837e163c22282a1df6c/src/jit/jit-core.c#L299-L357) はこの診断を、`jit_fill_irbuf` が対象 MIR unit を得られないときに出しますが、`f->name` が null になる根本原因は未確認です。この二つ目の失敗を最初の function signature mismatch と同一原因とは断定しません。
+
+正しい callback signature に直すには、`src/object.h` の `object_copy_fn_t` を `void` 戻り値に変更する必要があります。これは exempt でない NVC source の6ファイル目となるため、修正には着手できません。指定された `EMULATE_FUNCTION_POINTER_CASTS` でも runtime parity は得られず、build-flag だけでは criteria 3 を達成できないため、file-count cutoff として停止します。NVC patch は従来の2ファイル、out-of-scope NVC source は5ファイルのままで、6ファイル目は変更していません。凍結基準1は link 済み debug artifact については pass のままですが、2、3、4、5は未達または未実施です。成功経路の submodule、build script、host、tests、CI、license、pin は追加していません。
+
+追加診断は `2026-10-31T02:03:23Z` に打ち切りました。再開後の経過は **9分38秒**、延長試行全体の累計は **1時間03分47秒**で、残り予算は **2時間56分13秒**でした。
+
+追加ログと artifact は次のとおりです。
+
+| Path | SHA-256 | 結果 |
+|---|---|---|
+| `build/S11/nvc-debug-build-2.log` | `a0e8d41547afba1f48fe1049540d7a4dc23670013507867759744ee4140c56d6` | `-g --profiling-funcs -sASSERTIONS=2 -sSAFE_HEAP=1` の build 成功 |
+| `build/S11/nvc-debug-counter-elaboration-2.log` | `0e4a7ab3afe72dd60c33155cc91fb9a5de5a4ba3e284a624752777379a8e92bb` | `object_copy_finish` の named stack trace |
+| `build/S11/nvc-debug-emulate-casts-link.log` | `21e7387aa5b1ef35065c72c8251b0943cb61cb3c872282f8917ae97c2a4d5acf` | function-pointer-cast emulation を有効にした link 成功 |
+| `build/S11/nvc-emulate-no-safeheap-counter-run.log` | `37bf0ad1c04d54cc1dbbfb8559e877ac292d9b1e8736e21a0362cd65e87a0668` | assertion build の stack cookie overwrite |
+| `build/S11/nvc-emulate-noassert-counter-run.log` | `036c65f8facc9c4efcd6393776266eb2aab07ece271b1b868e0aee9731523b12` | `missing body for (null)` で simulation 停止 |
+| `build/S11/wasm-template-counter-emulate-noassert/counter.vcd` | `d395001cdd7d2d09871d96f621eee57b144284a9aec654e6fa0329422445958d` | 330-byte の不完全な VCD |
 
 ### 変更範囲と成果物
 
