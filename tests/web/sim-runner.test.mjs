@@ -33,6 +33,7 @@ class FakeWorker {
 }
 
 function completedResult(worker, result = {}) {
+  worker.emit({ type: "started" });
   worker.emit({
     type: "done",
     result: {
@@ -102,6 +103,7 @@ test("timeout terminates the worker and the next run creates a fresh worker", as
     createSimWorker: () => {
       const worker = new FakeWorker((current) => {
         if (workers.length > 1) completedResult(current);
+        else current.emit({ type: "started" });
       });
       workers.push(worker);
       return worker;
@@ -112,6 +114,35 @@ test("timeout terminates the worker and the next run creates a fresh worker", as
   assert.equal(workers[0].terminated, true);
   assert.equal((await runner.run({ files, top: "top", timeLimitMs: 1_000 })).outcome, "ok");
   assert.equal(workers.length, 2);
+  runner.dispose();
+});
+
+test("simulation time limit starts after the worker reports loaded modules", async () => {
+  const runner = createSimRunner({
+    moduleLoadTimeoutMs: 1_000,
+    createSimWorker: () =>
+      new FakeWorker((worker) => {
+        setTimeout(() => completedResult(worker), 40);
+      }),
+  });
+  const result = await runner.run({ files, top: "top", timeLimitMs: 10 });
+  assert.equal(result.outcome, "ok");
+  runner.dispose();
+});
+
+test("module load timeout reports a load failure and terminates the worker", async () => {
+  let worker;
+  const runner = createSimRunner({
+    moduleLoadTimeoutMs: 5,
+    createSimWorker: () => {
+      worker = new FakeWorker();
+      return worker;
+    },
+  });
+  const result = await runner.run({ files, top: "top", timeLimitMs: 1_000 });
+  assert.equal(result.outcome, "failed");
+  assert.match(result.stderr, /Icarus WASM module loading timed out/);
+  assert.equal(worker.terminated, true);
   runner.dispose();
 });
 

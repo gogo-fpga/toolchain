@@ -39,15 +39,16 @@ self.addEventListener("message", async ({ data }) => {
     if (!Array.isArray(data?.files) || data.files.length === 0) {
       throw new Error("The simulation has no Verilog files");
     }
-    const modules = Object.fromEntries(
-      await Promise.all(moduleNames.map(async (name) => [name, await loadModule(name)])),
-    );
     const sourceFiles = data.files
       .filter(({ path }) => /\.v$/i.test(path))
       .map(({ path }) => path);
     if (sourceFiles.length === 0) {
       throw new Error("The simulation has no Verilog source files");
     }
+    const modules = Object.fromEntries(
+      await Promise.all(moduleNames.map(async (name) => [name, await loadModule(name)])),
+    );
+    self.postMessage({ type: "started" });
     const result = runIverilog({
       modules,
       files: data.files,

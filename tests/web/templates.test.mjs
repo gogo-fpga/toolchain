@@ -74,7 +74,9 @@ test("Verilog and VHDL blink projects pass project validation", () => {
       );
       assert.match(files.get(project.files[0].path), /13(?:_)?500_?000|13499999/);
       if (language === "verilog") {
+        assert.match(files.get("src/top.v"), /^`timescale 1ns\/1ps/m);
         const testbench = files.get("src/top_tb.v");
+        assert.match(testbench, /^`timescale 1ns\/1ps/m);
         assert.match(testbench, /\$dumpfile\("wave\.vcd"\)/);
         assert.match(testbench, /\$dumpvars\(0, top_tb\)/);
         assert.match(testbench, /\$finish/);

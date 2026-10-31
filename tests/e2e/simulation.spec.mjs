@@ -7,6 +7,7 @@ const root = resolve(import.meta.dirname, "../..");
 const dist = resolve(root, "dist");
 const screenshots = resolve(root, "build/T4-ui/screens");
 const finiteTestbench = [
+  "`timescale 1ns/1ps",
   "module top_tb;",
   "  reg clk = 1'b0;",
   "  wire led;",
@@ -21,6 +22,7 @@ const finiteTestbench = [
   "endmodule",
 ].join("\n");
 const infiniteTestbench = [
+  "`timescale 1ns/1ps",
   "module top_tb;",
   "  reg clk = 1'b0;",
   "  wire led;",
@@ -136,9 +138,27 @@ test("each board template simulates and loads a top_tb waveform", async ({ page 
     await expect(page.locator("#wave-download-link")).toHaveAttribute("download", "wave.vcd");
     await waitForWaveform(page);
     await page.setViewportSize({ width: 1280, height: 900 });
-    await page.screenshot({ path: resolve(screenshots, `${board}-desktop.png`) });
+    await expect.poll(
+      () => page.locator("#bottom-panel-waveform").evaluate((panel) =>
+        panel.getBoundingClientRect().height
+      ),
+    ).toBeGreaterThanOrEqual(420);
+    await page.locator("#bottom-panel-waveform").scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: resolve(screenshots, `${board}-desktop.png`),
+      fullPage: true,
+    });
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.screenshot({ path: resolve(screenshots, `${board}-mobile.png`) });
+    await expect.poll(
+      () => page.locator("#bottom-panel-waveform").evaluate((panel) =>
+        panel.getBoundingClientRect().height
+      ),
+    ).toBeGreaterThanOrEqual(420);
+    await page.locator("#bottom-panel-waveform").scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: resolve(screenshots, `${board}-mobile.png`),
+      fullPage: true,
+    });
     await page.setViewportSize({ width: 1280, height: 900 });
   }
   assertStaticRequests(page, requests);
@@ -150,14 +170,14 @@ test("Icarus syntax diagnostics point to the project file and source line", asyn
   await replaceFile(
     page,
     "src/top.v",
-    "module top;\n  wire a;\n  assign a = ;\nendmodule\n",
+    "`timescale 1ns/1ps\nmodule top;\n  wire a;\n  assign a = ;\nendmodule\n",
   );
   await page.locator("#simulation-button").click();
   await expect(page.locator("#simulation-status")).toHaveAttribute("data-outcome", "failed", {
     timeout: 15_000,
   });
   await page.locator("#bottom-tab-problems").click();
-  await expect(page.locator("#problem-list")).toContainText("src/top.v:3");
+  await expect(page.locator("#problem-list")).toContainText("src/top.v:4");
   await expect(page.locator("#problem-list")).toContainText("syntax error");
   assertStaticRequests(page, requests);
 });
@@ -168,7 +188,7 @@ test("a successful run without VCD reports the dumpfile guidance", async ({ page
   await replaceFile(
     page,
     "src/top_tb.v",
-    "module top_tb;\n  initial begin\n    #10;\n    $finish;\n  end\nendmodule\n",
+    "`timescale 1ns/1ps\nmodule top_tb;\n  initial begin\n    #10;\n    $finish;\n  end\nendmodule\n",
   );
   await page.locator("#simulation-button").click();
   await expect(page.locator("#simulation-status")).toHaveAttribute("data-outcome", "failed", {

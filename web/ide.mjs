@@ -119,6 +119,8 @@ export function initializeIde({
   const newProjectCancelButton = document.querySelector("#new-project-cancel");
   const tabButtons = [...document.querySelectorAll("[data-bottom-tab]")];
   const tabPanels = [...document.querySelectorAll("[data-bottom-panel]")];
+  const editorPane = document.querySelector(".editor-pane");
+  const ideLayout = editorPane.closest(".ide-layout");
   const toggleFilesButton = document.querySelector("#toggle-files-pane");
   const toggleBoardButton = document.querySelector("#toggle-board-pane");
   const filesPane = document.querySelector("#files-pane");
@@ -837,6 +839,8 @@ export function initializeIde({
   }
 
   function updateTabs(selectedTab) {
+    editorPane.dataset.waveformActive = String(selectedTab === "waveform");
+    ideLayout.classList.toggle("waveform-active", selectedTab === "waveform");
     for (const button of tabButtons) {
       const selected = button.dataset.bottomTab === selectedTab;
       button.setAttribute("aria-selected", String(selected));

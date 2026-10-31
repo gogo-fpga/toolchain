@@ -83,6 +83,7 @@ function normalizeResult(data, files) {
 export function createSimRunner({
   createSimWorker = () =>
     new Worker(new URL("../sim-worker.js", import.meta.url), { type: "module" }),
+  moduleLoadTimeoutMs = 60_000,
 } = {}) {
   let worker = null;
   let active = null;
@@ -99,11 +100,18 @@ export function createSimRunner({
     if (!Number.isFinite(timeLimitMs) || timeLimitMs <= 0) {
       return Promise.resolve(emptyResult("failed", "Invalid simulation time limit"));
     }
-    const operation = { worker: getWorker(), resolve: null, timeout: null };
+    const operation = {
+      worker: getWorker(),
+      resolve: null,
+      loadTimeout: null,
+      timeout: null,
+      started: false,
+    };
     active = operation;
     return new Promise((resolve) => {
       operation.resolve = resolve;
       const cleanup = () => {
+        clearTimeout(operation.loadTimeout);
         clearTimeout(operation.timeout);
         operation.worker.removeEventListener("message", onMessage);
         operation.worker.removeEventListener("error", onError);
@@ -120,7 +128,14 @@ export function createSimRunner({
       };
       operation.finish = finish;
       const onMessage = ({ data }) => {
-        if (data?.type === "done") {
+        if (data?.type === "started" && !operation.started) {
+          operation.started = true;
+          clearTimeout(operation.loadTimeout);
+          operation.loadTimeout = null;
+          operation.timeout = setTimeout(() => {
+            finish(emptyResult("timeout"), true);
+          }, timeLimitMs);
+        } else if (data?.type === "done") {
           finish(normalizeResult(data, files));
         } else if (data?.type === "error") {
           finish(emptyResult("failed", String(data.message ?? "Simulation worker failed")), true);
@@ -135,9 +150,12 @@ export function createSimRunner({
       operation.worker.addEventListener("message", onMessage);
       operation.worker.addEventListener("error", onError);
       operation.worker.addEventListener("messageerror", onMessageError);
-      operation.timeout = setTimeout(() => {
-        finish(emptyResult("timeout"), true);
-      }, timeLimitMs);
+      operation.loadTimeout = setTimeout(() => {
+        finish(
+          emptyResult("failed", "Icarus WASM module loading timed out"),
+          true,
+        );
+      }, moduleLoadTimeoutMs);
       try {
         operation.worker.postMessage({ files, top });
       } catch (error) {

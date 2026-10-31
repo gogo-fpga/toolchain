@@ -64,6 +64,7 @@ export function generateCst(boardId) {
 
 function verilogTemplate() {
   return [
+    "`timescale 1ns/1ps",
     "module top(input wire clk, output reg led);",
     "  reg [23:0] counter = 24'd0;",
     "",
@@ -82,6 +83,7 @@ function verilogTemplate() {
 
 function testbenchTemplate() {
   return [
+    "`timescale 1ns/1ps",
     "module top_tb;",
     "  reg clk = 1'b0;",
     "  wire led;",

@@ -536,7 +536,14 @@ dialog::backdrop {
 }
 
 .simulation-settings .field {
+  min-width: 0;
   margin: 0;
+}
+
+.simulation-settings input {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .waveform-panel {
@@ -594,6 +601,10 @@ dialog::backdrop {
   gap: 0.75rem;
   min-height: 0;
   padding: 0.75rem;
+}
+
+.ide-layout.waveform-active {
+  flex: 0 0 auto;
 }
 
 .ide-sidebar,
@@ -722,6 +733,10 @@ dialog::backdrop {
   display: grid;
   grid-template-rows: auto auto minmax(16rem, 1fr) minmax(12rem, 30vh);
   overflow: hidden;
+}
+
+.editor-pane[data-waveform-active="true"] {
+  grid-template-rows: auto auto minmax(12rem, 1fr) minmax(27.5rem, 50vh);
 }
 
 .editor-heading {

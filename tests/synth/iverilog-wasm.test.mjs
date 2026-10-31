@@ -54,6 +54,7 @@ function filesFor(name, boardId) {
       {
         path: "src/testbench.v",
         content: [
+          "`timescale 1ns/1ps",
           "module tb;",
           "  reg clk = 0;",
           "  wire led;",
@@ -194,6 +195,11 @@ test("four board Verilog templates match native stdout and VCD", () => {
     });
     assert.equal(native.status, 0, `${boardId}: native failed: ${native.stderr}`);
     assert.equal(wasm.status, 0, `${boardId}: WASI failed: ${wasm.stderr}`);
+    assert.doesNotMatch(
+      `${native.stderr}\n${wasm.stderr}`,
+      /timescale|time unit/i,
+      `${boardId}: timescale warning`,
+    );
     assert.equal(wasm.stdout, native.stdout, `${boardId}: stdout differs`);
     assert.equal(pollOneoffCalls, 0, `${boardId}: poll_oneoff is required`);
     assert.ok(native.vcd, `${boardId}: native VCD missing`);
