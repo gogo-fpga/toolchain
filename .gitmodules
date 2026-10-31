@@ -46,3 +46,6 @@
 	path = vendor/iverilog
 	url = https://github.com/steveicarus/iverilog.git
 	shallow = true
+[submodule "vendor/surfer"]
+	path = vendor/surfer
+	url = https://gitlab.com/surfer-project/surfer.git

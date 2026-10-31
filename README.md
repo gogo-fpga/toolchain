@@ -54,3 +54,5 @@ python3 dist/serve.py --port 8000
 ## ライセンス
 
 本リポジトリー自体は BSD-3-Clause です。配布物に含める第三者のソフトウェアとライセンスは [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) を参照してください。
+
+EUPL-1.2 の Surfer v0.7.0 と WASM 実行時依存のライセンス一覧も配布物に含まれます。

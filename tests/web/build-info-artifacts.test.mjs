@@ -20,6 +20,7 @@ const zstdVersion = execFileSync("zstd", ["--version"], { encoding: "utf8" })
 const submodules = [
   "vendor/emsdk",
   "vendor/iverilog",
+  "vendor/surfer",
   "vendor/libftdi",
   "vendor/libusb",
   "vendor/openFPGALoader",
