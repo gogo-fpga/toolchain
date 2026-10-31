@@ -30,6 +30,10 @@ test("build-web rejects missing or tampered build metadata", async (t) => {
     mkdirSync(resolve(temporaryRoot, "ghdl-wasm"));
     writeFileSync(resolve(temporaryRoot, "ghdl-wasm/ghdl-synth.wasm"), "wasm");
     writeFileSync(resolve(temporaryRoot, "ghdl-wasm/libraries.tar.gz"), "libraries");
+    const surferDist = resolve(temporaryRoot, "surfer/dist");
+    mkdirSync(surferDist, { recursive: true });
+    writeFileSync(resolve(surferDist, "index.html"), "<!doctype html>\n");
+    writeFileSync(resolve(surferDist, "surfer_bg.wasm"), "wasm");
     for (const name of [
       "openFPGALoader.mjs",
       "openFPGALoader.wasm",

@@ -34,7 +34,7 @@ for value in "$rust_version" "$trunk_version" "$trunk_sha" "$trunk_url" \
   fi
 done
 
-for tool in curl git patch python3 rg rustup sha256sum tar tee; do
+for tool in curl git patch python3 rustup sha256sum tar tee; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     printf 'Required Surfer build tool not found: %s\n' "$tool" >&2
     exit 1
@@ -105,7 +105,7 @@ if [[ "$(wasm-bindgen --version)" != "wasm-bindgen $bindgen_version" ]]; then
   exit 1
 fi
 binaryen_number="${binaryen_version#version_}"
-if ! wasm-opt --version | rg -q "version $binaryen_number([[:space:]]|$)"; then
+if ! wasm-opt --version | grep -Eq "version $binaryen_number([[:space:]]|$)"; then
   printf 'Unexpected wasm-opt version: %s\n' "$(wasm-opt --version)" >&2
   exit 1
 fi

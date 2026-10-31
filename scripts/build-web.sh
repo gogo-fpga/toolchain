@@ -82,9 +82,9 @@ cp -R "$build_root/surfer/dist/." "$dist/surfer/"
 cp "$root/THIRD_PARTY_NOTICES.md" "$dist/THIRD_PARTY_NOTICES.md"
 mkdir -p "$dist/licenses"
 cp -R "$root/licenses/." "$dist/licenses/"
-if ! rg -q '^/\*' "$dist/_headers" ||
-  ! rg -q 'Cross-Origin-Opener-Policy: same-origin' "$dist/_headers" ||
-  ! rg -q 'Cross-Origin-Embedder-Policy: require-corp' "$dist/_headers"; then
+if ! grep -Eq '^/\*' "$dist/_headers" ||
+  ! grep -Eq 'Cross-Origin-Opener-Policy: same-origin' "$dist/_headers" ||
+  ! grep -Eq 'Cross-Origin-Embedder-Policy: require-corp' "$dist/_headers"; then
   printf 'COOP/COEP headers must cover the /surfer/* route.\n' >&2
   exit 1
 fi
