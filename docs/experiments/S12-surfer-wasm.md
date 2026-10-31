@@ -63,14 +63,26 @@ clean build は `build/S12/clean-a` と `build/surfer` の別々の Cargo target
 
 ## build と配布
 
-`scripts/build-surfer.sh` は pinned tool archive を SHA-256 で検証し、vendor source と nested submodule を `build/surfer-src/` にコピーしてから Service Worker 登録だけを patch します。Trunk は offline mode で実行し、PATH 上の pinned wasm-bindgen と wasm-opt を使います。`build/surfer/dist/` の各ファイルについて relative path、size、SHA-256 を log に出します。
+`scripts/build-surfer.sh` は、pinned tool archive の SHA-256 を検証し、vendor source と nested submodule を `build/surfer-src/` にコピーして Service Worker 登録だけを patch した後、Trunk を offline mode で実行します。PATH 上の pinned wasm-bindgen と wasm-opt を使い、`build/surfer/dist/` に作成した全ファイルの relative path、size、SHA-256 を log へ記録します。
 
 `scripts/collect-surfer-licenses.py` は Cargo metadata の `wasm32-unknown-unknown` graph から Surfer の normal runtime dependencies をたどり、crate 名、版、license expression、source とライセンスファイルを記録します。dev/build dependency は含めず、license expression と license file の両方がない crate があれば停止します。
 
 `libsurfer/Cargo.toml` の `egui_skia_renderer` は `[dev-dependencies]` にあり、WASM runtime dependency graph の外です。依頼にあった dev dependency を除外する条件を優先し、配布 license table には含めていません。upstream の Git source と revision は Cargo.lock に固定されています。
 
+`scripts/build-web.sh` は成功し、Surfer を `dist/surfer/` に配置しました。Surfer を含む各配布ファイルの 25 MiB 上限と、`/surfer/*` を含む COOP/COEP header 設定も build 内で検査されました。log は `build/S12/build-web-final.log` です。
+
+最初の E2E 起動は Surfer の spec より前に、既存の synthesis harness が要求する native nextpnr、Apycula packer、native GHDL が worktree にないため停止しました。Surfer 以外の検証資材を用意して再実行し、同じ Surfer distribution に対する spec を完了しました。既存の Surfer trial distribution は使用していません。
+
 local/CI hash 比較は push 後の CI handoff で行うため、この時点では未確認です。
 
 ## 結果
 
-凍結基準の各項目は測定後に記録します。CI の結果はこの push の完了後には待たず、後続の CI handoff で確認します。
+| 基準 | 結果 |
+|---|---|
+| 1. 2 回の clean build の全ファイルが一致 | **Pass**。453 files の相対 path、size、SHA-256 が一致 |
+| 2. local / CI hash 比較 | **未確認**。同じ commit の CI log との比較を後続の CI handoff で行う |
+| 3. build 時間と raw / gzip / zstd size | **Pass**。2 回の所要時間と圧縮値を上記に記録 |
+| 4. Surfer E2E を5回連続実行 | **Pass**。Chromium で 15/15 tests passed。各回で同一 origin blob VCD、scope `logic`、外部 origin request の不在を確認 |
+| 5. 負の対照 | **Pass**。破損 VCD の parse error、Service Worker 登録の不在、`manifest.json` と `sw.js` の不在を確認 |
+
+E2E は `DISPLAY` を unset し、`--use-angle=swiftshader --enable-unsafe-swiftshader` で実行しました。port 8000 は既存プロセスが使用中だったため、`PLAYWRIGHT_PORT=8798` を指定しました。log は `build/S12/surfer-e2e-5x.log` です。CI の結果はこの push の完了後には待たず、後続の CI handoff で確認します。
