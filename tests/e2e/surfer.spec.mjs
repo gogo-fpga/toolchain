@@ -44,23 +44,50 @@ async function openSurfer(page, vcd) {
   return { frame, messages, externalRequests };
 }
 
-test("loads a VCD from a same-origin blob URL and exposes the logic scope", async ({ page }) => {
+async function wavesLoaded(frame) {
+  return frame.evaluate(async () => {
+    const m = await import("/surfer/surfer.js");
+    return m.waves_loaded();
+  });
+}
+
+async function indexOfName(frame, name) {
+  return frame.evaluate(async (signalName) => {
+    const m = await import("/surfer/surfer.js");
+    return m.index_of_name(signalName);
+  }, name);
+}
+
+async function addScope(frame, scopeName) {
+  await frame.evaluate(async (name) => {
+    const m = await import("/surfer/surfer.js");
+    m.inject_message(JSON.stringify({
+      AddScope: [{ strs: [name], id: "None" }, false],
+    }));
+  }, scopeName);
+}
+
+test("loads a VCD from a same-origin blob URL and exposes logic.clk", async ({ page }) => {
   const { frame, messages, externalRequests } = await openSurfer(page, fixture);
   await expect.poll(() => messages.some((message) => message.includes("LoadWaveformFileFromUrl"))).toBe(true);
-  await expect.poll(async () => {
-    const bodyText = await frame.locator("body").innerText().catch(() => "");
-    return bodyText.includes("logic") || messages.some((message) => message.includes("logic"));
-  }).toBe(true);
+  await expect.poll(() => wavesLoaded(frame), { timeout: 5000 }).toBe(true);
+  await addScope(frame, "logic");
+  await expect.poll(() => indexOfName(frame, "logic.clk"), { timeout: 5000 }).toBeGreaterThanOrEqual(0);
+  expect(messages.some((message) => message.includes("Failed to parse wave file"))).toBe(false);
   expect(externalRequests).toEqual([]);
 });
 
 test("reports a parse error for a corrupt VCD", async ({ page }) => {
   const { frame, messages, externalRequests } = await openSurfer(page, "not a VCD waveform");
-  await expect.poll(async () => {
-    const errorText = await frame.locator("#error_message").innerText().catch(() => "");
-    return /parse|vcd|error|invalid/i.test(errorText)
-      || messages.some((message) => /parse|vcd.*error|error.*vcd/i.test(message));
-  }).toBe(true);
+  await expect.poll(
+    () => messages.some((message) => message.includes("Failed to parse wave file")),
+    { timeout: 5000 },
+  ).toBe(true);
+  const deadline = Date.now() + 1000;
+  do {
+    expect(await wavesLoaded(frame)).toBe(false);
+    await page.waitForTimeout(100);
+  } while (Date.now() < deadline);
   expect(externalRequests).toEqual([]);
 });
 

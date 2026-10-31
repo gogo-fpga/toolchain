@@ -61,6 +61,8 @@ clean build は `build/S12/clean-a` と `build/surfer` の別々の Cargo target
 
 今回の最初の clean build は patch file の hunk 行数が合わず、`patch` が `malformed patch at line 19` で停止しました。hunk を upstream の `surfer/index.html` に合わせ、Service Worker 登録部分だけを削除する patch に直して再試行しました。失敗 log は `build/S12/clean-a.log`、再試行 log は `build/S12/clean-a-retry.log` です。
 
+emsdk の tag を含まない shallow clone では、`build-info.py` が使う `git describe --tags --exact-match` が `fatal: No names found, cannot describe anything.` で失敗しました。再現 log は `build/S12/emsdk-no-tags-describe.log` と `build/S12/emsdk-no-tags-clone.log` です。Build job には `scripts/build-wasm.sh` の前に tag を取得する既存 step があるため、この branch で追加された重複 fetch は削除し、既存 step は残しました。
+
 ## build と配布
 
 `scripts/build-surfer.sh` は、pinned tool archive の SHA-256 を検証し、vendor source と nested submodule を `build/surfer-src/` にコピーして Service Worker 登録だけを patch した後、Trunk を offline mode で実行します。PATH 上の pinned wasm-bindgen と wasm-opt を使い、`build/surfer/dist/` に作成した全ファイルの relative path、size、SHA-256 を log へ記録します。
@@ -82,7 +84,11 @@ local/CI hash 比較は push 後の CI handoff で行うため、この時点で
 | 1. 2 回の clean build の全ファイルが一致 | **Pass**。453 files の相対 path、size、SHA-256 が一致 |
 | 2. local / CI hash 比較 | **未確認**。同じ commit の CI log との比較を後続の CI handoff で行う |
 | 3. build 時間と raw / gzip / zstd size | **Pass**。2 回の所要時間と圧縮値を上記に記録 |
-| 4. Surfer E2E を5回連続実行 | **Pass**。Chromium で 15/15 tests passed。各回で同一 origin blob VCD、scope `logic`、外部 origin request の不在を確認 |
-| 5. 負の対照 | **Pass**。破損 VCD の parse error、Service Worker 登録の不在、`manifest.json` と `sw.js` の不在を確認 |
+| 4. Surfer E2E を5回連続実行 | **Pass**。Chromium で 15/15 tests passed。positive test は `waves_loaded()` と `index_of_name("logic.clk")` で読み込みと signal を確認 |
+| 5. 負の対照 | **Pass**。破損 VCD の `Failed to parse wave file`、未読込状態、Service Worker 登録の不在、`manifest.json` と `sw.js` の不在を確認 |
 
-E2E は `DISPLAY` を unset し、`--use-angle=swiftshader --enable-unsafe-swiftshader` で実行しました。port 8000 は既存プロセスが使用中だったため、`PLAYWRIGHT_PORT=8798` を指定しました。log は `build/S12/surfer-e2e-5x.log` です。CI の結果はこの push の完了後には待たず、後続の CI handoff で確認します。
+Surfer v0.7.0 の `index_of_name()` は、読み込んだ波形のうち timeline に追加された item を検索します。読み込み直後は timeline が空なので、positive test は exported `inject_message()` で scope `logic` を追加してから `index_of_name("logic.clk")` が非負になることを確認します。これにより `FileDownloaded` の console message に含まれる VCD bytes を signal の存在と誤認しません。破損 VCD の test は `Failed to parse wave file` を確認した後、1秒間 `waves_loaded() === false` を poll します。
+
+positive test に破損 VCD を一度だけ与えた mutation check は、`waves_loaded() === true` の assertion で期待どおり失敗しました。その後 fixture を復元し、最終の5回実行を行いました。mutation log は `build/S12/surfer-mutation-check-final.log`、最終 E2E log は `build/S12/surfer-e2e-reviewed-5x-final.log` です。
+
+E2E は `DISPLAY` を unset し、`--use-angle=swiftshader --enable-unsafe-swiftshader` で実行しました。port 8000 は既存プロセスが使用中だったため、`PLAYWRIGHT_PORT=8798` を指定しました。CI の結果はこの push の完了後には待たず、後続の CI handoff で確認します。
