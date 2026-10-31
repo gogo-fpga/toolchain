@@ -19,6 +19,7 @@ const zstdVersion = execFileSync("zstd", ["--version"], { encoding: "utf8" })
   .match(/\bv(\d+\.\d+\.\d+)\b/)?.[1];
 const submodules = [
   "vendor/emsdk",
+  "vendor/iverilog",
   "vendor/libftdi",
   "vendor/libusb",
   "vendor/openFPGALoader",

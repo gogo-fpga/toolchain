@@ -174,6 +174,19 @@ class CheckPinsTests(unittest.TestCase):
     def test_consistency_passes(self):
         self.assertEqual([], self.errors())
 
+    def test_iverilog_pin_command(self):
+        result = subprocess.run(
+            ["python3", str(ROOT / ".github/scripts/check-pins.py"), "iverilog-pin"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            "v13_0\tdfeee909ed9f20b4870dd93423156c0170c0e1ff"
+            "\thttps://github.com/steveicarus/iverilog.git\n",
+            result.stdout,
+        )
+
     def test_ghdl_build_pins_match_experiment_record(self):
         self.assertEqual([], check_pins.ghdl_build_pin_errors(self.root))
         script = self.root / "scripts/build-ghdl-wasm.sh"

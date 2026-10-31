@@ -22,5 +22,7 @@
 | [S0 GHDL WASM 合成のビルドと smoke](S0-ghdl-wasm.md) | GHDL 6.0.0 の WASM 合成、VHDL fixture、Tang Nano bitstream、T3-2 のブラウザー統合 | 完了 |
 | [S0B GHDL WASM の Chromium / Node 測定](S0B-ghdl-chromium.md) | 7 fixture と4ボードの VHDL template を Node / Chromium で測定。raw CSV は本文から参照 | 記録のみ（既定 Os を変更しない） |
 | [S0B GHDL Chromium 測定の凍結基準](S0B-ghdl-chromium-criteria.md) | GHDL WASM の Node / Chromium 測定条件と正しさの確認 | 測定前に固定 |
+| [S10 Icarus Verilog WASM 化](S10-iverilog-wasm.md) | Icarus v13_0 の WASI build、native parity、制限、artifact hash | 完了 |
+| [S10 Icarus Verilog WASM 化の凍結基準](S10-iverilog-wasm-criteria.md) | 3つの WASM の再現性、native parity、negative control の条件 | 測定前に固定 |
 
 仮想デバイスによる測定値は、実機の値として扱いません。

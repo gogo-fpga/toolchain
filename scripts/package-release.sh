@@ -28,6 +28,7 @@ submodules=(
   vendor/zstd
   vendor/xz-embedded
   vendor/ghdl
+  vendor/iverilog
 )
 ghdl_license_files=(
   licenses/GHDL-COPYING.md
@@ -35,6 +36,10 @@ ghdl_license_files=(
   licenses/synth-explorer-LICENSE
   licenses/AdaWebPack-LICENSE.BSD3
   licenses/GCC-RUNTIME-LIBRARY-EXCEPTION
+)
+iverilog_license_files=(
+  licenses/iverilog-COPYING
+  licenses/iverilog-tgt-vvp-COPYING.lesser
 )
 
 check_ghdl_licenses() {
@@ -47,9 +52,24 @@ check_ghdl_licenses() {
   done
 }
 
+check_iverilog_licenses() {
+  local path
+  for path in "${iverilog_license_files[@]}"; do
+    if [[ ! -s "$root/$path" ]]; then
+      printf 'Required Icarus Verilog license file is missing or empty: %s\n' "$root/$path" >&2
+      return 1
+    fi
+  done
+}
+
 if [[ ${CHECK_GHDL_LICENSES_ONLY:-0} == 1 ]]; then
   check_ghdl_licenses
   printf 'GHDL license files: OK\n'
+  exit 0
+fi
+if [[ ${CHECK_IVERILOG_LICENSES_ONLY:-0} == 1 ]]; then
+  check_iverilog_licenses
+  printf 'Icarus Verilog license files: OK\n'
   exit 0
 fi
 yosys_nested_submodules=(
@@ -170,6 +190,8 @@ license_copies=(
   "$root/licenses/apycula-dependencies/fastcrc-LICENSE:fastcrc-LICENSE"
   "$root/licenses/apycula-dependencies/msgspec-LICENSE:msgspec-LICENSE"
   "$root/licenses/GHDL-COPYING.md:GHDL-COPYING.md"
+  "$root/licenses/iverilog-COPYING:iverilog-COPYING"
+  "$root/licenses/iverilog-tgt-vvp-COPYING.lesser:iverilog-tgt-vvp-COPYING.lesser"
   "$root/licenses/GPL-3.0.txt:GPL-3.0.txt"
   "$root/licenses/synth-explorer-LICENSE:synth-explorer-LICENSE"
   "$root/licenses/AdaWebPack-LICENSE.BSD3:AdaWebPack-LICENSE.BSD3"
@@ -205,6 +227,7 @@ for entry in "${license_copies[@]}"; do
   cp "$source_file" "$web_root/licenses/$destination_name"
 done
 check_ghdl_licenses
+check_iverilog_licenses
 
 symlink_file="$(find "$web_root" -type l -print -quit)"
 if [[ -n "$symlink_file" ]]; then
@@ -246,6 +269,13 @@ if [[ "$ghdl_pin" != "$(git -C "$root/vendor/ghdl" rev-parse HEAD)" ]]; then
 fi
 printf '%s\n' "$ghdl_pin" > "$source_root/vendor/ghdl/.gitcommit"
 
+iverilog_pin="${submodule_shas[vendor/iverilog]}"
+if [[ "$iverilog_pin" != "$(git -C "$root/vendor/iverilog" rev-parse HEAD)" ]]; then
+  printf 'Icarus Verilog submodule checkout does not match its gitlink: %s\n' "$iverilog_pin" >&2
+  exit 1
+fi
+printf '%s\n' "$iverilog_pin" > "$source_root/vendor/iverilog/.gitcommit"
+
 printf '%s\n' "$yosys_commit" > "$source_root/vendor/yosys/.gitcommit"
 nextpnr_pin="$(python3 "$root/.github/scripts/check-pins.py" nextpnr-pin)"
 nextpnr_commit="${nextpnr_pin#*$'\t'}"
@@ -272,6 +302,8 @@ for path in "${yosys_nested_submodules[@]}"; do
 done
 
 source_required_files=(
+  "$source_root/scripts/build-iverilog-wasm.sh"
+  "$source_root/scripts/build-iverilog-info.py"
   "$source_root/scripts/build-ghdl-wasm.sh"
   "$source_root/scripts/build-synth-assets.py"
   "$source_root/scripts/ghdl-wasm/frontend-sources.txt"
@@ -285,6 +317,7 @@ source_required_files=(
   "$source_root/web/lib/ghdl-host.mjs"
   "$source_root/web/lib/vhdl-order.mjs"
   "$source_root/patches/ghdl/blackbox-verilog.patch"
+  "$source_root/patches/iverilog/static-wasi.patch"
   "$source_root/patches/ghdl/grt-stdio.patch"
   "$source_root/patches/ghdl/vhdl-only-synthesis.patch"
 )
@@ -308,6 +341,12 @@ for license_file in "${ghdl_license_files[@]}"; do
     exit 1
   fi
 done
+for license_file in "${iverilog_license_files[@]}"; do
+  if [[ ! -s "$source_root/$license_file" ]]; then
+    printf 'Source archive is missing a required Icarus Verilog license: %s\n' "$license_file" >&2
+    exit 1
+  fi
+done
 if [[ ! -s "$source_root/vendor/ghdl/.gitcommit" ||
   "$(cat "$source_root/vendor/ghdl/.gitcommit")" != "$ghdl_pin" ]]; then
   printf 'Source archive GHDL checkout marker is missing or incorrect.\n' >&2
@@ -315,15 +354,16 @@ if [[ ! -s "$source_root/vendor/ghdl/.gitcommit" ||
 fi
 
 python3 - "$source_root/RELEASE-SOURCE.json" "$version" "$commit" \
-  "$source_date_epoch" "$emsdk_version" "$root/dist/build-info.json" <<'PY'
+  "$source_date_epoch" "$emsdk_version" "$root/dist/build-info.json" "$iverilog_pin" <<'PY'
 import json
 import sys
 from pathlib import Path
 
 output = Path(sys.argv[1])
-version, commit, source_date_epoch, emsdk_version, build_info_path = sys.argv[2:]
+version, commit, source_date_epoch, emsdk_version, build_info_path, iverilog_pin = sys.argv[2:]
 build_info = json.loads(Path(build_info_path).read_text(encoding="utf-8"))
 submodule_shas = build_info["submodule_shas"]
+submodule_shas["vendor/iverilog"] = iverilog_pin
 
 data = {
     "version": version,
@@ -383,6 +423,7 @@ labels = {
     "vendor/zstd": "zstd",
     "vendor/xz-embedded": "xz-embedded",
     "vendor/ghdl": "GHDL",
+    "vendor/iverilog": "Icarus Verilog",
 }
 rows = []
 for path in submodules:
