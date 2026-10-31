@@ -72,7 +72,7 @@ T0 では書き込み部だけが実装されています。合成、配置配�
 | nextpnr-himbaechel（Gowin） | C++ | ISC | [YoWASP](https://yowasp.org/) が nextpnr の WASI 版を提供 | T2。必要な Gowin device database のみを含め、4 ボードの配置配線を検証する |
 | Apicula / `gowin_pack` | Python | Apicula: MIT。Pyodide: MPL-2.0 | S3 で Node.js/Pyodide の native parity を確認し、配布 wheel を追加する。Worker は S4 | S3。4ボードの `.fs` 一致、実行時間、配布サイズを測定する |
 | openFPGALoader | C++ | Apache-2.0 | 移植元で Emscripten と WebUSB による WASM 化を実装 | T0 の書き込み部として移植済み。以降も upstream のソースを使う |
-| NVC | C | GPL-3.0-or-later | S11 の WASI configure は pthread で停止。延長後、Emscripten configure は backtrace patch で通過したが、WASM32 向け JIT backend がなく build を中止 | T5 へ進む。NVC WASM は未生成。`configure.ac` は `--enable-llvm` を宣言し、LLVM を既定で有効にする。依存は pthread、zlib、libffi、libzstd |
+| NVC | C | GPL-3.0-or-later | S11 は Emscripten NVC の link と native standard-library build に成功したが、Node counter testbench が elaboration で trap | 実際の addendum cutoff により T5 へ進む。初回の cutoff 判断は誤適用として訂正し再開した。out-of-scope NVC files は5。詳細は[S11 記録](docs/experiments/S11-nvc-wasm.md) |
 | Icarus Verilog (`iverilog` / `vvp`) | C | GPL-2.0-or-later。`tgt-vvp` は LGPL-2.1 | [VeriSim](https://github.com/senolgulgonul/verisim) が Emscripten で `ivlpp`、`ivl`、`vvp` を個別に WASM 化 | T4。3 つの WASM を JavaScript で順番に呼ぶ方式を基礎にする。詳しくは[広域調査](docs/research/oss-survey.md)を参照 |
 | Verilator | C++ | LGPL-3.0 | [tiny-tpu](https://github.com/deaneeth/tiny-tpu) は事前ビルドした WASM を配布。ブラウザー内で C++ をコンパイルする例ではない | 将来。生成コードを実行する C++ コンパイラーをブラウザー内で用意する方法が必要。詳しくは[広域調査](docs/research/oss-survey.md)を参照 |
 | SymbiYosys / `yosys-smtbmc` | Python | 未確認 | YoWASP の Yosys は確認したが、Python 側の WASM 実行例は未確認 | T6。Yosys と Python 側の実行環境を分けて検証する |
@@ -235,7 +235,7 @@ S6 では zstd・xz 展開器の最適化を比較しました。OsLTO が最速
 
 合計にはページ、ビルド Worker、書き込み用資材とライブラリーも含みます。分類別の内訳は synth が manifest と zstd 資材、pack が manifest・圧縮資材・raw 資材、その他が画面と書き込み資材です。pack の配信では Pyodide の WASM と lock JSON を zstd にし、その他は raw のままにします。pack も shared verified loader で検証し、展開後の資材を Cache Storage `gogo-fpga-pack-v1` に SHA-256 を含むキーで保存します。実機では未確認で、配信先の目標は Cloudflare Pages です。ユーザーによる実機確認後に公開します。計測の詳細と集計値は [S4C](docs/experiments/S4C-cold-load-bytes.md) に記録しました。デプロイは行っていません。
 
-NVC r1.23.1 の確認元は[configure.ac](https://github.com/nickg/nvc/blob/fab54a9e96964b431050d837e163c22282a1df6c/configure.ac)です。S11 では WASI SDK 34.0 の configure が pthread で停止し、Emscripten 6.0.13 の初回 configure も `_Unwind_Backtrace` の必須 link probe で終了しました。延長試行では `__EMSCRIPTEN__` の backtrace patch を適用し、configure を通過しています。しかし `--disable-llvm` でも `src/jit/jit-code.c` の JIT backend は compile 対象です。`ARCH_X86_64` と `ARCH_ARM64` 以外の WASM32 target では `veneer` が定義されず、build は失敗しました。`src/jit/jit-ffi.c` も target の `ffi.h` を見つけられず、compile を完了できません。core JIT backend の置き換えは延長で許可された patch 範囲外のため、それ以上の patch はせず停止しました。NVC WASM は生成していません。詳細は [S11 実験記録](docs/experiments/S11-nvc-wasm.md) を参照してください。
+NVC r1.23.1 の確認元は[configure.ac](https://github.com/nickg/nvc/blob/fab54a9e96964b431050d837e163c22282a1df6c/configure.ac)です。S11 は WASI SDK 34.0 の configure で pthread が検出されず、Emscripten 6.0.13 の初回 configure では `_Unwind_Backtrace` の link probe が失敗しました。backtrace patch で configure を通し、最初の cutoff 判断は誤適用としてユーザーの指摘後に再開しました。`jit-code.c` には小さな `__EMSCRIPTEN__` compile guard を置き、LLVM と native plugin の登録がない構成では `jit_interp` が default entry になることを NVC r1.23.1 の `src/nvc.c:846-854`、`src/jit/jit-core.c:142-167,258-267,736-745`、`src/jit/jit-interp.c:1129-1142` で確認しました。Emscripten NVC は link し、native NVC で standard libraries も生成しましたが、Node counter testbench は `-e` 中に `RuntimeError: null function or function signature mismatch` で停止しました。stack trace は wasm function index のみのため、root cause は未確定です。addendum の実際の cutoff として T5 へ進みます。NVC patch の out-of-scope files は5です。詳細は [S11 実験記録](docs/experiments/S11-nvc-wasm.md) を参照してください。
 
 ## 4. Emscripten のオプション
 
@@ -296,7 +296,7 @@ GHDL、NVC、Icarus Verilog など GPL のツールを WASM にビルドして R
 - Tang Nano の IDCODE とフラッシュ情報の個体差。移植元の調査値はありますが、実機での照合はしていません。
 - 合成・配置配線 WASM の実行可否、実行時間、メモリー量、成果物サイズ。YoWASP と synth-explorer の記録を本リポジトリーで再現していません。
 - WASI SDK 33 での LTO とネイティブ WASM 例外の問題。synth-explorer の報告を確認しただけで、再現していません。
-- NVC で `--disable-llvm` を指定したときの解釈実行経路。S11 は configure を通過した延長試行でも WASM32 JIT backend の build に失敗し、実行には至っていません。[実験記録](docs/experiments/S11-nvc-wasm.md)を参照してください。
+- NVC で `--disable-llvm` を指定したときの interpreter の runtime 動作。S11 では source 上の dispatch と NVC link を確認しましたが、Node counter testbench は elaboration 中に trap となり、interpreter の完走は未確認です。[実験記録](docs/experiments/S11-nvc-wasm.md)を参照してください。
 - Apicula と Pyodide の組み合わせ、必要な Python 依存、実行時間、配布サイズ。
 - VeriSim の Icarus Verilog 構成を本リポジトリーへ適用した場合の機能範囲と実行時間。
 - Verilator 生成 C++ をブラウザー内でコンパイル・実行する方法。
