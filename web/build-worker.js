@@ -92,7 +92,9 @@ function checkedFiles(files) {
       throw new Error("A project file has an invalid path");
     }
     insertFile(tree, file.path, file.content);
-    if (/\.(?:v|sv)$/i.test(file.path)) sourcePaths.push(file.path);
+    if (/\.(?:v|sv)$/i.test(file.path) && !/(?:^|\/)top_tb\.v$/i.test(file.path)) {
+      sourcePaths.push(file.path);
+    }
     if (/\.(?:vhd|vhdl)$/i.test(file.path)) vhdlFiles.push(file);
     if (/\.cst$/i.test(file.path)) {
       if (constraintPath) throw new Error("The project has multiple constraint files");

@@ -1,4 +1,9 @@
-import { validatePath, validateProject, validateProjectName } from "./project.mjs";
+import {
+  migrateProject,
+  validatePath,
+  validateProject,
+  validateProjectName,
+} from "./project.mjs";
 
 function cloneContent(content) {
   return typeof content === "string" ? content : new Uint8Array(content);
@@ -49,13 +54,7 @@ function parseProjectJson(projectJson, name) {
   } catch (error) {
     throw new Error(`project.json を解析できません: ${name}`, { cause: error });
   }
-  if (
-    project !== null &&
-    typeof project === "object" &&
-    !Object.hasOwn(project, "vhdlStandard")
-  ) {
-    project.vhdlStandard = "2008";
-  }
+  project = migrateProject(project);
   const validation = validateProject(project);
   if (!validation.ok) {
     throw new Error(`project.json の内容が不正です: ${validation.errors.join(" ")}`);

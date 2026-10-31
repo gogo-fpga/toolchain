@@ -1,4 +1,8 @@
-import { validateProject } from "./project.mjs";
+import {
+  defaultSimulationSettings,
+  PROJECT_VERSION,
+  validateProject,
+} from "./project.mjs";
 
 export const TEMPLATE_PINS = Object.freeze({
   tangnano1k: Object.freeze({
@@ -76,6 +80,27 @@ function verilogTemplate() {
   ].join("\n");
 }
 
+function testbenchTemplate() {
+  return [
+    "module top_tb;",
+    "  reg clk = 1'b0;",
+    "  wire led;",
+    "",
+    "  top uut (.clk(clk), .led(led));",
+    "",
+    "  always #5 clk = ~clk;",
+    "",
+    "  initial begin",
+    "    $dumpfile(\"wave.vcd\");",
+    "    $dumpvars(0, top_tb);",
+    "    #100;",
+    "    $finish;",
+    "  end",
+    "endmodule",
+    "",
+  ].join("\n");
+}
+
 function vhdlTemplate() {
   return [
     "library ieee;",
@@ -120,21 +145,28 @@ export function createBlinkTemplate(boardId, language) {
   }
 
   const sourcePath = language === "verilog" ? "src/top.v" : "src/top.vhd";
+  const testbenchPath = "src/top_tb.v";
   const project = {
-    version: 1,
+    version: PROJECT_VERSION,
     name: "blink",
     board: boardId,
     top: "top",
     vhdlStandard: "2008",
+    simulation: defaultSimulationSettings(),
     files: [
       { path: sourcePath },
+      ...(language === "verilog" ? [{ path: testbenchPath }] : []),
       { path: `constraints/${boardId}.cst` },
     ],
   };
   const files = new Map([
     [sourcePath, language === "verilog" ? verilogTemplate() : vhdlTemplate()],
+    ...(language === "verilog" ? [[testbenchPath, testbenchTemplate()]] : []),
     [`constraints/${boardId}.cst`, generateCst(boardId)],
   ]);
+  if (language === "verilog") {
+    project.simulation.files = ["src/top.v", testbenchPath];
+  }
 
   const validation = validateProject(project);
   if (!validation.ok) {

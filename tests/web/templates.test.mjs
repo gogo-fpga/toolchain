@@ -62,12 +62,23 @@ test("Verilog and VHDL blink projects pass project validation", () => {
       assert.equal(project.name, "blink");
       assert.equal(project.board, boardId);
       assert.equal(project.top, "top");
-      assert.equal(files.size, 2);
+      assert.deepEqual(project.simulation, {
+        top: "top_tb",
+        files: language === "verilog" ? ["src/top.v", "src/top_tb.v"] : null,
+        timeLimitSeconds: 10,
+      });
+      assert.equal(files.size, language === "verilog" ? 3 : 2);
       assert.equal(
         project.files[0].path,
         language === "verilog" ? "src/top.v" : "src/top.vhd",
       );
       assert.match(files.get(project.files[0].path), /13(?:_)?500_?000|13499999/);
+      if (language === "verilog") {
+        const testbench = files.get("src/top_tb.v");
+        assert.match(testbench, /\$dumpfile\("wave\.vcd"\)/);
+        assert.match(testbench, /\$dumpvars\(0, top_tb\)/);
+        assert.match(testbench, /\$finish/);
+      }
     }
   }
 });

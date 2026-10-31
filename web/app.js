@@ -660,4 +660,9 @@ initializeIde({
     synthesisBuildRunning = running;
     updateForm();
   },
+  onSimulationStateChange: (running) => {
+    synthesisBuildRunning = running;
+    updateForm();
+  },
+  canStartSimulation: () => !activeWorker && !synthesisBuildRunning,
 });

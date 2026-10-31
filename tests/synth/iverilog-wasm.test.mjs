@@ -217,6 +217,14 @@ test("Icarus WASI negative controls match native status and diagnostics", () => 
       normalizedDiagnostic(native.stderr),
       `${name}: diagnostic differs`,
     );
+    if (name === "syntax-error") {
+      assert.match(
+        wasm.stages.ivl.stderr instanceof Uint8Array
+          ? new TextDecoder().decode(wasm.stages.ivl.stderr)
+          : wasm.stages.ivl.stderr,
+        /work\/src\/syntax-error\.v:4: syntax error/,
+      );
+    }
   }
 });
 

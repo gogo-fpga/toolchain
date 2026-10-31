@@ -109,6 +109,17 @@ test("project ZIP preserves the selected VHDL standard", () => {
   assert.equal(imported.project.vhdlStandard, "2019");
 });
 
+test("project ZIP round-trips simulation settings", () => {
+  const { project, files } = makeProject();
+  project.simulation = {
+    top: "custom_tb",
+    files: ["src/top.v"],
+    timeLimitSeconds: 35,
+  };
+  const imported = importProjectZip(exportProjectZip(project, files));
+  assert.deepEqual(imported.project.simulation, project.simulation);
+});
+
 test("legacy project ZIPs default the VHDL standard to 2008", () => {
   const template = createBlinkTemplate("tangnano9k", "verilog");
   delete template.project.vhdlStandard;
@@ -121,6 +132,26 @@ test("legacy project ZIPs default the VHDL standard to 2008", () => {
     )),
   );
   assert.equal(imported.project.vhdlStandard, "2008");
+});
+
+test("legacy project ZIPs migrate to default simulation settings", () => {
+  const template = createBlinkTemplate("tangnano9k", "verilog");
+  template.project.version = 1;
+  delete template.project.simulation;
+  const imported = importProjectZip(
+    makeZip(manifestEntries(
+      template.project,
+      Object.fromEntries(
+        [...template.files].map(([path, content]) => [path, strToU8(content)]),
+      ),
+    )),
+  );
+  assert.equal(imported.project.version, 2);
+  assert.deepEqual(imported.project.simulation, {
+    top: "top_tb",
+    files: null,
+    timeLimitSeconds: 10,
+  });
 });
 
 test("project ZIP export rejects a file map that differs from the manifest", () => {

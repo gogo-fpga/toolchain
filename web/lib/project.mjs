@@ -7,8 +7,16 @@ const PROJECT_KEYS = new Set([
   "top",
   "files",
   "vhdlStandard",
+  "simulation",
 ]);
 const FILE_KEYS = new Set(["path"]);
+const SIMULATION_KEYS = new Set(["top", "files", "timeLimitSeconds"]);
+export const PROJECT_VERSION = 2;
+export const DEFAULT_SIMULATION_SETTINGS = Object.freeze({
+  top: "top_tb",
+  files: null,
+  timeLimitSeconds: 10,
+});
 const ALLOWED_EXTENSIONS = new Set([
   ".v",
   ".vh",
@@ -101,6 +109,27 @@ export function findConstraintBoardMismatch(project) {
   return null;
 }
 
+export function defaultSimulationSettings() {
+  return {
+    top: DEFAULT_SIMULATION_SETTINGS.top,
+    files: DEFAULT_SIMULATION_SETTINGS.files,
+    timeLimitSeconds: DEFAULT_SIMULATION_SETTINGS.timeLimitSeconds,
+  };
+}
+
+export function migrateProject(project) {
+  if (!isObject(project)) return project;
+  const migrated = { ...project };
+  if (!Object.hasOwn(migrated, "vhdlStandard")) {
+    migrated.vhdlStandard = "2008";
+  }
+  if (migrated.version === 1) {
+    migrated.version = PROJECT_VERSION;
+    migrated.simulation ??= defaultSimulationSettings();
+  }
+  return migrated;
+}
+
 export function validateProject(project) {
   const errors = [];
   if (!isObject(project)) {
@@ -113,8 +142,8 @@ export function validateProject(project) {
     }
   }
 
-  if (project.version !== 1) {
-    errors.push("プロジェクトの版は 1 にしてください。");
+  if (project.version !== PROJECT_VERSION) {
+    errors.push(`プロジェクトの版は ${PROJECT_VERSION} にしてください。`);
   }
 
   errors.push(...validateProjectName(project.name).errors);
@@ -132,6 +161,35 @@ export function validateProject(project) {
     !["2008", "2019"].includes(project.vhdlStandard)
   ) {
     errors.push("VHDL 標準は 2008 または 2019 にしてください。");
+  }
+
+  if (!isObject(project.simulation)) {
+    errors.push("シミュレーション設定の形式が正しくありません。");
+  } else {
+    for (const key of Object.keys(project.simulation)) {
+      if (!SIMULATION_KEYS.has(key)) {
+        errors.push(`シミュレーション設定に未対応の項目があります: ${key}`);
+      }
+    }
+    if (
+      typeof project.simulation.top !== "string" ||
+      project.simulation.top.trim().length === 0
+    ) {
+      errors.push("シミュレーションのトップモジュール名を指定してください。");
+    }
+    if (
+      project.simulation.files !== null &&
+      !Array.isArray(project.simulation.files)
+    ) {
+      errors.push("シミュレーションのファイル一覧の形式が正しくありません。");
+    }
+    if (
+      !Number.isInteger(project.simulation.timeLimitSeconds) ||
+      project.simulation.timeLimitSeconds < 1 ||
+      project.simulation.timeLimitSeconds > 120
+    ) {
+      errors.push("シミュレーションの時間上限は 1 から 120 秒にしてください。");
+    }
   }
 
   if (!Array.isArray(project.files)) {
@@ -161,6 +219,35 @@ export function validateProject(project) {
         paths.add(file.path);
       }
     });
+  }
+
+  if (isObject(project.simulation) && Array.isArray(project.simulation.files)) {
+    const projectPaths = new Set(
+      Array.isArray(project.files)
+        ? project.files
+          .filter((file) => isObject(file))
+          .map(({ path }) => path)
+        : [],
+    );
+    const selectedPaths = new Set();
+    for (const path of project.simulation.files) {
+      if (typeof path !== "string") {
+        errors.push("シミュレーションのファイルパスは文字列にしてください。");
+        continue;
+      }
+      if (selectedPaths.has(path)) {
+        errors.push(`シミュレーションのファイルが複数選択されています: ${path}`);
+      }
+      selectedPaths.add(path);
+      if (!projectPaths.has(path)) {
+        errors.push(`シミュレーションのファイルがプロジェクトにありません: ${path}`);
+        continue;
+      }
+      const extension = path.slice(path.lastIndexOf(".")).toLowerCase();
+      if (![".v", ".vh"].includes(extension)) {
+        errors.push(`シミュレーションには Verilog ファイルを選んでください: ${path}`);
+      }
+    }
   }
 
   return { ok: errors.length === 0, errors };

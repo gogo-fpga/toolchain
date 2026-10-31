@@ -24,7 +24,7 @@ IDE は、左にプロジェクトのファイル一覧、中央に HDL エデ�
 | T1 | 画面の骨組み、ボード選択、プロジェクト保存、書き込み機能の統合 | 仮想 USB で `.fs` を SRAM に書き込む E2E が通る |
 | T2 | Verilog 用の Yosys + ABC、nextpnr-himbaechel、Apicula を WASM 化 | 4 ボードで `.fs` を作り、ネイティブ版との比較を記録する |
 | T3 | GHDL の合成部を WASM 化し、VHDL から `.fs` までつなぐ | 4 ボードのテンプレートで合成と仮想書き込みを実行できる |
-| T4 | NVC と Icarus Verilog によるシミュレーション、波形表示 | ネイティブ版と assertion、VCD の結果が一致する |
+| T4 | Icarus Verilog による Verilog シミュレーションと Surfer の波形表示 | Verilog テンプレートをブラウザーで実行できる。VHDL シミュレーションは NVC の cutoff により未対応（[S11 記録](docs/experiments/S11-nvc-wasm.md)） |
 | T5 | HDL ライブラリーと CPU コアの取り込み、依存解決 | 各ライブラリーの代表回路が 4 ボードで合成できる |
 | T6 | SymbiYosys、yosys-smtbmc、Yices2、Z3、Boolector による形式検証 | 小さな性質の証明がブラウザーで通る |
 | 将来 | SystemVerilog と Verilator | C++ コンパイラーを含む実行方式を調査する |

@@ -12,6 +12,7 @@ import {
 import { createHdlEditor, languageForPath } from "./editor/editor.bundle.mjs";
 import { createBuildRunner } from "./lib/build-runner.mjs";
 import { parseToolDiagnostics } from "./lib/tool-diagnostics.mjs";
+import { createSimRunner } from "./lib/sim-runner.mjs";
 
 const UI_STATE_PREFIX = "toolchain.ide.";
 
@@ -71,6 +72,8 @@ export function initializeIde({
   BOARDS,
   onFsSourceChange = () => {},
   onBuildStateChange = () => {},
+  onSimulationStateChange = () => {},
+  canStartSimulation = () => true,
 }) {
   const store = createOpfsStore(navigator.storage);
   const projectName = document.querySelector("#project-name");
@@ -125,6 +128,16 @@ export function initializeIde({
   const synthesisButton = document.querySelector("#synthesis-button");
   const synthesisStage = document.querySelector("#synthesis-stage");
   const synthesisReason = document.querySelector("#synthesis-reason");
+  const simulationButton = document.querySelector("#simulation-button");
+  const simulationStatus = document.querySelector("#simulation-status");
+  const simulationReason = document.querySelector("#simulation-reason");
+  const simulationTop = document.querySelector("#simulation-top");
+  const simulationFiles = document.querySelector("#simulation-files");
+  const simulationTimeLimit = document.querySelector("#simulation-time-limit");
+  const waveformStatus = document.querySelector("#waveform-status");
+  const surferMount = document.querySelector("#surfer-mount");
+  const waveDownload = document.querySelector("#wave-download");
+  const waveDownloadLink = document.querySelector("#wave-download-link");
   const synthesisAssetSize = document.querySelector("#synthesis-asset-size");
   const vhdlStandardControl = document.querySelector("#vhdl-standard-control");
   const vhdlStandardSelect = document.querySelector("#vhdl-standard");
@@ -141,7 +154,14 @@ export function initializeIde({
   let fileDialogMode = "add";
   let projectSwitchVersion = 0;
   const buildRunner = createBuildRunner();
+  const simRunner = createSimRunner();
   let buildRunning = false;
+  let simulationRunning = false;
+  let surferFrame = null;
+  let surferBridgePromise = null;
+  let resolveSurferBridge = null;
+  let vcdObjectUrl = null;
+  let currentVcd = null;
 
   function appendProjectLog(message) {
     const prior = programLog.textContent.trim();
@@ -224,7 +244,7 @@ export function initializeIde({
     const hasVhdl = (project?.files ?? []).some(({ path }) => /\.(?:vhd|vhdl)$/i.test(path));
     const board = BOARDS.find(({ id }) => id === boardSelect.value);
     const supported = (hasVerilog || hasVhdl) && Boolean(board);
-    synthesisButton.disabled = !supported && !buildRunning;
+    synthesisButton.disabled = (!supported && !buildRunning) || simulationRunning;
     synthesisReason.textContent = supported ? "" : "HDL プロジェクトを開いてください。";
     vhdlStandardControl.hidden = !hasVhdl;
     if (project) {
@@ -255,6 +275,198 @@ export function initializeIde({
           synthesisAssetSize.textContent = "合成資材の情報を読み込めません。";
         });
     }
+    updateSimulationControls();
+  }
+
+  function renderSimulationSettings() {
+    if (!project) return;
+    project.simulation ??= {
+      top: "top_tb",
+      files: null,
+      timeLimitSeconds: 10,
+    };
+    simulationTop.value = project.simulation.top;
+    simulationTimeLimit.value = String(project.simulation.timeLimitSeconds);
+    simulationFiles.replaceChildren();
+    const candidates = project.files.filter(({ path }) => /\.(?:v|vh)$/i.test(path));
+    for (const { path } of candidates) {
+      const label = document.createElement("label");
+      label.className = "simulation-file";
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.value = path;
+      input.checked =
+        project.simulation.files === null || project.simulation.files.includes(path);
+      input.disabled = simulationRunning || buildRunning;
+      input.addEventListener("change", () => {
+        project.simulation.files = [
+          ...simulationFiles.querySelectorAll("input:checked"),
+        ].map((element) => element.value);
+        scheduleSave();
+      });
+      label.append(input, document.createTextNode(path));
+      simulationFiles.append(label);
+    }
+    if (candidates.length === 0) {
+      const message = document.createElement("p");
+      message.textContent = "Verilog ファイルがありません。";
+      simulationFiles.append(message);
+    }
+  }
+
+  function updateSimulationControls() {
+    const paths = (project?.files ?? []).map(({ path }) => path);
+    const hasVerilog = paths.some((path) => /\.(?:v|vh)$/i.test(path));
+    const hasVhdl = paths.some((path) => /\.(?:vhd|vhdl)$/i.test(path));
+    const board = BOARDS.find(({ id }) => id === boardSelect.value);
+    simulationButton.textContent = simulationRunning ? "停止" : "シミュレーション";
+    simulationReason.textContent = !hasVerilog && hasVhdl
+      ? "VHDL のシミュレーションはできません（Verilog の testbench を使ってください）"
+      : !hasVerilog
+        ? "Verilog ファイルを含むプロジェクトを開いてください。"
+        : "";
+    simulationButton.disabled = simulationRunning
+      ? false
+      : !hasVerilog || !board || buildRunning || !canStartSimulation() ||
+        !simulationTop.value.trim() ||
+        !Number.isInteger(Number(simulationTimeLimit.value)) ||
+        Number(simulationTimeLimit.value) < 1 ||
+        Number(simulationTimeLimit.value) > 120;
+    simulationTop.disabled = simulationRunning || buildRunning;
+    simulationTimeLimit.disabled = simulationRunning || buildRunning;
+    renderSimulationSettings();
+  }
+
+  function ensureSurferFrame() {
+    if (surferFrame) return true;
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("webgl2");
+    context?.getExtension("WEBGL_lose_context")?.loseContext();
+    if (!context) {
+      waveformStatus.textContent =
+        "この環境では WebGL が使えないため、波形を表示できません。wave.vcd はダウンロードできます。";
+      return false;
+    }
+    const frame = document.createElement("iframe");
+    surferFrame = frame;
+    frame.id = "surfer-frame";
+    frame.title = "Surfer 波形ビューアー";
+    frame.src = new URL("./surfer/index.html", import.meta.url).href;
+    frame.addEventListener("load", () => {
+      void (async () => {
+        for (let attempt = 0; attempt < 150; attempt += 1) {
+          if (surferFrame !== frame) return;
+          if (
+            typeof frame.contentWindow.register_message_listener === "function" &&
+            typeof frame.contentWindow.inject_message === "function"
+          ) {
+            const script = frame.contentDocument.createElement("script");
+            script.type = "module";
+            script.src = new URL("./surfer-bridge.js", import.meta.url).href;
+            frame.contentDocument.body.append(script);
+            return;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+        if (surferFrame === frame) resolveSurferBridge?.(false);
+      })();
+    }, { once: true });
+    surferBridgePromise = new Promise((resolve) => {
+      resolveSurferBridge = resolve;
+    });
+    surferMount.replaceChildren(frame);
+    waveformStatus.textContent = currentVcd
+      ? "波形を読み込んでいます。"
+      : "シミュレーションを実行すると波形を表示します。";
+    return true;
+  }
+
+  async function loadVcd(vcd) {
+    if (currentVcd && surferFrame) {
+      surferFrame.remove();
+      surferFrame = null;
+      surferBridgePromise = null;
+      resolveSurferBridge = null;
+    }
+    currentVcd = vcd;
+    waveDownload.hidden = false;
+    if (vcdObjectUrl) URL.revokeObjectURL(vcdObjectUrl);
+    vcdObjectUrl = URL.createObjectURL(
+      new Blob([vcd.bytes], { type: "text/plain" }),
+    );
+    waveDownloadLink.href = vcdObjectUrl;
+    if (!ensureSurferFrame()) return;
+    waveformStatus.textContent = "Surfer で波形を読み込んでいます。";
+    if (!(await surferBridgePromise)) {
+      waveformStatus.textContent = "Surfer を読み込めません。";
+      return;
+    }
+    surferFrame.contentWindow.postMessage(
+      { command: "LoadUrl", url: vcdObjectUrl },
+      location.origin,
+    );
+  }
+
+  async function runProjectSimulation() {
+    if (simulationRunning) {
+      simRunner.stop();
+      return;
+    }
+    if (!project || buildRunning || !canStartSimulation()) {
+      simulationStatus.textContent = "ほかの処理が終わってから実行してください。";
+      return;
+    }
+    await flushPendingSave();
+    const settings = project.simulation;
+    const selected = settings.files === null
+      ? project.files.map(({ path }) => path)
+      : settings.files;
+    const files = project.files
+      .filter(({ path }) => selected.includes(path) && /\.(?:v|vh)$/i.test(path))
+      .map(({ path }) => ({ path, content: fileContents.get(path) }));
+    if (files.length === 0) {
+      simulationStatus.textContent = "シミュレーション対象の Verilog ファイルがありません。";
+      return;
+    }
+    simulationRunning = true;
+    onSimulationStateChange(true);
+    updateSynthesisControls();
+    simulationStatus.dataset.outcome = "running";
+    simulationStatus.textContent = "シミュレーションを実行しています。";
+    programLog.textContent = "";
+    const hasVhdl = project.files.some(({ path }) => /\.(?:vhd|vhdl)$/i.test(path));
+    if (hasVhdl) appendProjectLog("VHDL ファイルはシミュレーションから除外しました。");
+    renderProblems();
+    try {
+      const result = await simRunner.run({
+        files,
+        top: settings.top,
+        timeLimitMs: settings.timeLimitSeconds * 1000,
+      });
+      if (result.stdout) appendProjectLog(result.stdout.trimEnd());
+      if (result.stderr) appendProjectLog(result.stderr.trimEnd());
+      const editorResults = editorDiagnostics(result.diagnostics);
+      renderProblems(editorResults);
+      window.dispatchEvent(
+        new CustomEvent("toolchain:diagnostics", { detail: editorResults }),
+      );
+      simulationStatus.dataset.outcome = result.outcome;
+      simulationStatus.textContent = {
+        ok: "シミュレーションが完了しました。",
+        failed: "シミュレーションに失敗しました。",
+        timeout: "時間上限に達しました。",
+        stopped: "シミュレーションを停止しました。",
+      }[result.outcome];
+      if (result.vcd) await loadVcd(result.vcd);
+    } catch (error) {
+      simulationStatus.dataset.outcome = "failed";
+      simulationStatus.textContent = "シミュレーションに失敗しました。";
+      appendProjectLog(`シミュレーションエラー: ${error.message}`);
+    } finally {
+      simulationRunning = false;
+      onSimulationStateChange(false);
+      updateSynthesisControls();
+    }
   }
 
   async function runProjectBuild() {
@@ -274,7 +486,9 @@ export function initializeIde({
     const toolText = new Map();
     try {
       const files = project.files
-        .filter(({ path }) => !path.startsWith("build/"))
+        .filter(({ path }) =>
+          !path.startsWith("build/") && !/(?:^|\/)top_tb\.v$/i.test(path)
+        )
         .map(({ path }) => ({ path, content: fileContents.get(path) }));
       const result = await buildRunner.build(
         {
@@ -631,6 +845,7 @@ export function initializeIde({
     for (const panel of tabPanels) {
       panel.hidden = panel.dataset.bottomPanel !== selectedTab;
     }
+    if (selectedTab === "waveform") ensureSurferFrame();
   }
 
   function handleBottomTabKeydown(event) {
@@ -707,6 +922,11 @@ export function initializeIde({
       project.files = project.files.map((file) =>
         file.path === oldPath ? { path } : file,
       );
+      if (Array.isArray(project.simulation?.files)) {
+        project.simulation.files = project.simulation.files.map((selected) =>
+          selected === oldPath ? path : selected,
+        );
+      }
       fileContents.set(path, fileContents.get(oldPath));
       fileContents.delete(oldPath);
       openTabs = openTabs.map((openPath) => (openPath === oldPath ? path : openPath));
@@ -729,6 +949,11 @@ export function initializeIde({
     const path = selectedPath;
     if (!window.confirm(`「${path}」を削除しますか。`)) return;
     project.files = project.files.filter((file) => file.path !== path);
+    if (Array.isArray(project.simulation?.files)) {
+      project.simulation.files = project.simulation.files.filter(
+        (selected) => selected !== path,
+      );
+    }
     fileContents.delete(path);
     openTabs = openTabs.filter((openPath) => openPath !== path);
     if (activeTab === path) activeTab = openTabs.at(-1) ?? null;
@@ -975,6 +1200,46 @@ export function initializeIde({
     button.addEventListener("click", () => updateTabs(button.dataset.bottomTab));
     button.addEventListener("keydown", handleBottomTabKeydown);
   });
+  window.addEventListener("message", (event) => {
+    if (
+      !surferFrame ||
+      event.origin !== location.origin ||
+      event.source !== surferFrame.contentWindow
+    ) return;
+    if (event.data?.type === "toolchain:surfer-bridge-ready") {
+      resolveSurferBridge?.(true);
+    } else if (event.data?.type === "toolchain:surfer-waveform-loaded") {
+      const inject = surferFrame.contentWindow.inject_message;
+      if (typeof inject === "function") {
+        inject(JSON.stringify({
+          AddScope: [{ strs: [project?.simulation?.top ?? "top_tb"], id: "None" }, false],
+        }));
+        waveformStatus.textContent = "波形を表示しています。";
+      }
+    } else if (event.data?.type === "toolchain:surfer-waveform-timeout") {
+      waveformStatus.textContent = "波形の読み込みがタイムアウトしました。";
+    }
+  });
+  simulationButton.addEventListener("click", () => void runProjectSimulation());
+  simulationTop.addEventListener("input", () => {
+    if (!project) return;
+    project.simulation.top = simulationTop.value;
+    scheduleSave();
+    updateSimulationControls();
+  });
+  simulationTimeLimit.addEventListener("change", () => {
+    if (!project) return;
+    const value = Number(simulationTimeLimit.value);
+    if (Number.isInteger(value) && value >= 1 && value <= 120) {
+      project.simulation.timeLimitSeconds = value;
+      scheduleSave();
+    }
+    updateSimulationControls();
+  });
+  window.addEventListener("pagehide", () => {
+    simRunner.dispose();
+    if (vcdObjectUrl) URL.revokeObjectURL(vcdObjectUrl);
+  }, { once: true });
   toggleFilesButton.addEventListener("click", () => {
     const open = filesPane.dataset.open !== "true";
     setPaneOpen(filesPane, toggleFilesButton, open);

@@ -48,6 +48,11 @@
                 <p id="synthesis-reason" class="synthesis-reason"></p>
                 <p id="synthesis-asset-size"></p>
               </div>
+              <div class="synthesis-control">
+                <button id="simulation-button" type="button" disabled>シミュレーション</button>
+                <p id="simulation-status" role="status" aria-live="polite" data-outcome=""></p>
+                <p id="simulation-reason" class="simulation-reason"></p>
+              </div>
               <button id="program-button" type="submit" disabled>書き込む</button>
               <button
                 id="toggle-files-pane"
@@ -94,6 +99,21 @@
               <button id="rename-file-button" type="button" class="secondary" disabled>名前変更</button>
               <button id="delete-file-button" type="button" class="secondary danger" disabled>削除</button>
             </div>
+            <section class="simulation-settings" aria-labelledby="simulation-settings-heading">
+              <h3 id="simulation-settings-heading">シミュレーション設定</h3>
+              <label class="field" for="simulation-top">
+                <span>トップモジュール</span>
+                <input id="simulation-top" type="text" value="top_tb" />
+              </label>
+              <fieldset>
+                <legend>対象 Verilog ファイル</legend>
+                <div id="simulation-files"></div>
+              </fieldset>
+              <label class="field" for="simulation-time-limit">
+                <span>時間上限（秒）</span>
+                <input id="simulation-time-limit" type="number" min="1" max="120" value="10" />
+              </label>
+            </section>
             <div class="project-archive-actions">
               <button id="export-project-button" type="button" class="secondary">
                 zip で書き出す
@@ -144,6 +164,15 @@
                   aria-controls="bottom-panel-artifacts"
                   tabindex="-1"
                 >成果物</button>
+                <button
+                  id="bottom-tab-waveform"
+                  type="button"
+                  role="tab"
+                  data-bottom-tab="waveform"
+                  aria-selected="false"
+                  aria-controls="bottom-panel-waveform"
+                  tabindex="-1"
+                >波形</button>
               </div>
               <section
                 id="bottom-panel-log"
@@ -177,6 +206,20 @@
                 <p id="download-result" hidden>
                   <a id="dump-download" download>読み出したデータを保存</a>
                 </p>
+                <p id="wave-download" hidden>
+                  <a id="wave-download-link" download="wave.vcd">wave.vcd を保存</a>
+                </p>
+              </section>
+              <section
+                id="bottom-panel-waveform"
+                class="bottom-panel waveform-panel"
+                role="tabpanel"
+                data-bottom-panel="waveform"
+                aria-labelledby="bottom-tab-waveform"
+                hidden
+              >
+                <p id="waveform-status" role="status" aria-live="polite"></p>
+                <div id="surfer-mount"></div>
               </section>
             </div>
           </section>
