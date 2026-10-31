@@ -29,3 +29,19 @@
 ## 記録
 
 - 成功しても失敗しても `docs/experiments/S11-nvc-wasm.md` に残す。失敗のときは、止まった場所、ログ、試した方式、打ち切りの理由を書き、RESEARCH.md にも要約を書く。
+
+## 延長（2026-10-31、ユーザーの判断「もう一段だけ試す」）
+
+最初の打ち切りは、Emscripten の configure にある `_Unwind_Backtrace` の検査（`src/debug.c` のデバッグ用のバックトレース）で起きた。コルーチンと pthread が Emscripten で動くかは、まだ確かめていない。そこで、次の範囲だけを追加で試す。試す前に固定する。
+
+- 変えてよいもの（`patches/nvc/` の patch として）：
+  1. `__EMSCRIPTEN__` のとき、バックトレースを使わない（`debug.c` と configure の検査）。
+  2. コルーチン（`src/thread.c` の ucontext）を、Emscripten の fiber（`emscripten_fiber_*`、Asyncify）か JSPI に置き換える。
+  3. pthread は Emscripten の `-pthread`（COOP/COEP が必要）で使う。だめなら、スレッドを 1 本にする patch。
+  4. dlopen・libffi の経路は、使わないものとして塞ぐ。
+- 出力は Emscripten の JS と WASM でよい（WASI の import だけにすることは求めない）。
+- 合格の条件は、最初の基準の 1〜5 のまま変えない。
+- 打ち切り：次のどれかに当たったら止め、止まった場所とログを記録して T5 に進む。
+  - 作業の時間が合計で 4 時間を超える
+  - patch が、上の 1〜4 の範囲の外の NVC のファイル（`debug.c`、`thread.c`、`jit-ffi.c`、configure、Makefile 以外）を 5 つより多く変える必要がある
+  - リンクしても、4 ボードの counter の testbench が Node で最後まで動かない
