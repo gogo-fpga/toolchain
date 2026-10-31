@@ -106,6 +106,14 @@ EOF
     printf 'WASI SDK archive SHA-256 mismatch: %s\n' "$archive" >&2
     exit 1
   fi
+  if [ -d "$sdk_dir" ] &&
+    { [ ! -x "$sdk_dir/bin/clang" ] || [ ! -x "$sdk_dir/bin/clang++" ] \
+      || [ ! -x "$sdk_dir/bin/llvm-ar" ] || [ ! -x "$sdk_dir/bin/llvm-ranlib" ]; }; then
+    rm -rf "$sdk_dir"
+  fi
+  if [ ! -d "$sdk_dir" ]; then
+    tar -xzf "$archive" -C build
+  fi
   if [ ! -x "$sdk_dir/bin/clang" ] || [ ! -x "$sdk_dir/bin/clang++" ] \
     || [ ! -x "$sdk_dir/bin/llvm-ar" ] || [ ! -x "$sdk_dir/bin/llvm-ranlib" ]; then
     printf 'Pinned WASI SDK is missing or incomplete: %s\n' "$sdk_dir" >&2
