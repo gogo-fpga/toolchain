@@ -262,6 +262,10 @@ patch は2ファイルで、NVC の patch が触れる固有ファイルは9つ�
 | `build/S11/nvc-native-counter-test.log` | `5d7bc7d0d63b6326eb487870f410b373748f539405d7bad25d86bb2aae49ba9e` | native numeric_std counter testbench 成功 |
 | `build/S11/nvc-wasm-counter-test.log` | `b3b35353869c7e05a98ff49737dcc3df23f9c8fe01229b9d352a90ba6f6e8768` | WASM numeric_std counter testbench、elaboration trap |
 
+## 最終判断
+
+6 ファイル目（`src/object.h`）の変更を認めて続けるか、ここで打ち切るかをユーザーに尋ね、ユーザーは打ち切りを選びました。残り予算（2時間56分13秒）は使いません。S11 の結論は「NVC の WASM 化は採用しない」です。このため、ブラウザーでの VHDL のシミュレーションは提供しません。VHDL は GHDL による合成だけを扱い、シミュレーションは Icarus Verilog（Verilog）で行います。
+
 ## ログ
 
 ログは `build/S11/` に保持しています。以下の hash は各ファイル全体の SHA-256 です。大きな build log はコミットしていません。
