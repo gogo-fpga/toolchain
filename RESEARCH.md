@@ -72,7 +72,7 @@ T0 では書き込み部だけが実装されています。合成、配置配�
 | nextpnr-himbaechel（Gowin） | C++ | ISC | [YoWASP](https://yowasp.org/) が nextpnr の WASI 版を提供 | T2。必要な Gowin device database のみを含め、4 ボードの配置配線を検証する |
 | Apicula / `gowin_pack` | Python | Apicula: MIT。Pyodide: MPL-2.0 | S3 で Node.js/Pyodide の native parity を確認し、配布 wheel を追加する。Worker は S4 | S3。4ボードの `.fs` 一致、実行時間、配布サイズを測定する |
 | openFPGALoader | C++ | Apache-2.0 | 移植元で Emscripten と WebUSB による WASM 化を実装 | T0 の書き込み部として移植済み。以降も upstream のソースを使う |
-| NVC | C | GPL-3.0-or-later | この調査では WASM 版を確認できていない | T4。LLVM なしの解釈実行を調査する。`configure.ac` は `--enable-llvm` を宣言し、LLVM を既定で有効にする。依存は pthread、zlib、libffi、libzstd |
+| NVC | C | GPL-3.0-or-later | S11 は Emscripten NVC の link と native standard-library build に成功したが、Node counter testbench が elaboration で trap | 実際の addendum cutoff により T5 へ進む。初回の cutoff 判断は誤適用として訂正し再開した。out-of-scope NVC files は5。詳細は[S11 記録](docs/experiments/S11-nvc-wasm.md) |
 | Icarus Verilog (`iverilog` / `vvp`) | C | GPL-2.0-or-later。`tgt-vvp` は LGPL-2.1 | [VeriSim](https://github.com/senolgulgonul/verisim) が Emscripten で `ivlpp`、`ivl`、`vvp` を個別に WASM 化 | T4。3 つの WASM を JavaScript で順番に呼ぶ方式を基礎にする。詳しくは[広域調査](docs/research/oss-survey.md)を参照 |
 | Verilator | C++ | LGPL-3.0 | [tiny-tpu](https://github.com/deaneeth/tiny-tpu) は事前ビルドした WASM を配布。ブラウザー内で C++ をコンパイルする例ではない | 将来。生成コードを実行する C++ コンパイラーをブラウザー内で用意する方法が必要。詳しくは[広域調査](docs/research/oss-survey.md)を参照 |
 | SymbiYosys / `yosys-smtbmc` | Python | 未確認 | YoWASP の Yosys は確認したが、Python 側の WASM 実行例は未確認 | T6。Yosys と Python 側の実行環境を分けて検証する |
@@ -235,7 +235,7 @@ S6 では zstd・xz 展開器の最適化を比較しました。OsLTO が最速
 
 合計にはページ、ビルド Worker、書き込み用資材とライブラリーも含みます。分類別の内訳は synth が manifest と zstd 資材、pack が manifest・圧縮資材・raw 資材、その他が画面と書き込み資材です。pack の配信では Pyodide の WASM と lock JSON を zstd にし、その他は raw のままにします。pack も shared verified loader で検証し、展開後の資材を Cache Storage `gogo-fpga-pack-v1` に SHA-256 を含むキーで保存します。実機では未確認で、配信先の目標は Cloudflare Pages です。ユーザーによる実機確認後に公開します。計測の詳細と集計値は [S4C](docs/experiments/S4C-cold-load-bytes.md) に記録しました。デプロイは行っていません。
 
-NVC の確認元は[configure.ac](https://github.com/nickg/nvc/blob/058be4ccd39abefe3bcff455eb3964f4731a4a05/configure.ac)です。そこから確認できるのは LLVM の有効化条件と pthread、zlib、libffi、libzstd の検出です。LLVM を無効にした実行経路や WASM での動作は、まだ検証していません。
+NVC r1.23.1 の確認元は[configure.ac](https://github.com/nickg/nvc/blob/fab54a9e96964b431050d837e163c22282a1df6c/configure.ac)です。S11 は WASI SDK 34.0 の configure で pthread が検出されず、Emscripten 6.0.13 の初回 configure では `_Unwind_Backtrace` の link probe が失敗しました。backtrace patch で configure を通し、最初の cutoff 判断は誤適用としてユーザーの指摘後に再開しました。`jit-code.c` には小さな `__EMSCRIPTEN__` compile guard を置き、LLVM と native plugin の登録がない構成では `jit_interp` が default entry になることを NVC r1.23.1 の `src/nvc.c:846-854`、`src/jit/jit-core.c:142-167,258-267,736-745`、`src/jit/jit-interp.c:1129-1142` で確認しました。Emscripten NVC は link し、native NVC で standard libraries も生成しました。最初に報告した `RuntimeError: null function or function signature mismatch` の原因は、`src/object.h:171` の `object_copy_fn_t` が `bool` を返す一方、`src/tree.h:638-639` の tree/type callback は `void` を返し、`src/tree.c:1405-1406` が異なる戻り値型を cast して `src/object.c:1201-1205` で間接呼び出すことだと確認しました。debug stack は counter testbench の elaboration から `object_copy_finish`、`tree_copy_finish`、`vhdl_architecture_instance` への実行を示し、Wasm disassembly では同関数内の indirect call は1箇所でした。`-sEMULATE_FUNCTION_POINTER_CASTS=1` で analysis/elaboration は通るものの、simulation は `missing body for (null)` で停止し、function-pointer-cast workaround だけでは criteria 3 を満たしません。`jit-core.c` の `jit_missing_unit` に到達したことは確認しましたが、null unit name の発生原因は未確定です。正しい signature 修正には exempt でない `src/object.h` を6ファイル目として変更する必要があるため、5-file limit により停止しました。追加診断の打ち切りは `2026-10-31T02:03:23Z`（再開後9分38秒、累計1時間03分47秒）です。NVC patch の out-of-scope files は5です。詳細は [S11 実験記録](docs/experiments/S11-nvc-wasm.md) を参照してください。
 
 ## 4. Emscripten のオプション
 
@@ -296,7 +296,7 @@ GHDL、NVC、Icarus Verilog など GPL のツールを WASM にビルドして R
 - Tang Nano の IDCODE とフラッシュ情報の個体差。移植元の調査値はありますが、実機での照合はしていません。
 - 合成・配置配線 WASM の実行可否、実行時間、メモリー量、成果物サイズ。YoWASP と synth-explorer の記録を本リポジトリーで再現していません。
 - WASI SDK 33 での LTO とネイティブ WASM 例外の問題。synth-explorer の報告を確認しただけで、再現していません。
-- NVC で `--disable-llvm` を指定したときの解釈実行経路と WASM 互換性。確認した `configure.ac` は LLVM を既定で有効にし、`--enable-llvm` を宣言しています。
+- NVC で `--disable-llvm` を指定したときの interpreter の runtime 完走。S11 では `-sEMULATE_FUNCTION_POINTER_CASTS=1` により analysis/elaboration が進むことを確認しましたが、Node counter simulation は `missing body for (null)` で停止しました。function signature mismatch の原因は特定済みですが、null unit name の根本原因は未確認です。[実験記録](docs/experiments/S11-nvc-wasm.md)を参照してください。
 - Apicula と Pyodide の組み合わせ、必要な Python 依存、実行時間、配布サイズ。
 - VeriSim の Icarus Verilog 構成を本リポジトリーへ適用した場合の機能範囲と実行時間。
 - Verilator 生成 C++ をブラウザー内でコンパイル・実行する方法。
