@@ -48,15 +48,10 @@ jobs:
           exit "$status"
 
       - name: 文書に個人環境のパスがない
-        run: |
-          # verbatim public GitHub Actions log evidence; runner paths are part of the record
-          if git grep -nE '/home/[A-Za-z0-9_-]+/|~/work/' -- \
-            docs README.md RESEARCH.md AGENTS.md .agents \
-            ':!.agents/skills/yomiyasu' \
-            ':!docs/experiments/S8/raw/**'; then
-            echo "::error::文書から VM・個人環境のパスを削除してください。"
-            exit 1
-          fi
+        run: python3 .github/scripts/check-document-paths.py
+
+      - name: 文書パス検査のテスト
+        run: python3 -m unittest discover -s tests/check-document-paths
 
       - name: 追跡しているテキストの文字が JIS X 0213 の範囲内にある
         run: python3 .github/scripts/check-jisx0213.py
