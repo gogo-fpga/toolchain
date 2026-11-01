@@ -125,6 +125,8 @@ WASI では `dlopen` / `dlsym` を使えないため、`IVL_STATIC_TARGET` で v
 
 native build で zlib が検出された場合だけ static `system.vpi` の link に `-lz` を渡します。WASI configure は zlib を検出せず、WASI artifact は zlib API に依存しません。WASI Preview 1 shim の `poll_oneoff` は `NOSYS` を返しますが、host callback による計測で7 fixture と4 board template の positive simulation path から呼ばれないことを確認しました。VCD の `$date` は `SOURCE_DATE_EPOCH` があるとき固定 epoch を使う patch を加え、native/WASI の stdout と VCD を再現可能に比較します。各 patch の理由と結果は [S10 Icarus Verilog WASM 記録](docs/experiments/S10-iverilog-wasm.md)、artifact の raw hash とサイズは [S10 results.csv](docs/experiments/S10/results.csv) に記録しました。
 
+T4 の配布前検査では `ivlpp.wasm`、`ivl.wasm`、`vvp.wasm` をビルド元と全バイト照合します。配布先に追加するだけの例外ではなく、各ファイルの欠落・改変と余分なファイルを拒否する負の対照を設けます。波形表示は VCD 選択、状態表示、Surfer の3行に分け、タブを含む下部ペインに必要な高さを確保します。通常幅と390px幅のパネル高420px以上という既存の検査条件は維持します。
+
 ### Yosys v0.70 と WASI SDK
 
 Yosys v0.70 は CMake でビルドします。upstream の [`CMakeLists.txt`](https://github.com/YosysHQ/yosys/blob/28ba3cb926fe376fa05ebfc1b921747d011d4557/CMakeLists.txt#L159-L169) は `CMAKE_SYSTEM_NAME` が `WASI` の場合の設定を持ちますが、Emscripten 用の分岐はありません。このため、合成・配置配線ツールには WASI SDK を使い、書き込み部の Emscripten と使い分けます。

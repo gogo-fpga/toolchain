@@ -561,7 +561,7 @@ dialog::backdrop {
 
 .waveform-panel {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   padding: 0.5rem;
 }
 
@@ -749,7 +749,7 @@ dialog::backdrop {
 }
 
 .editor-pane[data-waveform-active="true"] {
-  grid-template-rows: auto auto minmax(12rem, 1fr) minmax(27.5rem, 50vh);
+  grid-template-rows: auto auto minmax(12rem, 1fr) minmax(30rem, 50vh);
 }
 
 .editor-heading {
