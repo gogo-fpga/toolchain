@@ -36,6 +36,12 @@ Playwright の preflight は `build/synth` と `dist/synth` の相対 file set �
 
 Yosys v0.69 から v0.70 では `alumacc -macc-only`、`optbarriers`、`flatten` と `prep` の `-barriers`、`mcm`、`rmports -purge`、`ltp -select`、色付きログが追加され、`read_xaiger2` が削除されました。`vendor/yosys/CHANGELOG` の該当節を確認しました。今回の `read_verilog` と `synth_gowin` を使う経路ではどの変更も必要ないため、追加のオプションやパスは採用しません。WASI SDK 34 の release notes では CMake toolchain の調整、wasi-libc の更新、WASI Preview 3 対応の作業が挙げられています。Preview 1 の同期実行を使う本段階では追加の対応を行いません。
 
+### 固定版Yosysのビルド情報の比較
+
+固定したYosys v0.70のCI成果物では、同じcommitでもcreatorに `0.70+` が入り、タグ付きの手元ビルドの `0.70` と異なりました。上流の[YosysVersion.cmake](https://github.com/YosysHQ/yosys/blob/28ba3cb926fe376fa05ebfc1b921747d011d4557/cmake/YosysVersion.cmake)はGitのタグからの距離とcheckout情報を組み立て、Gitなしのソースでは `.gitcommit` を参照します。版の接尾辞だけで、異なる回路やcommitとは判定しません。
+
+共通の比較器はpin checkerが読む版とgitlinkの一致を必須にし、接尾辞は空、`+`、`+post` に限定します。revisionは固定commitの9桁表記または全40桁と、直後の区切りまで照合します。別の版・commit、余分なcommit文字、`-dirty`、`+1` は負の対照で拒否します。creatorとshareのsource属性以外は正規化せず、回路、値、JSONのキー順の差を失敗とします。メタデータの模擬入力に加え、製品用のnative/WASIで4ボードの合成結果と構文エラーを比較しました。GitなしのソースからのYosys再ビルドを、この比較だけで確認済みとはしません。
+
 ## 圧縮した WASM 資材の復号
 
 `zstd` v1.5.7 の `CHANGELOG` では圧縮 API の追加、圧縮速度の改善、32-bit 圧縮処理の修正などを確認しました。今回使うのは standalone decoder の `ZSTD_decompress` だけで、複数 frame を連結した入力も扱えます。生成 C はビルド時に `combine.py` で作り、BSD-3-Clause の条件を選びます。

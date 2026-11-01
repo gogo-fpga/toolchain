@@ -12,6 +12,12 @@ assert.equal(commit, execFileSync("git", ["rev-parse", "HEAD:vendor/yosys"], { c
 export const creatorPrefix = `Yosys ${version.replace(/^v/, "")} (git sha1 ${commit.slice(0, 9)}`;
 export const nativeYosysSharePath = path.join(root, "build/native/share");
 
+export function assertYosysCreator(creator) {
+  const prefixes = ["", "+", "+post"].flatMap((suffix) =>
+    [commit.slice(0, 9), commit].map((revision) => `Yosys ${version.replace(/^v/, "")}${suffix} (git sha1 ${revision}, `));
+  assert.ok(typeof creator === "string" && prefixes.some((prefix) => creator.startsWith(prefix)), `Unexpected Yosys creator: ${creator}`);
+}
+
 export function runNativeYosys(workdir, command) {
   const started = performance.now();
   const result = spawnSync(path.join(root, "build/native/yosys"), ["-q", "-p", command], {
@@ -39,10 +45,10 @@ export function assertYosysParity(nativeDocument, wasiDocument) {
     }
   }
   for (const document of [native, wasi]) {
-    assert.ok(typeof document.creator === "string" && document.creator.startsWith(creatorPrefix), `Unexpected Yosys creator: ${document.creator}`);
+    assertYosysCreator(document.creator);
     normalize(document);
   }
-  // Compiler identity and the mounted share path are not circuit differences.
+  // Build identity and the mounted share path are not circuit differences.
   wasi.creator = native.creator;
   assert.ok(substitutions > 0, "No native share path was found under attributes.src");
   assert.equal(JSON.stringify(native), JSON.stringify(wasi), "Native/WASI synthesis JSON differs (including key order)");

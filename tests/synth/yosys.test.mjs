@@ -8,6 +8,7 @@ import { performance } from "node:perf_hooks";
 import { WASI } from "node:wasi";
 import { createBlinkTemplate, TEMPLATE_PINS } from "../../web/lib/templates.mjs";
 import { verilogReadCommand } from "../../web/lib/libraries.mjs";
+import { assertYosysCreator } from "./yosys-parity.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const wasmPath = path.join(root, "build/wasi/yosys/yosys.wasm");
@@ -22,7 +23,6 @@ const [yosysVersion, yosysCommit] = execFileSync(
   "python3", [".github/scripts/check-pins.py", "yosys-pin"], { cwd: root, encoding: "utf8" },
 ).trim().split("\t");
 assert.equal(yosysCommit, yosysGitlink, "Yosys pin and gitlink must match");
-const creatorPrefix = `Yosys ${yosysVersion.replace(/^v/, "")} (git sha1 ${yosysGitlink.slice(0, 9)}`;
 const wasmSize = statSync(wasmPath).size;
 const wasmModule = new WebAssembly.Module(readFileSync(wasmPath));
 const synthCommand = "read_verilog src/top.v; synth_gowin -top top -json top.json";
@@ -200,13 +200,10 @@ function assertSynthesisJsonEqual(nativeDocument, wasiDocument) {
   const native = structuredClone(nativeDocument);
   const wasi = structuredClone(wasiDocument);
   for (const document of [native, wasi]) {
-    assert.ok(
-      typeof document.creator === "string" && document.creator.startsWith(creatorPrefix),
-      `creator must start with ${creatorPrefix}; received ${JSON.stringify(document.creator)}`,
-    );
+    assertYosysCreator(document.creator);
   }
 
-  // Yosys embeds compiler identity in creator and the runtime-mounted share path in attributes.src.
+  // Yosys embeds build identity in creator and the runtime-mounted share path in attributes.src.
   wasi.creator = native.creator;
   const substitutions = normalizeSourcePaths(native) + normalizeSourcePaths(wasi);
   assert.ok(substitutions > 0, "No native share paths were found under attributes.src");
@@ -257,7 +254,7 @@ for (const boardId of Object.keys(TEMPLATE_PINS)) {
           wrongCreator.creator = wrongCreator.creator.replace(expected, "unpinned");
           assert.throws(
             () => assertSynthesisJsonEqual(nativeJson, wrongCreator),
-            /creator must start/,
+            /Unexpected Yosys creator/,
             "The comparison accepted an unpinned Yosys version or revision",
           );
         }
