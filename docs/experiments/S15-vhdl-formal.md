@@ -40,15 +40,23 @@ GHDL_WASM_BUILD_ROOT=build/S15/vhdl-formal-build2 node --test --test-concurrency
 node --test --test-concurrency=1 tests/web/*.test.mjs tests/synth/formal-sat.test.mjs tests/synth/formal-replay.test.mjs tests/synth/iverilog-wasm.test.mjs
 ```
 
-各比較は`build/S15/p1-vhdl-<一意名>/`を新規作成します。manifestにrevision・未コミット差分・Node・native GHDLの実表示とhash・WASM hash・build manifestを保存します。11シナリオそれぞれで、GHDLの2出力をYosysの2実行系へ渡した計44行11列の生CSVを保存します。全44行の期待値・実値・property数・3つのhashを監査し、反例28行、有界安全8行、PSL無効のerror4行、前提矛盾4行に分類できました。反例を独立検証済みとは表示しません。
+各比較は`build/S15/p1-vhdl-<一意名>/`を新規作成します。manifestにrevision・未コミット差分・Node・native GHDLの実表示とhash・WASM hash・build manifestを保存します。11シナリオそれぞれで、GHDLの2出力をYosysの2実行系へ渡した計44行11列の生CSVを保存します。全44行の期待値・実値・property数・3つのhashを監査し、反例28行、有界安全8行、PSL無効のerror4行、前提矛盾4行に分類できました。error4行では一覧が得られず、3種類のproperty数は空欄です。0個と解釈しません。反例を独立検証済みとは表示しません。
 
 元VHDL、GHDLの全stdout/stderr、生成Verilog、Yosysのscript・中間JSON・RTLIL・結果・反例を保存します。入力hashと通常出力も同じ証拠に含め、CIでは既存のGHDL/Yosys資材を使い`ci-formal-vhdl-<run_id>`へ7日間保存する構成です。CIは全実装後の確認とし、この段階では未確認です。
 
-| 比較した成果物 | SHA-256 |
+| build2で比較した成果物 | SHA-256 |
 |---|---|
 | GHDL native | `42d7a51d735f826ee7c05d9e41c73b067df81ec78445765dc20c4a68a8ab9adc` |
 | GHDL WASM | `a0bd7fe303e7531d606aac5181ee67bb1ee6ce88fce2360947a7d5e1399c85e8` |
 | 標準library archive | `32c3586a64b5adc62d55a45aab127b18aeb2f45a8205da089d5618c6c9e10513` |
+
+## 清浄な実装commitでの診断結果
+
+`72080be6aa96821660c52ac5d9f3f351f5dba233`を固定し、build4を新規にビルドしました。source manifestが現在のpatch・Ada APIと一致し、比較時の`workingTree`も空文字列です。前述のGHDL比較コマンドのbuild rootだけを`build/S15/vhdl-formal-build4`へ変えて実行し、33件成功、失敗・skip・cancel各0件でした。Web・SAT・Verilog反例再実行・Icarusの213件も、実装が同じ清浄な`4001f2f666f26cb4bbbbacc9a29b06c489b723ec`で成功しています。後続の差分はGHDL patchのimport位置と本記録だけで、最終提出する版でも両方を再検査します。
+
+[生CSV](S15-vhdl-formal.csv)の全44行11列、計484値を監査しました。元VHDLのhash、native/WASMの生成Verilog・property一覧のhash、期待値・実値・実行系と4通りの組合せを照合しています。property数の空欄は一覧のないerror4行だけです。28反例の結果JSONでは`replay: pending`とVCD・WaveJSONの存在も確認しました。CSVはSHA-256 `a5cbd44dfbdf5a53e0f11bd4b0bbaaac30e7d5168433403859ebe16b5b91df10`、実行manifestは`32dbd62f389575a53e6f4fbe12aa8cde13d16eb0767e5e1d7f41aa241988ad6c`、33件の全ログは`b7d62778be659d5d19c8c358b96d4cf83549d24682e78aa8466953c34fc57fd7`です。
+
+build4のWASMとlibrary archiveはbuild2と同じhashでした。nativeは`ccb93bf7a700b692cff3fe16e833f5ba6b5842393cfd07e8af062c8c441ff6d5`、形式出力patchは`dd0869c96d23d97f6d4d298aaf1ca14146979f9c90e98590b863d1ca06fcf02b`です。開始位置だけのsource属性、GHDLの小文字化したlabel、activation coverの生成条件は変えていません。ビルドには既存の`-nostartfiles`未使用警告がありましたが、比較でunknownを成功へ読み替えてはいません。
 
 ## 未確認の範囲
 
