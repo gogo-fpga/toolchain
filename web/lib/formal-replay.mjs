@@ -117,7 +117,8 @@ export function createSatReplay({ document, top, witness, clock = null, edge = "
     lines.push(`    $display("FORMAL_REPLAY_CHECK ${step + 1}");`);
   }
   lines.push('    $display("FORMAL_REPLAY_DONE");', "    $finish;", "  end", "endmodule", "");
-  return { path: "__formal/replay.v", content: lines.join("\n"), steps, locations, endTimeNs: clockPort ? 3 * steps - 2 : steps };
+  return { path: "__formal/replay.v", content: lines.join("\n"), steps, locations, properties: inventory.properties, ports, clock, edge,
+    endTimeNs: clockPort ? 3 * steps - 2 : steps };
 }
 
 export function verifySatReplay(replay, execution) {
