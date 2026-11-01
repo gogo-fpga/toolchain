@@ -41,3 +41,4 @@
 | 実験 | 目的 | 状態 |
 |---|---|---|
 | [S15 形式検証](S15-formal-verification.md) | 上流SBY・SMTBMCとソルバーの再利用、native/WASM、property・反例、輸送と非成功判定 | 事前基準を登録。形式検証のビルド・証明・5回反復は未実施 |
+| [S15 P0 配布ソース照合](S15-formal-source-closure.md) | 固定ソース、GMP原archive、licenseとGit情報なしの再生成 | c41e5c5で配布ソースとZIPを照合。形式検証の実行とは区別 |
