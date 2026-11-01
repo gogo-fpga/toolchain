@@ -9,6 +9,10 @@ import {
   writeFileSync,
 } from "node:fs";
 import { relative, resolve } from "node:path";
+import {
+  assertCopiedFileMatches,
+  assertCopiedTreeMatches,
+} from "./distribution-preflight.mjs";
 import { routeWorkerWithFakeUsb, stubPageUsb } from "./fake-usb-helpers.mjs";
 
 const repoRoot = resolve(import.meta.dirname, "../..");
@@ -237,6 +241,25 @@ function assertDistributionMatchesSources() {
     "openFPGALoader.mjs",
     "openFPGALoader.wasm",
   ]);
+  const buildRoot = resolve(repoRoot, process.env.BUILD_ROOT ?? "build");
+  const licensePaths = assertCopiedTreeMatches({
+    repoRoot,
+    distRoot,
+    sourceRoot: resolve(repoRoot, "licenses"),
+    distSubdir: "licenses",
+  });
+  const surferPaths = assertCopiedTreeMatches({
+    repoRoot,
+    distRoot,
+    sourceRoot: resolve(buildRoot, "surfer/dist"),
+    distSubdir: "surfer",
+  });
+  const thirdPartyNoticePaths = assertCopiedFileMatches({
+    repoRoot,
+    distRoot,
+    sourcePath: resolve(repoRoot, "THIRD_PARTY_NOTICES.md"),
+    distPath: "THIRD_PARTY_NOTICES.md",
+  });
   const packPaths = assertPackMatchesBuild();
   const synthPaths = assertSynthMatchesBuild();
   const distPaths = new Set(
@@ -247,6 +270,9 @@ function assertDistributionMatchesSources() {
     if (generatedFileAllowlist.delete(path)) continue;
     if (packPaths.delete(path)) continue;
     if (synthPaths.delete(path)) continue;
+    if (licensePaths.delete(path)) continue;
+    if (surferPaths.delete(path)) continue;
+    if (thirdPartyNoticePaths.delete(path)) continue;
     throw new Error(`Playwright preflight: unexpected dist/${path}`);
   }
   if (generatedFileAllowlist.size > 0) {
@@ -265,13 +291,23 @@ function assertDistributionMatchesSources() {
       `Playwright preflight: dist/${synthPaths.values().next().value} is missing`,
     );
   }
+  for (const copiedPaths of [
+    licensePaths,
+    surferPaths,
+    thirdPartyNoticePaths,
+  ]) {
+    if (copiedPaths.size > 0) {
+      throw new Error(
+        `Playwright preflight: dist/${copiedPaths.values().next().value} is missing`,
+      );
+    }
+  }
   for (const path of runtimeFiles) {
     if (!distPaths.has(path)) {
       throw new Error(`Playwright preflight: dist/${path} is missing`);
     }
   }
 
-  const buildRoot = resolve(repoRoot, process.env.BUILD_ROOT ?? "build");
   const buildWasm = resolve(buildRoot, "jspi-pthread/openFPGALoader.wasm");
   const distWasm = resolve(distRoot, "openFPGALoader.wasm");
   const buildHash = sha256(readFileSync(buildWasm));
@@ -356,6 +392,35 @@ test("built distribution matches sources and the build-root WASM", () => {
     );
   } finally {
     writeFileSync(manifestPath, originalManifest);
+  }
+
+  const licenseRoot = resolve(repoRoot, "dist/licenses");
+  const extraLicensePath = resolve(
+    licenseRoot,
+    `.preflight-extra-${randomUUID()}`,
+  );
+  try {
+    writeFileSync(extraLicensePath, "unexpected");
+    assert.throws(
+      () => assertDistributionMatchesSources(),
+      /unexpected dist\/licenses\/\.preflight-extra-/,
+    );
+  } finally {
+    rmSync(extraLicensePath, { force: true });
+  }
+
+  const surferIndexPath = resolve(repoRoot, "dist/surfer/index.html");
+  const originalSurferIndex = readFileSync(surferIndexPath);
+  const alteredSurferIndex = Buffer.from(originalSurferIndex);
+  alteredSurferIndex[0] ^= 1;
+  try {
+    writeFileSync(surferIndexPath, alteredSurferIndex);
+    assert.throws(
+      () => assertDistributionMatchesSources(),
+      /dist\/surfer\/index\.html differs from .*surfer\/dist\/index\.html/,
+    );
+  } finally {
+    writeFileSync(surferIndexPath, originalSurferIndex);
   }
 });
 
