@@ -46,3 +46,4 @@
 | [S15 P0 配布ソース照合](S15-formal-source-closure.md) | 固定ソース、GMP原archive、licenseとGit情報なしの再生成 | c41e5c5で配布ソースとZIPを照合。形式検証の実行とは区別 |
 | [S15 P1 SAT反例の独立再実行](S15-formal-replay.md) | 元のVerilogをIcarusのnative/WASMで再実行し、壊した出力・resetを拒否 | 清浄なbf042daで210件成功。生CSV38行15列を監査。正式5回反復と画面統合は未完了 |
 | [S15 P1 VHDL・PSL property保持](S15-vhdl-formal.md) | 上流GHDLの解析とmonitorを再利用し、明示した形式出力をYosysへ渡す | 清浄な72080beで33件成功、生CSV44行11列を監査。PSL解析の失敗も記録。独立再実行と正式反復は未完了 |
+| [S15 P1 元VHDLの独立再実行](S15-vhdl-native-replay.md) | GHDL標準VPI・PSLレポートと独立VCDで反例を照合 | 予備検査55件成功。28反例と実runtimeの負の対照12件、CSV全列監査。正式反復・同一commit検証は未完了 |
