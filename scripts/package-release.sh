@@ -416,6 +416,8 @@ source_required_files=(
   "$source_root/web/lib/ghdl-host.mjs"
   "$source_root/web/lib/vhdl-order.mjs"
   "$source_root/patches/ghdl/blackbox-verilog.patch"
+  "$source_root/patches/ghdl/formal-verilog.patch"
+  "$source_root/patches/ghdl/formal-verilog-driver.patch"
   "$source_root/patches/iverilog/static-wasi.patch"
   "$source_root/patches/surfer/remove-service-worker.patch"
   "$source_root/patches/ghdl/grt-stdio.patch"

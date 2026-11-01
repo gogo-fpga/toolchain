@@ -186,7 +186,7 @@ GHDL、NVC、Icarus Verilog など GPL のツールを WASM にビルドして R
 
 ## 7. 分割した調査
 
-T6は上流SBY・SMTBMCの再利用を選び、固定ソースと[S15の事前基準](docs/experiments/S15-formal-verification.md)を登録しました。Yosys SATの比較経路と、元のVerilogをIcarusで独立に再実行する限定した検査経路を実装中です。SMTソルバー・画面統合と正式5回反復は未完了です。以下に方式と制限、初期調査との差、依存、GMPの取得失敗と署名鍵の期限切れも記録します。
+T6は上流SBY・SMTBMCの再利用を選び、固定ソースと[S15の事前基準](docs/experiments/S15-formal-verification.md)を登録しました。Yosys SAT、元のVerilogをIcarusで独立に再実行する検査経路、明示したGHDL形式出力によるVHDL・PSL property保持を実装中です。PSLのコメント解析には上流と同じ2フラグが必要で、activation coverはassertと区別します。[GHDLの診断と初回の失敗](docs/experiments/S15-vhdl-formal.md)も保存します。VHDL原文による反例再実行、SMTソルバー・画面統合と正式5回反復は未完了です。以下に方式と制限、初期調査との差、依存、GMPの取得失敗と署名鍵の期限切れも記録します。
 
 大きな調査は `docs/research/` に分けて置きます。
 

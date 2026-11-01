@@ -16,6 +16,8 @@ package Synth_Api is
    --  configure diagnostics. 0 = success.
    function Synth_Init return Integer;
 
+   function Synth_Set_Formal (Enable : Integer; Psl : Integer) return Integer;
+
    function Synth_Set_Library
      (Name : Thin_String_Ptr; Len : Natural) return Integer;
 
