@@ -16,7 +16,7 @@ GHDLのsource位置は開始位置のみなので、形式出力の`src`は同�
 
 ## 状態
 
-作業中の版でnative/WASMを作り直しました。診断では通常合成の既存19件と形式出力14件、計33件が成功しています。反例は独立再実行の前なので`pending`のままです。提出する清浄なcommitでの再検査、生CSVの監査と保存、正式反復はまだ残っています。実機Tang NanoとCloudflare Pages公開は本リポジトリでは試していません。
+清浄な実装commitでも通常合成の既存19件と形式出力14件、計33件が成功しました。生CSVの全44行11列も監査して保存しています。反例は独立再実行の前なので`pending`のままです。正式反復とT6全体は未完了です。実機Tang NanoとCloudflare Pages公開は本リポジトリでは試していません。
 
 ## 初回の失敗と修正
 
@@ -26,7 +26,7 @@ GHDLのsource位置は開始位置のみなので、形式出力の`src`は同�
 
 検査用の小さなWASMにも初回はconstructor exportがなく、単体8件のうち2件が失敗しました。fixtureへexportを加えた後は8件すべて成功しています。各失敗ログと途中のproperty一覧も保全します。
 
-提出前の差分検査は、patchの空行contextにある末尾空白を検出しました。空行を含まないcontextへ直したbuild3では、末尾にcontextのないimport追加hunkが適用に失敗しました。追加位置を既存importの間へ移し、dry runで確認してからbuild4を新規に開始します。上流のproperty処理と通常出力を変える修正ではありません。build2のsource hashはこのpatch変更後と一致しないので、最終検証には使いません。
+提出前の差分検査は、patchの空行contextにある末尾空白を検出しました。空行を含まないcontextへ直したbuild3では、末尾にcontextのないimport追加hunkが適用に失敗しました。追加位置を既存importの間へ移し、dry runで確認してからbuild4を新規に開始しました。上流のproperty処理と通常出力を変える修正ではありません。build2のsource hashはこのpatch変更後と一致しないので、最終検証には使いません。
 
 ## 固定条件と再実行
 
