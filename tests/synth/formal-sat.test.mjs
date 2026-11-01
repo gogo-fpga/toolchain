@@ -6,11 +6,13 @@ import path from "node:path";
 import test from "node:test";
 import { runSatFormal } from "../../web/lib/formal-sat.mjs";
 import { createMemoryTree, runWasiP1, treeToObject } from "../../web/lib/wasi-p1.mjs";
+import { assertYosysCreator } from "./yosys-parity.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const nativePath = path.join(root, "build/native/yosys");
 const wasmPath = path.join(root, "build/wasi/yosys/yosys.wasm");
 const wasm = new WebAssembly.Module(readFileSync(wasmPath));
+mkdirSync(path.join(root, "build/S15"), { recursive: true });
 const evidence = mkdtempSync(path.join(root, "build/S15/p1-sat-"));
 const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
 writeFileSync(path.join(evidence, "manifest.json"), JSON.stringify({
@@ -33,6 +35,10 @@ function executors(name, source) {
   function save(phase, result) {
     writeFileSync(path.join(directory, `${phase}.stdout`), result.stdout);
     writeFileSync(path.join(directory, `${phase}.stderr`), result.stderr);
+    for (const name of ["before.json", "after.json"]) {
+      const bytes = result.files.get(`__formal/${name}`);
+      if (bytes) assertYosysCreator(JSON.parse(new TextDecoder().decode(bytes)).creator);
+    }
     return result;
   }
   return {
