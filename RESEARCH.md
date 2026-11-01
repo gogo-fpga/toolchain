@@ -121,6 +121,8 @@ S2 の P&R テストは各ボードの Verilog テンプレートを WASI Yosys 
 
 nextpnr は ISC、Boost は Boost Software License 1.0、Eigen は主に MPL-2.0 で、一部に BSD など互換ライセンスのコードがあります。Apycula は MIT のライセンスです。S2 の chipdb 生成では Apicula と Python 依存をビルド時だけ使い、S3 では `gowin_pack` を実行する Apicula wheel と Pyodide runtime を web build / Release に追加します。ライセンス本文は `licenses/` と配布 zip に含めます。
 
+T5 の UART で見つかった native / WASI の配置差には、同じ座標のセルの入力順を保持するパッチをビルド時に適用します。製品用の8代表回路×4ボードを各実行系で5回ずつ比較し、全320回の配置 JSON が一致しました。A/A 20回と負例10回、資源・時間・メモリー・ビルドの根拠は [S13 の記録と生 CSV](docs/experiments/S13-nextpnr-determinism.md) に残します。回路や JSON のキー順の正規化で差を隠していません。実機は本リポジトリでは試していません。
+
 Apycula 0.35 と `requirements-nextpnr.txt` の固定依存で、4 family の chipdb 生成と P&R が成功しました。他の Apycula 版は試していません。native と WASI で別々に生成した `.bba` と chipdb は一致しなかったため、native build の `.bba` を WASI build に取り込みます。これにより、両実行形式が同じ chipdb を使うことをテストで byte 単位に確認します。
 
 Boost 1.92.0 は `-fwasm-exceptions` と `libunwind` を使って WASI 向けにビルドできました。別の Boost 版は試していません。nextpnr WASM は 34,141,610 bytes、native binary は 55,324,696 bytes です。ビルド時間は初回の WASI が 5 分 5.890 秒、native が 2 分 44.644 秒でした。chipdb 生成を共有する変更後の再ビルドは、既存のビルドを再利用して WASI が 10.957 秒、native が 4.575 秒でした。

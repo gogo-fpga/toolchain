@@ -29,5 +29,6 @@
 | [S12 Surfer WASM 化](S12-surfer-wasm.md) | Surfer v0.7.0 の WASM build、配布、browser test と再現性 | 同一 revision の local 2回と CI の全453ファイル一致 |
 | [S12 Surfer WASM 化の凍結基準](S12-surfer-wasm-criteria.md) | Surfer の再現 build、browser load、negative control の条件 | 測定前に固定 |
 | [S12B シミュレーション統合の回帰検証](S12B-simulation-integration.md) | timescale前後の4ボードbitstream比較、波形8画面、Icarus配布前検査と初回失敗の記録 | 全体E2E76件成功・比較測定4件skip、シミュレーション3回反復30件成功 |
+| [S13 nextpnr の配置結果の再現性](S13-nextpnr-determinism.md) | 製品用の8代表回路×4ボードで native / WASI を各5回比較。A/A、負の対照、資源、CSV を記録 | 候補2を採用。通常320回と A/A 20回が一致し、負例10回を拒否 |
 
 仮想デバイスによる測定値は、実機の値として扱いません。
