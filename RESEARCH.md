@@ -93,37 +93,7 @@ T0 では書き込み部だけが実装されています。合成、配置配�
 
 ### GHDL v6.0.0
 
-2026-10-30、ユーザーは選択肢 C（`ghdl-browser` への依存をなくし、GHDL 6.0.0 のソースから frontend を構成する）を決めました。理由は、`ghdl-browser` の README は GPL-2.0 と記す一方、LICENSE ファイルがなく、多くのファイルにライセンスヘッダーもないため、同じ WASM に含める Apache-2.0 の synth-explorer 由来コードとの適合性を確定できないことです。調査では、GHDL 6.0.0 の gitlink `e589c698c351369ac5bcfe7abe1f1152ac5d4727` を使う既存ビルドに、v5.0.1 ベースの `vhdl-sem.adb`、`vhdl-sem_names.adb`、`vhdl-sem_lib.adb`、`files_map.adb`、`dyn_tables.adb` が残っていることも分かりました。これらは GHDL 6.0.0 の原本に置き換え、frontend の unit 一覧は既存 build の `.ali` 一覧から作り、ソースは `vendor/ghdl/src` から取得します。
-
-runtime は、AdaWebPack の `No_Exception_Propagation` 制約に違反する GCC の OS・Calendar unit を追加せず、GHDL 6.0.0 と `synth_api` が参照する最小の spec/body を `scripts/ghdl-wasm/rts/` に実装しました。ファイル操作には WASI libc の C 関数を使います。`Ada.Command_Line` の引数数は 0、`Ada.Calendar.Clock` は `SOURCE_DATE_EPOCH` 由来の固定値、タイムゾーン差は 0 です。依存のない `Ada.Strings.Unbounded` など、制約下でコンパイルできる単位は GCC libgnat の原文を使用します。
-
-`error: cannot find "std" library` の原因は Ada 側の file predicate ではなく、WASI SDK の `O_RDONLY` 値と Ada runtime の想定値の不一致でした。C の `stat` predicate は成功していましたが、Ada から `open` に渡された flags は 0 で、WASI SDK の `O_RDONLY` は `0x04000000` でした。操作別の C helper が SDK の `O_RDONLY` / `O_WRONLY` macro を使うようにし、WASI trace で `std-obj08.cf` と library source の `path_open` / `fd_read` を確認しました。Verilog の短縮出力は別の問題で、GHDL の `Outputs.Close` が stdout を close せず、呼び出しから戻る前に stdio buffer が flush されていませんでした。C bridge が `__ghdl_get_stdout` で stdout を unbuffered にし、fixture test は native/WASM の Verilog が byte-identical であることを assert します。2つの clean build は WASM と libraries archive の双方が byte-identical でした。GHDL fixture と4 board の VHDL-to-`.fs` native/WASI 比較は、それぞれ5回連続で成功しました。詳細と hash、ログは [S0 GHDL build-and-smoke 記録](docs/experiments/S0-ghdl-wasm.md) にあります。
-
-ghdl-browser は README に `GPL-2.0` とだけ記され、LICENSE file がないため、Apache-2.0 の synth-explorer 由来コードと同じ WASM に含める根拠が不明確でした。2026-10-30、ユーザーは選択肢 C（依存の完全除去）を選びました。[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) に GHDL、GCC libgnat、AdaWebPack、synth-explorer のライセンスと配布方法を記載しました。AdaWebPack 24.0.0 の release archive にライセンスファイルがないため、BSD-3-Clause 本文には同じ upstream tag の `LICENSE.BSD3` を使いました。独自の clean-room runtime には GPL-2.0-or-later を適用し、Apache-2.0 部分を含む結合 WASM の配布条件は GPL-3.0-or-later です。ライセンス同梱と source archive の検証結果は [S0 GHDL build-and-smoke 記録](docs/experiments/S0-ghdl-wasm.md) にあります。
-
-GHDL v5.1.1..v6.0.0 の 665 commits には合成と Verilog 出力の修正があり、`keep` などの VHDL attribute も Verilog に出力されるようになりました。NEWS は VHDL-2019 を初期サポートと記載しています。T3-2 では VHDL-2008 を既定にし、VHDL-2019 も選べるようにしました。VHDL-2019 固有の `return identifier` を使う fixture は WASM と native GHDL の両方で Verilog まで合成でき、出力は byte-identical でした。`keep` attribute は Yosys JSON の `netnames` に届き、attribute を外した負の対照では現れませんでした。VHDL-2019 の全機能範囲は本リポジトリでは試していません。ここで使った v08 と v19 の IEEE library は、T3-2 より前から `libraries.tar.gz` に含まれていました。追加の library は必要ありません。既存の S0 は v6.0.0 の WASM/native 一致を確認したもので、v5.1.1 との比較ではありません。変更の要点と回帰候補は [S0 GHDL build-and-smoke 記録](docs/experiments/S0-ghdl-wasm.md) にまとめました。
-
-[synth-explorer の Yosys ビルド記録](https://github.com/cachanova/synth-explorer/blob/main/tools/yosys-wasm/README.md)は、WASI SDK 33 で LTO とネイティブ WASM 例外を組み合わせたときの symbol type failure を避けるため、LTO を無効にしたと報告しています。この問題を本リポジトリーで再現したわけではありません。
-
-2026-10-30、ユーザーの判断に基づき、S9 では GHDL WASM の既定を `-Os -flto` にする前に安定性を確かめました。比較基準は PR #31 の head `a4d826b` の既定値（Ada `-O1`、`wasi.c` `-O2`、LTO なし）です。候補の最初の build は pinned WASI SDK の `wasm-ld` で `sqrtf` と `sqrt` の重複シンボルが発生して失敗しました。凍結基準の最初の条件を満たさなかったため、後続の再現性・合成・出力一致試験とサイズ・時間の測定は行っていません。Os + LTO は採用せず、既定値を変更しませんでした。詳細と失敗ログは [S9 実験記録](docs/experiments/S9-ghdl-os-lto.md) にあります。
-
-S9B は2026-10-30、ユーザーの判断により B0（Ada `-O1`、`wasi.c` `-O2`、LTO なし）と O1、O2、O3、Os、O3 + LTO を比較しました。O1、O2、O3、Os は clean build の再現性、5回の GHDL WASM test、6 fixture の native / WASM parity、4 board parity、負の対照をすべて通過。O3 + LTO は `sqrtf` と `sqrt` の重複シンボルで link に失敗しました。O2 と Os の WASM は byte-identical（SHA-256 `c74fb667cc939089d8ea2d5e165948932c5dab099b9ca66d953ee5f84752748d`）でしたが、Node の6例合計 median は319.443 ms と296.015 msで7.9%離れました。Node の変種間の時間差はノイズの範囲とみなし、選定には使っていません。結論は「採用：Os（ユーザーの判断、基準からの逸脱）」です。ユーザーは測定後の2026-10-30、凍結した速度基準から逸脱し、サイズを理由に Os（Ada と `wasi.c` が `-Os`、LTO なし）を既定に採用すると決めました。Os の raw / gzip / zstd は B0 よりそれぞれ3.2% / 4.1% / 4.3%小さくなりました。既定設定での無引数 build は WASM SHA-256 `c74fb667cc939089d8ea2d5e165948932c5dab099b9ca66d953ee5f84752748d` と libraries SHA-256 `32c3586a64b5adc62d55a45aab127b18aeb2f45a8205da089d5618c6c9e10513` となり、既定の GHDL test は8/8成功、6 fixture の native / WASM Verilog は byte-identical でした。明示的な `--variant=B0` は既知の B0 hash `aa851b370a40ce4bf8bce6143a0293840c31ee13c5161e6597fedc8d4538400d` と同じ libraries hash を再現しました。4 board parity は S9B の Os で確認済みで、既定 build は同じ WASM bytes です。Chromium の採用指標は未測定で、既存の GHDL WASM harness がないためです。AdaWebPack llvm-gcc が Ada の `-Os` と `-O2` に同じ生成コードを出すという見方は、最終 WASM の一致からの推測で、object file / pass は比較していません。T3-2 UI 統合後にブラウザー測定を再検討します。詳細、SHA-256、size、median、spread、log path は [S9B 実験記録](docs/experiments/S9B-ghdl-matrix.md) と raw CSV に記録しました。
-
-S0B は T3-2 の統合後に GHDL WASM の Os と B0 を Node / Chromium で各5回測った記録です。7つの positive fixture と4ボードの VHDL template について、native Verilog は220/220、native `.fs` は80/80 run で一致しました。S9B の6 fixture 合計は Node で Os 206.149 ms、B0 211.939 ms、Chromium で Os 261.820 ms、B0 238.565 msでした。これは T3-2 の別 base と成果物による記録値で、採否には使いません。**S0B は記録のみであり、この結果によって既定の Os は変更しません。** compile 時間、各例の中央値・範囲、4 board の後段 timing、失敗した attempt は [S0B 実験記録](docs/experiments/S0B-ghdl-chromium.md) と [raw CSV](docs/experiments/S0B/results.csv) にあります。
-
-Icarus Verilog v13_0 は shallow submodule として固定しました。v13.0 の [NEWS](https://github.com/steveicarus/iverilog/blob/v13_0/NEWS) と [release note](https://github.com/steveicarus/iverilog/releases/tag/v13_0) を通読し、elaboration、event scheduling、VPI、diagnostic の修正、malformed input による crash・memory leak の修正、wire を使用前に宣言する breaking change を確認しました。release note に特定の security advisory はなく、今回追加で採用する新機能はありません。上流 `COPYING` は GPL-2.0-or-later、`tgt-vvp/COPYING.lesser` は LGPL-2.1 です。両方の原文を `licenses/` に含め、Release と source archive の license check に加えました。以前の固定版がないため、更新前との比較はありません。
-
-Surfer v0.7.0 は `https://gitlab.com/surfer-project/surfer.git` の shallow submodule とし、peeled commit `bd749b1f786c1c62cd67893ca71346cbe6983915` に固定しました。upstream の workspace license は EUPL-1.2 です。Rust 1.99.1、Trunk 0.21.14、wasm-bindgen-cli 0.2.118、Binaryen version_123 を SHA-256 とともに固定し、Cargo metadata の WASM 向け normal dependency graph からライセンス一覧を生成します。配布する Surfer は WebGL を必要とし、COOP/COEP 配信下の同一 origin iframe から blob URL の VCD を読み込めます。WASM build は単一スレッドです。別々の clean build 2 回で 453 files の path、size、SHA-256 が一致し、headless Chromium の Surfer E2E は5回の反復すべてに成功しました。local と CI の hash 比較は当初未確認でしたが、2026-11-01 に root revision `7c86230` をそろえて再実験し、local 2回と CI の全453ファイルが一致しました。異なる root revision を比べた旧2件の不一致と、Git/build date の埋込は [S12 の追記](docs/experiments/S12-surfer-wasm.md)に記録しました。配布前に Service Worker 登録を除き、Surfer は UI にまだ組み込まず、T4 Stack step 2 で扱います。
-
-WASI SDK 34.0 の [C++ exception documentation](https://raw.githubusercontent.com/WebAssembly/wasi-sdk/wasi-sdk-34/CppExceptions.md) と [release](https://github.com/WebAssembly/wasi-sdk/releases/tag/wasi-sdk-34) を確認しました。pin 済み SDK には `eh/libc++abi.a` と `eh/libunwind.a` があり、`-fwasm-exceptions`、`-mllvm -wasm-use-legacy-eh=false`、`-lunwind` で `ivl` / `vvp` を link できます。EH probe は pinned Node 24 と Chromium で実行し、双方で `WASM_EH_OK` を確認しました。例外を無効にせず、Emscripten にも切り替えていません。
-
-`patches/iverilog/static-wasi.patch` は次の制限を実装します。`ivlpp/lexor.lex` の VHDL `vhdlpp` 経路は `popen` / `pclose` を使うため、WASI では `.vhd` / `.vhdl` を「VHDL input is not supported in this build」と報告して非0終了します。native 側の動作は上流と同じです。`pform.cc` の任意 ivlpp subprocess 指定も拒否します。browser host が `ivlpp` を独立して実行して前処理済み Verilog を `ivl` に渡すため、この subprocess は不要です。
-
-WASI では `dlopen` / `dlsym` を使えないため、`IVL_STATIC_TARGET` で vvp target を静的に解決し、`IVL_STATIC_SYSTEM_VPI` で `system.vpi` の startup table を静的に組み込みます。`system` 以外の VPI module は拒否します。driver `iverilog` と動的 VPI はこの段階では提供しません。`vvp/schedule.cc` の POSIX signal handler は WASI では無効にし、no-op の capture/revert を使います。`$finish` での終了は試験しましたが、signal による中断は未対応です。
-
-`ivlpp -L` が出力する line directive により、WASI `ivl` の構文エラーも `work/src/<file>.v:<line>` として元の Verilog ファイルと行を示します。構文エラー fixture でこの出力を確認し、Worker 側で `work/` prefix を除いて問題一覧とエディター診断へ渡します。
-
-native build で zlib が検出された場合だけ static `system.vpi` の link に `-lz` を渡します。WASI configure は zlib を検出せず、WASI artifact は zlib API に依存しません。WASI Preview 1 shim の `poll_oneoff` は `NOSYS` を返しますが、host callback による計測で7 fixture と4 board template の positive simulation path から呼ばれないことを確認しました。VCD の `$date` は `SOURCE_DATE_EPOCH` があるとき固定 epoch を使う patch を加え、native/WASI の stdout と VCD を再現可能に比較します。各 patch の理由と結果は [S10 Icarus Verilog WASM 記録](docs/experiments/S10-iverilog-wasm.md)、artifact の raw hash とサイズは [S10 results.csv](docs/experiments/S10/results.csv) に記録しました。
+GHDL の WASM 化、Ada API、VHDL 合成、配布とライセンスの調査は、[GHDL WASM の調査と合成の検証](docs/research/ghdl-wasm.md)に分けました。測定値と当時の判断は、分割先に残しています。
 
 T4 の配布前検査では `ivlpp.wasm`、`ivl.wasm`、`vvp.wasm` をビルド元と全バイト照合します。配布先に追加するだけの例外ではなく、各ファイルの欠落・改変と余分なファイルを拒否する負の対照を設けます。波形表示は VCD 選択、状態表示、Surfer の3行に分け、タブを含む下部ペインに必要な高さを確保します。通常幅と390px幅のパネル高420px以上という既存の検査条件は維持します。
 
@@ -178,82 +148,9 @@ Apicula 0.35 の wheel は 4,281,385 bytes、SHA-256 `6495d1c7cdc3cf6ac0a74bf724
 
 Pyodide の NumPy / msgspec は 2.4.6 / 0.20.0 で、native 参照環境の 2.5.4 / 0.22.0 と版が異なります。S3 の比較では、同一の WASI nextpnr routed JSON を使い、全4ボードで native と Pyodide の `.fs` を5回ずつバイト比較し、IDCODE も確認しました。17件の synthesis tests は成功し、壊れた JSON、別 device、wheel hash 不一致、欠落 wheel の4負例を検出しました。Pyodide setup は 4,627.9 ms、pack assets は 21,021,184 bytes、`.fs` は 1K 351,954、4K 1,167,294、9K 2,069,320、20K 4,618,782 bytes でした。native / Pyodide の実行時間と各回の値は `docs/experiments/S3A-pyodide-gowin-pack.md` と CSV に記録しました。ブラウザー Worker での実行は S4 の範囲で、本段階では確認しません。
 
-### S4: ブラウザー内の Verilog から .fs 生成
+### ブラウザー内ビルドと静的配信
 
-`@yowasp/runtime` 11.0.72 は jco 変換済み module の WASI Preview 2 component import を実装し、README で内部用途と説明されています。Yosys と nextpnr は Preview 1 import を使うため、本リポジトリーでは Preview 1 shim を実装し、未対応 import は `LinkError` で拒否します。
-
-shim が公開する import は `args_get`、`args_sizes_get`、`clock_time_get`、`environ_get`、`environ_sizes_get`、`fd_close`、`fd_fdstat_get`、`fd_fdstat_set_flags`、`fd_filestat_get`、`fd_filestat_set_size`、`fd_pread`、`fd_prestat_dir_name`、`fd_prestat_get`、`fd_read`、`fd_readdir`、`fd_renumber`、`fd_seek`、`fd_write`、`path_create_directory`、`path_filestat_get`、`path_open`、`path_readlink`、`path_remove_directory`、`path_rename`、`path_unlink_file`、`proc_exit`、`random_get` の27個です。仮想ファイルは growable `Uint8Array` とし、Yosys と nextpnr は共有 workspace と `/tmp` を preopen します。Yosys share は deterministic USTAR を読み込みます。
-
-ブラウザーでは module Worker が manifest の size と SHA-256 を検証してから、VHDL、Yosys、nextpnr を順に実行し、選択した family の chipdb だけを配置します。VHDL source は case-insensitive な依存関係順に並べ、GHDL の出力を `build/vhdl/` に置いて Verilog と一緒に Yosys へ渡します。VHDL entity を top にした合成と、Verilog top が VHDL entity を使う混在合成を扱います。VHDL top が Verilog blackbox を使うときは、元の Verilog を読み込んだ後、生成した VHDL Verilog を `read_verilog -nooverwrite` で追加し、重複する blackbox 宣言を無視します。VHDL source がある project だけで GHDL assets を取得します。VHDL-2008 が既定で、2008 と 2019 を選べ、標準は project と ZIP に保存します。GHDL host は呼び出しごとに新しい WASM instance と WASI memory tree を使います。`.fs` を project に保存し、成功後に書き込み対象として選びます。
-
-T3-2 の Playwright は 37/37 成功しました。4 board の VHDL template から作った `.fs` は、native GHDL、native Yosys、native nextpnr、native `gowin_pack` の期待値と byte-identical です。混在の両方向、VHDL-2019、`keep` の正例と負例、構文・意味エラー、file ordering error、GHDL asset の欠落・破損・破損 cache の検出も確認しました。GHDL WASM は 2,001,408 bytes（SHA-256 `5c8df2a9102f9bdd577df7e250739876cc29642f8dd7fa0c9844799b0a817c80`）、deterministic `libraries.tar` は 3,901,440 bytes（SHA-256 `5f08af4dd4ecb42959faf2286b1dba0055ae0b6642c906e60e3688b7ecd04e07`）です。詳細な parity hash、asset manifest、診断結果は [S0 GHDL build-and-smoke 記録](docs/experiments/S0-ghdl-wasm.md) を参照してください。画面 capture は `build/T3-2/screenshots/` にあります。実機での合成・書き込みは本リポジトリでは試していない。
-
-Playwright の preflight は `build/synth` と `dist/synth` の相対 file set と各 file の byte 列を比較します。E2E の期待値は Node WASI Yosys、Node WASI nextpnr、native `gowin_pack` で生成し、ブラウザー成果物と比較します。測定値は Chromium と VM の値として記録し、実機の性能値とは扱いません。
-
-全4ボードで5回ずつ、Chromium内の出力が期待する`.fs`とbyte-identicalであること、IDCODE、fake USBによるSRAM書込みを確認しました。20回分の段階別時間と各toolの`memoryBytes`、出力sizeは [S4A実験記録](docs/experiments/S4A-browser-build.md) とCSVに記録しています。中央値はVM/Chromium上で合成1,533–1,563 ms、配置配線468–1,079 ms、ビットストリーム318–1,423 msです。各boardの最初のビットストリーム計測はPyodide初期化を含みます。これらの測定値をTang Nano実機の性能として扱いません。
-
-| Family | Native / WASI chipdb bytes |
-|---|---:|
-| GW1N-9C | 12,846,661 |
-| GW1NS-4 | 10,193,030 |
-| GW1NZ-1 | 5,922,288 |
-| GW2A-18C | 17,493,847 |
-
-固定 seed を使った P&R JSON の比較は4ボードすべて成功しました。以下の時間は native / WASI の順です。ピーク RSS は各ボードのテスト時に計測したプロセスの最大値です。
-
-| Board | P&R time (ms) | Peak RSS (KiB) |
-|---|---:|---:|
-| Tang Nano 1K | 161.0 / 433.6 | 410,628 |
-| Tang Nano 4K | 189.6 / 299.3 | 427,336 |
-| Tang Nano 9K | 244.2 / 405.9 | 429,188 |
-| Tang Nano 20K | 441.5 / 813.2 | 453,740 |
-
-存在しない pin の負例は native と WASI の両方で有用なエラーと非ゼロ終了を返し、chipdb を欠落させた WASI 実行も非ゼロで終了しました。
-
-Yosys v0.69 から v0.70 では `alumacc -macc-only`、`optbarriers`、`flatten` と `prep` の `-barriers`、`mcm`、`rmports -purge`、`ltp -select`、色付きログが追加され、`read_xaiger2` が削除されました。`vendor/yosys/CHANGELOG` の該当節を確認しました。今回の `read_verilog` と `synth_gowin` を使う経路ではどの変更も必要ないため、追加のオプションやパスは採用しません。WASI SDK 34 の release notes では CMake toolchain の調整、wasi-libc の更新、WASI Preview 3 対応の作業が挙げられています。Preview 1 の同期実行を使う本段階では追加の対応を行いません。
-
-### 圧縮した WASM 資材の復号
-
-`zstd` v1.5.7 の `CHANGELOG` では圧縮 API の追加、圧縮速度の改善、32-bit 圧縮処理の修正などを確認しました。今回使うのは standalone decoder の `ZSTD_decompress` だけで、複数 frame を連結した入力も扱えます。生成 C はビルド時に `combine.py` で作り、BSD-3-Clause の条件を選びます。
-
-`xz-embedded` v20240322 では、v20240124 以降の decoder、CRC、build 設定の変更と、0BSD への切り替えを確認しました。採用する `linux/lib/xz/` の CRC32、CRC64、stream、LZMA2 decoder は 0BSD です。CRC64 を有効にし、`XZ_SINGLE` で一つの stream を復号します。BCJ decoder は使いません。変更履歴は [v20240124 から v20240322 の比較](https://github.com/tukaani-project/xz-embedded/compare/v20240124...v20240322)を参照してください。
-
-`gzip` は `DecompressionStream` で処理し、`zstd` と `xz` は WASI reactor の decoder を使います。decoder は `dist/lib/decoders/` に配置しますが、この段階では既存の資材取得経路を変更しません。
-
-### 配信の大きさと配信先
-
-開発初期には初回に読み込む資材を約 104〜115 MB（圧縮前）と見積もりました。この値は当時の未計測の概算として残し、2026-10-28 に Playwright の冷たい browser context で初回ビルド・書き込み時の成功 GET 応答本文を実測しています。配信先の候補の制限については、2026-10-27 に公式資料で確認しました。
-
-| 配信先 | 1 ファイルの上限 | ヘッダーの設定 | 根拠 |
-|---|---|---|---|
-| Cloudflare Pages | 25 MiB（Free は 20,000 ファイル） | `_headers` で可 | [Limits](https://developers.cloudflare.com/pages/platform/limits/) |
-| Cloudflare Workers Static Assets | 25 MiB | Worker で可 | [Limits](https://developers.cloudflare.com/workers/platform/limits/) |
-| Cloudflare R2 | 5 TiB（`r2.dev` は試験用で、本番はカスタムドメイン） | Transform Rules など | [Limits](https://developers.cloudflare.com/r2/platform/limits/) |
-| GitHub Pages | 資料に記載なし。サイト全体は 1 GB、帯域は月 100 GB（目安） | 不可 | [GitHub Pages limits](https://docs.github.com/en/pages/getting-started-with-github-pages/github-pages-limits) |
-| Vercel | 静的ファイルのアップロード合計が Hobby 100 MB、Pro 1 GB | `vercel.json` で可 | [Limits](https://vercel.com/docs/limits) |
-| Firebase Hosting | 2 GB | `firebase.json` で可 | [FAQ](https://firebase.google.com/docs/hosting/faq-and-troubleshooting) |
-| Netlify | 公式資料に記載なし（サポートの回答では 10 MB 以下を推奨） | `_headers` で可 | 未確認 |
-
-`yosys.wasm`（52,926,660 bytes）と `nextpnr-himbaechel-gowin.wasm`（34,172,028 bytes）は、圧縮しないと Cloudflare Pages の 25 MiB を超えます。Cloudflare の自動圧縮は gzip、Brotli、zstd を返せ、`application/wasm` も対象です（[Compression](https://developers.cloudflare.com/speed/optimization/content/compression/)）。ただし対象は決まった Content-Type だけで、chipdb の `.bin` と tar は入りません。zstd は Compression Rules で有効にする必要があります。2026-10-27 に応答ヘッダーを確かめたところ、Cloudflare で配信している fpga.moe は zstd を優先して要求しても br を返し、GitHub Pages で配信している muromi.moe は gzip だけを返しました。GitHub Pages はヘッダーを設定できないため、書き込み部に必要な COOP/COEP は Service Worker で付けることになります。
-
-配信先の自動圧縮に任せず、圧縮した資材を配ってブラウザーで展開する方式を [S4B](docs/experiments/S4B-compressed-assets.md) で比べました。gzip と互換の高圧縮では、libdeflate の最高レベルでも gzip -9 より約 5% 小さいだけでした。Zopfli も同じくらいの大きさで、圧縮に時間がかかります。zstd -19 は 20K の大きい 5 つの資材を 28.5 MB（gzip -9）から 19.2 MB に縮めます。Chromium 156 での展開は合計 359 ms で、gzip の `DecompressionStream`（673 ms）より速くなりました。xz -9e は zstd より 10% 小さいものの、展開に 2.2 秒かかります。50 Mbps での推定時間は gzip 5.23 秒、xz 4.98 秒、zstd 3.43 秒で、事前に決めた基準により zstd を採ります。Brotli は Chromium 156 の `DecompressionStream` で展開できないため、配信時の `Content-Encoding` にしか使えません。S4B の時点では配信先は未定でしたが、後続の S4C では Cloudflare Pages を目標にします。
-
-S6 では zstd・xz 展開器の最適化を比較しました。OsLTO が最速でしたが、B より 3.224% の短縮にとどまり、凍結した 5% 基準を満たす候補はありませんでした。そのため B を維持し、既定 build は変更していません。LTO の zstd・xz WASM は `wasi_snapshot_preview1.random_get` を import するため、将来 LTO を既定にする場合は本番展開器にも対応が必要です。詳細は [S6 実験記録](docs/experiments/S6-decoder-build-options.md) を参照してください。
-
-この実装では `manifest.json` を除く `dist/synth/` の資材を zstd 形式で配信する構成にしました。manifest の各項目には展開後の `size` と `sha256` に加えて `encoding: "zstd"`、`compressed_size`、`compressed_sha256` を記録します。ビルド Worker は圧縮前後のサイズと SHA-256 を検証し、展開後のデータを Cache Storage `gogo-fpga-synth-v1` に `new URL(path + "?sha256=" + sha256, synthURL)` のキーで保存します。実際のビルドで得た圧縮サイズの合計は、共有する 3 資材と各ボードの chipdb を合わせて Tang Nano 1K が 16,003,246 bytes、4K が 16,155,020 bytes、9K が 16,164,593 bytes、20K が 16,256,883 bytes です。最大の圧縮ファイルは `yosys.wasm.zst` の 9,448,361 bytes でした。
-
-冷たい browser context で初回のビルドと fake USB 書き込みを行う Playwright 計測では、同一 origin の成功 GET 応答本文を集計しました。各ボードで 43 個の異なる要求パスがあり、合計は Tang Nano 1K が 33,408,160 bytes、4K が 33,559,934 bytes、9K が 33,569,507 bytes、20K が 33,661,797 bytes でした。内訳は次のとおりです。
-
-| ボード | 要求パス数 | synth (bytes) | pack (bytes) | その他 (bytes) | 合計 (bytes) |
-|---|---:|---:|---:|---:|---:|
-| Tang Nano 1K | 43 | 16,016,710 | 14,219,198 | 3,172,252 | 33,408,160 |
-| Tang Nano 4K | 43 | 16,168,484 | 14,219,198 | 3,172,252 | 33,559,934 |
-| Tang Nano 9K | 43 | 16,178,057 | 14,219,198 | 3,172,252 | 33,569,507 |
-| Tang Nano 20K | 43 | 16,270,347 | 14,219,198 | 3,172,252 | 33,661,797 |
-
-合計にはページ、ビルド Worker、書き込み用資材とライブラリーも含みます。分類別の内訳は synth が manifest と zstd 資材、pack が manifest・圧縮資材・raw 資材、その他が画面と書き込み資材です。pack の配信では Pyodide の WASM と lock JSON を zstd にし、その他は raw のままにします。pack も shared verified loader で検証し、展開後の資材を Cache Storage `gogo-fpga-pack-v1` に SHA-256 を含むキーで保存します。実機では未確認で、配信先の目標は Cloudflare Pages です。ユーザーによる実機確認後に公開します。計測の詳細と集計値は [S4C](docs/experiments/S4C-cold-load-bytes.md) に記録しました。デプロイは行っていません。
-
-NVC r1.23.1 の確認元は[configure.ac](https://github.com/nickg/nvc/blob/fab54a9e96964b431050d837e163c22282a1df6c/configure.ac)です。S11 は WASI SDK 34.0 の configure で pthread が検出されず、Emscripten 6.0.13 の初回 configure では `_Unwind_Backtrace` の link probe が失敗しました。backtrace patch で configure を通し、最初の cutoff 判断は誤適用としてユーザーの指摘後に再開しました。`jit-code.c` には小さな `__EMSCRIPTEN__` compile guard を置き、LLVM と native plugin の登録がない構成では `jit_interp` が default entry になることを NVC r1.23.1 の `src/nvc.c:846-854`、`src/jit/jit-core.c:142-167,258-267,736-745`、`src/jit/jit-interp.c:1129-1142` で確認しました。Emscripten NVC は link し、native NVC で standard libraries も生成しました。最初に報告した `RuntimeError: null function or function signature mismatch` の原因は、`src/object.h:171` の `object_copy_fn_t` が `bool` を返す一方、`src/tree.h:638-639` の tree/type callback は `void` を返し、`src/tree.c:1405-1406` が異なる戻り値型を cast して `src/object.c:1201-1205` で間接呼び出すことだと確認しました。debug stack は counter testbench の elaboration から `object_copy_finish`、`tree_copy_finish`、`vhdl_architecture_instance` への実行を示し、Wasm disassembly では同関数内の indirect call は1箇所でした。`-sEMULATE_FUNCTION_POINTER_CASTS=1` で analysis/elaboration は通るものの、simulation は `missing body for (null)` で停止し、function-pointer-cast workaround だけでは criteria 3 を満たしません。`jit-core.c` の `jit_missing_unit` に到達したことは確認しましたが、null unit name の発生原因は未確定です。正しい signature 修正には exempt でない `src/object.h` を6ファイル目として変更する必要があるため、5-file limit により停止しました。追加診断の打ち切りは `2026-10-31T02:03:23Z`（再開後9分38秒、累計1時間03分47秒）です。NVC patch の out-of-scope files は5です。詳細は [S11 実験記録](docs/experiments/S11-nvc-wasm.md) を参照してください。
+S4 のビルド時間、圧縮資材の復号、配信量と配信先の比較は、[ブラウザー内ビルドと静的配信の調査](docs/research/browser-build-and-delivery.md)に分けました。測定値と当時の判断は、分割先に残しています。
 
 ## 4. Emscripten のオプション
 
@@ -308,6 +205,8 @@ GHDL、NVC、Icarus Verilog など GPL のツールを WASM にビルドして R
 
 | 文書 | 内容 |
 |---|---|
+| [GHDL WASM の調査と合成の検証](docs/research/ghdl-wasm.md) | Ada API、VHDL の合成、最適化と配布・ライセンスの記録 |
+| [ブラウザー内ビルドと静的配信の調査](docs/research/browser-build-and-delivery.md) | S4、圧縮資材の復号、配信量と配信先の比較 |
 | [OSS の FPGA 開発環境と HDL ライブラリーの広域調査](docs/research/oss-survey.md) | ブラウザーで動く HDL ツールの先行例、HDL のツール、形式検証のソルバー、HDL ライブラリーと CPU コア（2026-10-26） |
 | [エディターと AI 機能の調査](docs/research/editor-and-ai.md) | エディターの候補（CodeMirror 6、Monaco Editor、Ace など）の比較、AI 機能の接続方式（OpenRouter OAuth PKCE など）との相性（2026-10-26） |
 | [Actions.lock の調査結果と導入の採否](docs/research/actions-lock.md) | 現行 CI、保護範囲、既存検査との関係、運用負担と再検討条件（2026-11-01） |
