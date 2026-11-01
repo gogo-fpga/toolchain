@@ -187,6 +187,8 @@ Native Stack整列後は07e2256を固定し、[同一revisionの全60組と配�
 
 更新検知ではGHDLの日付タグとRust channelのCargo版の誤認を修正しました。[版の検出方法と負の対照](docs/research/dependency-version-detection.md)に、保存入力のhash、安定版の選択条件、TOML解析の境界を記録します。固定した依存は変更していません。
 
+保存方式へ検査を追従させた876c2a8の[整列後E2Eと配布物再生成](docs/experiments/S14-post-stack-e2e.md)は、全体76件成功・比較専用4件skipでした。Git探索を禁止した配布ソースから22候補107資材とWeb全661ファイルを再生成し、source TARの45,233ファイル、root 463ファイルと35gitlink、ライセンスを含むWeb ZIPの695ファイルを照合しました。先行した失敗試行と検査器の修正、検証済みコンパイラー出力の再利用、未実施の範囲は別に記録します。
+
 ## 6. ライセンスとソース配布
 
 本リポジトリー自体のライセンスは BSD-3-Clause です。第三者のソフトウェアのライセンスと配布時の表示は [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) に記録します。
