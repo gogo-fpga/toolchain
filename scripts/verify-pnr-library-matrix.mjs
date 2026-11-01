@@ -11,7 +11,7 @@ import { HDL_LIBRARY_CASES } from "../tests/fixtures/libraries/cases.mjs";
 import { CPU_CASES } from "../tests/fixtures/cpus/cases.mjs";
 import { cpuBench } from "../tests/fixtures/cpus/bench.mjs";
 import { assertCpuFrontendFailure } from "../tests/synth/iverilog-helpers.mjs";
-import { inspectCpuStructure } from "../tests/synth/library-measurements.mjs";
+import { assertUnknownPnrCellFailure, inspectCpuStructure, withUnknownPnrCell } from "../tests/synth/library-measurements.mjs";
 import { importProjectZip } from "../web/lib/project-zip.mjs";
 import { prepareProjectInputs } from "../web/lib/project.mjs";
 import { runWasiP1 } from "../web/lib/wasi-p1.mjs";
@@ -256,8 +256,8 @@ async function run(sample, phase, invalid = false) {
     assert.ok(Number.isFinite(row.elapsed_ms) && row.elapsed_ms > 0);
     if (invalid) {
       assert.equal(row.layout_sha256, "");
-      assert.match(readFileSync(path.join(directory, key, "stderr.log"), "utf8"), /S13_UNKNOWN_CELL/);
-      assert.notEqual(row.exit_status, 0);
+      assert.ok(!existsSync(path.join(directory, key, "pnr.json")), "Negative control produced routed output");
+      assertUnknownPnrCellFailure(row, readFileSync(path.join(directory, key, "stderr.log"), "utf8"));
     } else if (sample.status === "passed") {
       assert.equal(row.layout_sha256, sample.layout);
       const output = readFileSync(path.join(directory, key, "pnr.json"));
@@ -286,10 +286,7 @@ function corruptedInput(sample, name) {
   const negative = path.join(out, name);
   mkdirSync(negative);
   mkdirSync(path.join(negative, "constraints"));
-  const netlist = load(path.join(sample.directory, "top.json"));
-  const cell = Object.values(netlist.modules.top.cells).find(({ type }) => type === "LUT4");
-  assert.ok(cell, "The negative control needs a retained LUT4");
-  cell.type = "S13_UNKNOWN_CELL";
+  const netlist = withUnknownPnrCell(load(path.join(sample.directory, "top.json")));
   writeFileSync(path.join(negative, "top.json"), JSON.stringify(netlist), { flag: "wx" });
   writeFileSync(path.join(negative, "constraints/board.cst"),
     readFileSync(path.join(sample.directory, "constraints/board.cst")), { flag: "wx" });

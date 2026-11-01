@@ -1,5 +1,25 @@
 import assert from "node:assert/strict";
 
+export function withUnknownPnrCell(netlist) {
+  const corrupted = structuredClone(netlist);
+  const { cells } = corrupted.modules.top;
+  assert.ok(!Object.hasOwn(cells, "S13_NEGATIVE_CONTROL"), "The negative control cell already exists");
+  cells.S13_NEGATIVE_CONTROL = {
+    hide_name: 0, type: "S13_UNKNOWN_CELL", parameters: {}, attributes: {}, port_directions: {}, connections: {},
+  };
+  return corrupted;
+}
+
+export function assertUnknownPnrCellFailure(row, stderr) {
+  assert.ok([1, 125].includes(row.exit_status), "Unexpected negative control exit status");
+  assert.ok(!row.signal, "Negative control terminated by a signal");
+  assert.ok(!row.execution_error || (row.backend === "wasi" && row.execution_error.name === "WebAssembly.Exception"),
+    "Unexpected negative control execution error");
+  assert.deepEqual(stderr.split("\n").filter((line) => line.startsWith("ERROR:")), [
+    "ERROR: Unable to place cell 'S13_NEGATIVE_CONTROL', no BELs remaining to implement cell type 'S13_UNKNOWN_CELL'",
+  ]);
+}
+
 export function cpuLoweringCommand(readCommand) {
   return `${readCommand}; hierarchy -top top; setattr -set keep 1 top/w:i_req top/w:i_ack; proc; flatten; memory_map; opt; write_verilog -noattr src/lowered.v; write_json top.json`;
 }

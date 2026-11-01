@@ -1,8 +1,46 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { executionErrorDetails, inspectCpuStructure, isCapacityExceeded, parseDeviceUtilization } from "./library-measurements.mjs";
+import { assertUnknownPnrCellFailure, executionErrorDetails, inspectCpuStructure, isCapacityExceeded, parseDeviceUtilization, withUnknownPnrCell } from "./library-measurements.mjs";
 
 const log = "Info: Device utilisation:\nInfo: LUT4: 217/ 1152 18%\nInfo: DFF: 81/ 864 9%\nInfo: BSRAM: 0/ 4 0%\nInfo:\n";
+
+test("unknown-cell controls leave existing LUT and wide-mux topology unchanged", () => {
+  const netlist = { modules: { top: { cells: {
+    lut: { type: "LUT4", connections: { F: [4] } },
+    mux: { type: "MUX2_LUT5", connections: { I0: [4], O: [5] } },
+  }, ports: { led: { direction: "output", bits: [5] } } } } };
+  const snapshot = structuredClone(netlist);
+  const corrupted = withUnknownPnrCell(netlist);
+  assert.deepEqual(netlist, snapshot);
+  assert.equal(corrupted.modules.top.cells.S13_NEGATIVE_CONTROL.type, "S13_UNKNOWN_CELL");
+  assert.deepEqual(corrupted.modules.top.cells.S13_NEGATIVE_CONTROL.connections, {});
+  delete corrupted.modules.top.cells.S13_NEGATIVE_CONTROL;
+  assert.deepEqual(corrupted, snapshot);
+  const collision = withUnknownPnrCell(netlist);
+  assert.throws(() => withUnknownPnrCell(collision), /already exists/);
+  assert.throws(() => withUnknownPnrCell({ modules: {} }));
+});
+
+test("unknown-cell controls reject unrelated diagnostics, crashes, and successful exits", () => {
+  const diagnostic = "ERROR: Unable to place cell 'S13_NEGATIVE_CONTROL', no BELs remaining to implement cell type 'S13_UNKNOWN_CELL'\n";
+  const native = { backend: "native", exit_status: 125, signal: null, execution_error: null };
+  const wasi = { backend: "wasi", exit_status: 1, signal: null,
+    execution_error: { name: "WebAssembly.Exception", message: "[object WebAssembly.Exception]" } };
+  assertUnknownPnrCellFailure(native, diagnostic);
+  assertUnknownPnrCellFailure(wasi, `Info: negative control\n${diagnostic}0 warnings, 1 error\n`);
+  for (const [row, stderr] of [
+    [native, diagnostic.replace("S13_NEGATIVE_CONTROL", "another_cell")],
+    [native, diagnostic.replace("S13_UNKNOWN_CELL", "LUT4")],
+    [native, "ERROR: Bad MUX2 node:cpu.lut\n"],
+    [native, `${diagnostic}ERROR: unrelated failure\n`],
+    [native, "Info: S13_UNKNOWN_CELL\n"],
+    [{ ...native, exit_status: 0 }, diagnostic],
+    [{ ...native, exit_status: 127 }, diagnostic],
+    [{ ...native, signal: "SIGABRT" }, diagnostic],
+    [{ ...native, execution_error: { name: "WebAssembly.Exception" } }, diagnostic],
+    [{ ...wasi, execution_error: { name: "RuntimeError" } }, diagnostic],
+  ]) assert.throws(() => assertUnknownPnrCellFailure(row, stderr), assert.AssertionError);
+});
 
 test("serialized execution errors retain JavaScript and WebAssembly exception identity", () => {
   assert.equal(executionErrorDetails(undefined), null);
