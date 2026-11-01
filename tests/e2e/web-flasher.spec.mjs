@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { expect, test } from "@playwright/test";
 import { createHash, randomUUID } from "node:crypto";
+import { buildSync } from "esbuild";
 import {
   mkdirSync,
   readFileSync,
@@ -225,7 +226,17 @@ function assertDistributionMatchesSources() {
         cause: error,
       });
     }
-    if (!readFileSync(sourcePath).equals(distContents)) {
+    const expectedContents = path === "lib/project-store.mjs"
+      ? Buffer.from(buildSync({
+        absWorkingDir: repoRoot,
+        entryPoints: [sourcePath],
+        bundle: true,
+        minify: true,
+        format: "esm",
+        write: false,
+      }).outputFiles[0].contents)
+      : readFileSync(sourcePath);
+    if (!expectedContents.equals(distContents)) {
       throw new Error(`Playwright preflight: dist/${path} differs from web/${path}`);
     }
   }

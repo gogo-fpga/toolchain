@@ -2,6 +2,8 @@
 
 [実験の索引](README.md) / [HDLの正式反復](S14-production-hdl.md) / [CPUの正式反復と初回の失敗](S14-production-cpu.md)
 
+本書の前半は9e098b9の記録です。Native Stack整列後の07e2256による再検査は、後半の「整列後の同一revision検証」に分けます。以前の結果と失敗記録は保持します。
+
 ## 目的と固定条件
 
 CPUのカタログ昇格後、通常の選択制限を緩めずに全60組を再検査しました。実行したcommitは `9e098b99fa18667a62d5b11b3f29ce74e33fd4ea` です。途中でcheckout、入力、実行スクリプトを変更していません。正式な配置配線5回反復とは別の、ZIP読み戻しから合成・配置配線・packまでを含む最終回帰です。
@@ -80,3 +82,55 @@ Git情報なしの再生成では検証済みWASMとnpm依存を再利用しま�
 | Web ZIP | `6e3bafcaaf5a204ec390d091c4522ff0b4e8011d19e3b86de2d2dbeda67fb4cd` |
 
 ここに記録した結果は9e098b9の確認です。Native Stack整列後のrevisionとCIは、その後の回帰結果を読むまで確認済みと扱いません。T6、S5の比較専用4件、S8のcache/RSSなどの残件は別です。手動の画面操作録画とTang Nano実機は本リポジトリでは試していません。Cloudflare Pagesへの公開と設定変更も行っていません。
+
+## 整列後の同一revision検証
+
+Native Stack整列後の `07e2256a1c090abc456af60830f514e36af6085a` を固定し、同じ製品用バイナリーと資材で再検査しました。途中で入力、実行スクリプト、checkoutは変更していません。配布資材の組立が完了してから全60組を実行しました。以後の文書や監査器の追加commitそのものを、この測定済みrevisionと混同しません。
+
+| 対象 | 組数 | 成功 | 容量超過 | frontend非対応 | 全列の値 | 実測の末端値 |
+|---|---:|---:|---:|---:|---:|---:|
+| HDL | 32 | 32 | 0 | 0 | 32行119列、3,808値 | 3,064 |
+| CPU | 28 | 18 | 6 | 4 | 28行139列、3,892値 | 2,530 |
+
+Node testはHDL33件、CPU29件が成功し、失敗とskipは0でした。親testを含みます。所要時間はHDLが1,441,489 ms、CPUが1,909,727 msで、並行負荷があるため性能の比較には使いません。生の [HDL CSV](S14-post-stack-hdl.csv) と [CPU CSV](S14-post-stack-cpu.csv) はCRLFを含めて保持します。JavaScriptの監査器と独立したPythonのCSV読取りで、全7,700値をmeasurementと照合しました。成功18組のPNR JSONとbitstreamはnative / WASIで一致し、CPU24組のlowered netlistで正常実行とLED固定の負の対照を確認しました。FemtoRV4組は同じ実際のfrontend解析失敗であり、bitstreamの成功ではありません。
+
+通常APIの拒否、catalog state、status、全資源、hash、時間・メモリー、出力の欠落と終了値を再監査しました。全ログから重複しない警告・ERRORなどの診断を抽出し、HDL253行、CPU51行を再読しました。別にHDL4種類、CPU3種類のcritical path reportのInfo行も確認しました。上記の「診断の監査」と同じ原因で、新たな未分類の診断はありません。SERVの既定parameter、BRAM幅変換、VexRiscvの未駆動信号、未使用のNEORV32 FPUは上流由来です。容量超過は固定fixtureと1Kの組合せ、FemtoRVは固定版frontendとの組合せに属します。配布組立との競合による初回の資材欠落は検査環境の問題で、候補の容量・言語分類には加えません。
+
+再実行時には、前掲のmatrixコマンドの出力先を `build/t5-post-stack-07e2256-hdl` と `build/t5-post-stack-07e2256-cpu-attempt2`、監査のrevisionを上記の完全長SHAへ置き換えます。既存出力先の負の対照は、別のsentinel付きディレクトリーをHDL / CPUへそれぞれ指定しました。どちらもEEXIST・終了値1となり、before / afterの全ファイル名とSHA-256は一致しました。
+
+### 配布ソースと失敗した試行
+
+全体E2Eの最初の2回は、native GHDLに必要なglibc 2.38がhostにないためglobal setupで停止しました。隔離環境の同じnative binaryへ切り替えた3回目は、検査用の一時ディレクトリーがbind mount外だったため入力を読めず停止しました。4回目は検査の一時ディレクトリーをmount内に置き、全体を完走しています。結果は61件成功・15件失敗・4件skipで、成功へ書き換えません。
+
+失敗14件は、検査器が旧OPFSの個別ファイルを直接読んだためです。schema 3では `workspace.zip` に保存するので、共通の検査helperを `createOpfsStore().load()` 経由へ変更しました。bitstream全byteとSHA-256の比較条件は維持します。残り1件は、配布前検査がbundle化した `project-store.mjs` を未変換の原本と比較したためです。同じesbuild条件で生成した期待値と全byte照合する検査に直しました。配布物や回路の一致条件を緩める修正ではありません。S5測定用helperも同じ保存APIへ追従しましたが、S5 finalist比較測定そのものは未実施です。修正後の全体回帰は、ここに記録した失敗とは別に実施します。
+
+同じ07e2256でWeb組立、package-release、SHA256SUMSの2件、GHDL19件、CPU実行9件、Web・Icarusなどの回帰192件が成功しました。Git情報のない配布ソースから全22候補を再生成し、全107資材を照合しました。rootの457追跡ファイルとsymlink、直接の35gitlink、source TAR内の45,227ファイル、Web ZIPの695ファイル、NOTICE・ライセンス原文、全distファイルを照合しています。Webの全ファイルは25 MiB未満です。検証済みWASMとnpm依存を再利用した組立で、全コンパイラーを配布ソースから新規ビルドした確認ではありません。
+
+配布ソースの照合は `scripts/audit-release-closure.py` へ移し、合成fixtureと改変・欠落・危険なpath・重複ZIP・no-overwriteの負の対照を9件追加しました。出力先は未使用のJSONを指定します。入力の相対pathは次の例に対応させます。
+
+```sh
+python3 scripts/audit-release-closure.py --root . \
+  --source build/t5-source-closure-07e2256/toolchain-source-v0.1.0-t5.07e2256 \
+  --generated-libraries build/t5-source-closure-07e2256/generated-libraries \
+  --version v0.1.0-t5.07e2256 --revision 07e2256a1c090abc456af60830f514e36af6085a \
+  --output build/t5-source-closure-audit-new.json
+python3 -m unittest discover -s tests/check-release-closure -p 'test_*.py' -v
+```
+
+初回CPU matrixは、共用のbuild/packをWeb組立が再生成し、Apicula wheelが欠けて候補の実行前に停止しました。ログを保持し、資材生成後の新しい出力先で完走しました。Git情報なしのWeb組立でSDKとzstdの実行環境が不足した試行も、成功のログと分けて保持します。監査器の予備試行ではvendor/emsdkに存在しない.gitcommitを要求して停止しました。ソースを書き換えず、既存のRELEASE-SOURCE.jsonと、markerのない依存には指定commitのGit archiveを照合するよう検査器を修正しました。
+
+| 証拠 | SHA-256 |
+|---|---|
+| 整列後HDL CSV | `051b2f61324c9fb251b88dfc5054c6bca69cdd324de9b0eb43b94f7a9f872310` |
+| 整列後CPU CSV | `7e8b6012a36bd5a4b616c9bc29a46f2dee9d02e5e03a2f6458ab58b65edb67cd` |
+| HDL全列監査JSON | `dd288f0ea2cc89a19a4707043da85d7c8c999e3eec9fbfd6fab4e9488090dce8` |
+| CPU全列監査JSON | `f974d93a961acf48a39f1688abbce94436e8cdb04588b70b910eed5b02fddfc5` |
+| source closure監査JSON | `094fd4d1106ace114eefc2bc29af757ab058593e30028b02ed94119c63a9bf57` |
+| no-overwrite監査JSON | `a80a537412eaac52a5e92e690709c99634189ac16dcc6a173db093d0f5fbabbe` |
+| HDL完走ログ | `760ff60ea27cf1f8cd7cb133a8e66b3266e398b359bb9eac8cde051beb3c734f` |
+| CPU初回の資材競合ログ | `b9c7ae9ffc21e133e272a8d86b44faadc62f55fc44fb6e6099f5f22bb8a15a31` |
+| CPU再実行の完走ログ | `b93bf5be95a0f79222cc5fab94dcf4edb625b842a32fbf61d8f61d8411213322` |
+| ソースtar.gz | `a68c5a52f2f7d5d79dc7982195efd822558ff13d8179946325304c7eda5e10e3` |
+| Web ZIP | `f55960351c7897a07f01e793f4be2006e7a8666e930892f5fed6df24e948b9e2` |
+
+CI、T6、S5の比較専用4件、S8の残件は別途確認します。手動操作の録画、Tang Nano実機、Cloudflare Pages公開は未実施です。

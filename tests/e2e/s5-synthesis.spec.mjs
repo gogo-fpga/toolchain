@@ -4,6 +4,7 @@ import { cpSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
 import { BOARDS } from "../../web/lib/boards.mjs";
+import { storedFile, storedFsDigest } from "./project-storage-helpers.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const variant = process.env.S5_CHROMIUM_VARIANT;
@@ -27,39 +28,13 @@ async function createProject(page, board) {
   return name;
 }
 
-async function storedFsDigest(page, projectName) {
-  return page.evaluate(async (name) => {
-    const root = await navigator.storage.getDirectory();
-    const projects = await root.getDirectoryHandle("projects");
-    const project = await projects.getDirectoryHandle(name);
-    const build = await project.getDirectoryHandle("build");
-    const file = await build.getFileHandle("top.fs");
-    const bytes = await (await file.getFile()).arrayBuffer();
-    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
-    return {
-      size: bytes.byteLength,
-      sha256: [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join(""),
-    };
-  }, projectName);
-}
-
 async function storedIntermediateDigests(page, projectName) {
-  return page.evaluate(async (name) => {
-    const root = await navigator.storage.getDirectory();
-    const projects = await root.getDirectoryHandle("projects");
-    const project = await projects.getDirectoryHandle(name);
-    const build = await project.getDirectoryHandle("build");
-    const digest = async (fileName) => {
-      const file = await build.getFileHandle(fileName);
-      const bytes = await (await file.getFile()).arrayBuffer();
-      const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
-      return [...hash].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-    };
-    return {
-      netlist_sha256: await digest("top.json"),
-      pnr_sha256: await digest("top_pnr.json"),
-    };
-  }, projectName);
+  const digest = async (path) => createHash("sha256")
+    .update(await storedFile(page, projectName, path)).digest("hex");
+  return {
+    netlist_sha256: await digest("build/top.json"),
+    pnr_sha256: await digest("build/top_pnr.json"),
+  };
 }
 
 if (s5bVariants.length > 0) {

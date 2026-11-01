@@ -424,6 +424,43 @@ class CheckPinsTests(unittest.TestCase):
         self.assertEqual("v20240322", check_pins.fixed_stable_tag("b" * 40, tags))
         self.assertEqual("更新あり", check_pins.compare_status("v20240322", "v2024-12-30"))
 
+    def test_ghdl_release_family_excludes_date_weekly_and_development_tags(self):
+        tags = "\n".join(
+            "a" * 40 + "\trefs/tags/" + tag
+            for tag in ("20181129", "v20191231", "v7.0.0-dev", "v7.0.0-rc1",
+                        "v7.0.0-beta", "v7.0.0-alpha", "weekly", "weekly-20261101",
+                        "v5.1.1", "v6.0.0", "v6.0.0^{}")
+        )
+        self.assertEqual("v6.0.0", check_pins.latest_stable_tag(tags, "ghdl"))
+        self.assertEqual("v6.0.0", check_pins.fixed_stable_tag("a" * 40, tags, "ghdl"))
+        for tag in ("20181129", "weekly", "v7.0.0-dev", "v7.0.0-rc1", "v7.0.0-beta", "v7.0.0-alpha"):
+            with self.subTest(tag=tag):
+                remote = "a" * 40 + "\trefs/tags/" + tag
+                self.assertIsNone(check_pins.latest_stable_tag(remote, "ghdl"))
+                self.assertIsNone(check_pins.fixed_stable_tag("a" * 40, remote, "ghdl"))
+
+    def test_rust_version_uses_rust_package_in_either_table_order(self):
+        cargo = '[pkg.cargo]\nversion = "0.99.0"\n'
+        rust = '[pkg.rust]\nversion = "1.99.1 (abcdef012 2026-10-29)"\n'
+        for document in (cargo + rust, rust + cargo, '[pkg.rust]\nversion = "1.99.1"\n'):
+            with self.subTest(document=document):
+                self.assertEqual("1.99.1", check_pins.rust_stable_version(document))
+
+    def test_rust_missing_malformed_and_wrong_type_versions_are_rejected(self):
+        for document in ('', 'version = "1.99.1"', '[pkg.cargo]\nversion = "1.99.1"',
+                         '[pkg.rust]\nversion = "', '[pkg.rust]\nversion = 199',
+                         '[pkg.rust]\nversion = []', '[pkg.rust]\nversion = "1.99.1-beta"',
+                         '[pkg.rust]\nversion = "garbage"', 'pkg = 1', '[pkg]\nrust = 1'):
+            with self.subTest(document=document):
+                with self.assertRaises(RuntimeError):
+                    check_pins.rust_stable_version(document)
+
+    def test_rust_invalid_channel_report_fails_closed(self):
+        tags = self.prepare_upstream_fixture()
+        self.rust_channel = '[pkg.cargo]\nversion = "0.99.0"\n'
+        rows, _ = self.upstream_report(tags, self.pinned["libftdi"] + "\tHEAD\n")
+        self.assertEqual("要確認", next(row for row in rows if row[0] == "Rust toolchain")[3])
+
     def prepare_upstream_fixture(self, libftdi_branch=None):
         names = (*check_pins.TAGGED_SUBMODULES, *check_pins.BRANCH_SUBMODULES)
         self.pinned = {
@@ -515,7 +552,7 @@ class CheckPinsTests(unittest.TestCase):
             if url == check_pins.WASI_SDK_RELEASE:
                 return self.latest_wasi_sdk
             if url == check_pins.RUST_STABLE_CHANNEL:
-                return 'version = "1.99.1"\n'
+                return getattr(self, "rust_channel", '[pkg.cargo]\nversion = "0.99.0"\n[pkg.rust]\nversion = "1.99.1 (abcdef012 2026-10-29)"\n')
             if url in check_pins.SURFER_TOOL_RELEASES.values():
                 name = next(
                     name for name, release_url in check_pins.SURFER_TOOL_RELEASES.items()

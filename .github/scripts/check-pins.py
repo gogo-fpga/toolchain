@@ -9,6 +9,7 @@ import os
 import re
 import subprocess
 import sys
+import tomllib
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -317,7 +318,9 @@ def parse_version(value: str) -> tuple[int, ...] | None:
     return tuple(int(part) for part in match.group(1).split("."))
 
 
-def is_stable_tag(tag: str) -> bool:
+def is_stable_tag(tag: str, dependency: str | None = None) -> bool:
+    if dependency == "ghdl":
+        return re.fullmatch(r"v\d+\.\d+\.\d+", tag) is not None
     return not re.search(r"(?i)(?:rc|alpha|beta|pre)", tag)
 
 
@@ -342,10 +345,10 @@ def remote_tag_targets(output: str) -> dict[str, str]:
     return targets
 
 
-def latest_stable_tag(output: str) -> str | None:
+def latest_stable_tag(output: str, dependency: str | None = None) -> str | None:
     stable: list[tuple[tuple[int, ...], str]] = []
     for tag in remote_tag_targets(output):
-        if not is_stable_tag(tag):
+        if not is_stable_tag(tag, dependency):
             continue
         version = parse_version(tag)
         if version is not None:
@@ -353,12 +356,12 @@ def latest_stable_tag(output: str) -> str | None:
     return max(stable, default=((), None), key=lambda entry: entry[0])[1]
 
 
-def fixed_stable_tag(commit: str, output: str) -> str | None:
+def fixed_stable_tag(commit: str, output: str, dependency: str | None = None) -> str | None:
     matches = [
         (version, tag)
         for tag, target in remote_tag_targets(output).items()
         if target == commit.lower()
-        and is_stable_tag(tag)
+        and is_stable_tag(tag, dependency)
         and (version := parse_version(tag)) is not None
     ]
     return max(matches, default=((), None), key=lambda entry: entry[0])[1]
@@ -744,6 +747,19 @@ def compare_status(fixed: str, latest: str) -> str:
     return "最新" if fixed_version == latest_version else "更新あり"
 
 
+def rust_stable_version(text: str) -> str:
+    try:
+        version = tomllib.loads(text)["pkg"]["rust"]["version"]
+    except (tomllib.TOMLDecodeError, KeyError, TypeError) as error:
+        raise RuntimeError("Rust stable channel の pkg.rust.version が読めません") from error
+    match = re.fullmatch(
+        r"(\d+\.\d+\.\d+)(?: \([0-9a-f]{7,40} \d{4}-\d{2}-\d{2}\))?", version,
+    ) if isinstance(version, str) else None
+    if match is None:
+        raise RuntimeError("Rust stable channel の version が不正です")
+    return match.group(1)
+
+
 def upstream_report(root: Path = ROOT) -> str:
     rows: list[tuple[str, str, str, str]] = []
 
@@ -759,8 +775,8 @@ def upstream_report(root: Path = ROOT) -> str:
         try:
             pinned = gitlink_sha(name, root)
             remote = run("git", "ls-remote", "--tags", module["url"], cwd=root)
-            fixed = fixed_stable_tag(pinned, remote)
-            latest = latest_stable_tag(remote)
+            fixed = fixed_stable_tag(pinned, remote, name)
+            latest = latest_stable_tag(remote, name)
             if not fixed:
                 raise RuntimeError("gitlink に一致する安定版タグがありません")
             if not latest:
@@ -892,10 +908,8 @@ def upstream_report(root: Path = ROOT) -> str:
 
     try:
         rust_pin = parse_surfer_tool_pins(read_text(root / "RESEARCH.md"))["rust"]["version"]
-        rust_match = re.search(r'^version = "([^"]+)"', fetch(RUST_STABLE_CHANNEL), re.MULTILINE)
-        if rust_match is None:
-            raise RuntimeError("Rust stable channel version が見つかりません")
-        add_row("Rust toolchain", rust_pin, rust_match.group(1), compare_status(rust_pin, rust_match.group(1)))
+        latest_rust = rust_stable_version(fetch(RUST_STABLE_CHANNEL))
+        add_row("Rust toolchain", rust_pin, latest_rust, compare_status(rust_pin, latest_rust))
     except (OSError, urllib.error.URLError, RuntimeError) as error:
         print(f"Rust toolchain: upstream を取得できません: {error}", file=sys.stderr)
         add_row("Rust toolchain", "取得できません", "取得できません", "要確認")

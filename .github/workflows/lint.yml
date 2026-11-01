@@ -43,6 +43,9 @@ jobs:
       - name: 固定値検査のテスト
         run: sh tests/check-pins/run.sh
 
+      - name: 配布ソース照合のテスト
+        run: python3 -m unittest discover -s tests/check-release-closure -p 'test_*.py' -v
+
       - name: simulation shard coverage のテスト
         run: python3 -m unittest discover -s tests/check-sim-shards -p 'test_*.py' -v
 

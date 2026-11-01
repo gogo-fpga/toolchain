@@ -6,6 +6,7 @@ import { resolve } from "node:path";
 import { BOARDS } from "../../web/lib/boards.mjs";
 import { fsIdcode, fsIdcodeMatchesBoard } from "../../web/lib/fs-idcode.mjs";
 import { routeWorkerWithFakeUsb, stubPageUsb } from "./fake-usb-helpers.mjs";
+import { storedFsDigest } from "./project-storage-helpers.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
 const expectedRoot = resolve(root, "build/e2e-expected");
@@ -24,22 +25,6 @@ async function createProject(page, board) {
   await expect(page.locator("#project-name")).toHaveText(name);
   await expect(page.locator("#synthesis-button")).toBeEnabled();
   return name;
-}
-
-async function storedFsDigest(page, projectName) {
-  return page.evaluate(async (name) => {
-    const root = await navigator.storage.getDirectory();
-    const projects = await root.getDirectoryHandle("projects");
-    const project = await projects.getDirectoryHandle(name);
-    const build = await project.getDirectoryHandle("build");
-    const file = await build.getFileHandle("top.fs");
-    const bytes = await (await file.getFile()).arrayBuffer();
-    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
-    return {
-      size: bytes.byteLength,
-      sha256: [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join(""),
-    };
-  }, projectName);
 }
 
 async function captureNetworkResponses(context) {

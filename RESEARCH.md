@@ -183,6 +183,10 @@ VexRiscv は生成済みパッケージのライセンスだけでなく、同�
 
 [初期調査で転記した11候補とライセンスの記録](docs/research/hdl-library-survey-history.md)は、現在のカタログと区別して保存します。誤っていた取得元やライセンスも、当時の記録を改変せず、訂正先と原典を追えるようにしています。
 
+Native Stack整列後は07e2256を固定し、[同一revisionの全60組と配布ソース](docs/experiments/S14-final-regression.md#整列後の同一revision検証)を再検査しました。HDL32組成功、CPU18組成功・容量超過6組・frontend非対応4組で、全7,700値と診断・選択制限を再監査しました。Git情報なしの22候補107資材、rootの457追跡ファイルと35gitlink、source TARの45,227ファイル、Web ZIPの695ファイルとライセンスを照合しました。全コンパイラーの新規ビルドとCI・実機の確認ではありません。照合器をリポジトリへ加え、改変と欠落を拒否する単体9件も確認しました。
+
+更新検知ではGHDLの日付タグとRust channelのCargo版の誤認を修正しました。[版の検出方法と負の対照](docs/research/dependency-version-detection.md)に、保存入力のhash、安定版の選択条件、TOML解析の境界を記録します。固定した依存は変更していません。
+
 ## 6. ライセンスとソース配布
 
 本リポジトリー自体のライセンスは BSD-3-Clause です。第三者のソフトウェアのライセンスと配布時の表示は [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) に記録します。
@@ -197,6 +201,7 @@ GHDL、NVC、Icarus Verilog など GPL のツールを WASM にビルドして R
 
 | 文書 | 内容 |
 |---|---|
+| [依存の版の検出と負の対照](docs/research/dependency-version-detection.md) | GHDLの公開安定タグの選択、Rust channel TOMLの構造化読取り、欠落と不正入力の扱い |
 | [書き込み部の移植とビルド選定](docs/research/flasher-integration.md) | 移植元の原典、JSPIとWebUSB、S7の選定とhash照合、asyncifyの失敗と未確認範囲 |
 | [GHDL WASM の調査と合成の検証](docs/research/ghdl-wasm.md) | Ada API、VHDL の合成、最適化と配布・ライセンスの記録 |
 | [ブラウザー内ビルドと静的配信の調査](docs/research/browser-build-and-delivery.md) | S4、圧縮資材の復号、配信量と配信先の比較 |
