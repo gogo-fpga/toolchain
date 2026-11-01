@@ -788,6 +788,19 @@ jobs:
       - name: WASM/native 合成を比較
         run: node --test tests/synth/yosys.test.mjs
 
+      - id: formal-sat
+        name: Yosys SATの準備・前提・証明判定を比較
+        run: node --test --test-concurrency=1 tests/synth/formal-sat.test.mjs
+
+      - name: SAT比較の入力・ログ・反例を保存
+        if: always() && steps.formal-sat.outcome != 'skipped'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ci-formal-sat-${{ github.run_id }}
+          path: build/S15/p1-sat-*/
+          if-no-files-found: error
+          retention-days: 7
+
   nextpnr:
     name: nextpnr WASI place and route
     needs: changes
