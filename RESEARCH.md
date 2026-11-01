@@ -127,7 +127,7 @@ native build で zlib が検出された場合だけ static `system.vpi` の lin
 
 T4 の配布前検査では `ivlpp.wasm`、`ivl.wasm`、`vvp.wasm` をビルド元と全バイト照合します。配布先に追加するだけの例外ではなく、各ファイルの欠落・改変と余分なファイルを拒否する負の対照を設けます。波形表示は VCD 選択、状態表示、Surfer の3行に分け、タブを含む下部ペインに必要な高さを確保します。通常幅と390px幅のパネル高420px以上という既存の検査条件は維持します。
 
-[T4の統合回帰](docs/experiments/S12B-simulation-integration.md)では、timescale追加前後のbitstreamが4ボードで全バイト一致し、native / Pyodideも各5回一致しました。通常幅と390px幅の波形8画面を目視し、配布前検査の負の対照も確認しました。初回の全体E2Eはfixture未生成で14件が失敗したため、その結果を保持し、固定版で生成してから別に再実行します。
+[T4の統合回帰](docs/experiments/S12B-simulation-integration.md)では、timescale追加前後のbitstreamが4ボードで全バイト一致し、native / Pyodideも各5回一致しました。通常幅と390px幅の波形8画面を目視し、配布前検査の負の対照も確認しました。初回のfixture未生成による14件の失敗を保持し、固定版で生成した後の `c19c69f` では全体E2E76件が成功しました。S5比較測定4件はskipです。同じcommitのシミュレーションE2Eも3回反復して30件すべて成功しました。
 
 ### Yosys v0.70 と WASI SDK
 

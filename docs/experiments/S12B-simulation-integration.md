@@ -4,7 +4,7 @@
 
 ## 目的と条件
 
-T4のIcarus実行、VCD選択とSurfer表示を確認し、シミュレーション用に追加したtimescaleが4ボードのbitstreamを変えないことを検証します。UI実装の基準commitは `964b1465efb7ef0ef7c52032151b876ebf7c93c7` です。bitstreamの回帰検査は、この記録と同じ版の `tests/synth/gowin-pack.test.mjs` に追加しました。
+T4のIcarus実行、VCD選択とSurfer表示を確認し、シミュレーション用に追加したtimescaleが4ボードのbitstreamを変えないことを検証します。初回UI実装の基準commitは `964b1465efb7ef0ef7c52032151b876ebf7c93c7`、最終回帰の基準commitは `c19c69fb0c2a0853b83c5386de11754bebf7b01d` です。bitstreamの回帰検査は `tests/synth/gowin-pack.test.mjs` にあります。
 
 採否は既存のT4計画とテストの条件を維持します。native / Pyodideの `.fs` は全バイト一致を要求し、Pyodideは各ボード5回実行します。UIは4ボードで幅1280pxと390pxの全8画面を確認し、既存の波形パネル高420px以上という条件を下げません。配布前検査はIcarusの3 WASMをビルド元と全バイト照合し、欠落・改変・余分なファイルを拒否します。
 
@@ -37,12 +37,27 @@ PLAYWRIGHT_PORT=8124 S5_PLAYWRIGHT_OUTPUT_DIR=build/t4-height-preflight-results 
   --grep 'each board template simulates|built distribution matches'
 ```
 
-この後の全体E2E初回は62件成功・14件失敗・4件skipでした。失敗14件はいずれも `build/fixtures/<board>.fs` の読込時のENOENTで、テスト用fixtureをまだ生成していませんでした。結果は失敗のまま保持し、固定版のfixture生成スクリプトで4ボードの通常fixtureとテンプレート用fixtureを生成し、全8ファイルのIDCODEを検査しました。生成後の全体E2Eは別に再実行します。
+この後の全体E2E初回は62件成功・14件失敗・4件skipでした。失敗14件はいずれも `build/fixtures/<board>.fs` の読込時のENOENTで、テスト用fixtureをまだ生成していませんでした。結果は失敗のまま保持し、固定版のfixture生成スクリプトで4ボードの通常fixtureとテンプレート用fixtureを生成し、全8ファイルのIDCODEを検査しました。生成後、`c19c69f` の全体E2Eを新しい出力先で実行し、76件成功・4件skip・失敗なしを確認しました。
+
+4件のskipは `tests/e2e/s5-synthesis.spec.mjs` のS5 finalist比較測定だけです。`S5_CHROMIUM_VARIANT` と `S5_ASSET_DIR` を指定しなかったため、4ボードの比較測定は本実行では試していません。通常の合成・仮想書き込みのE2Eとは区別します。
+
+同じcommitのシミュレーションE2Eは、全10件を3回ずつ実行して30件すべて成功しました。複数VCDの切り替え・保存、プロジェクト切り替え時の古い結果の破棄、停止と再実行、時間制限、不正VCD、WebGLがない場合の保存も確認しています。速度を比べる実験ではなく、機能回帰として3回反復しました。
+
+最後の反復で取得した通常幅1280px・幅390pxの全8画面も目視しました。ボード名、完了状態、VCD選択、信号と時間軸の表示を確認しました。幅390pxではSurferの信号名の列が画面の多くを占め、波形を表示する幅は狭くなります。狭い画面での操作性改善まで検証済みとは扱いません。
+
+| 同じcommitの検査 | 結果 |
+|---|---|
+| Web単体とIcarus比較 | 143件成功 |
+| packとtimescale前後の比較 | 7件成功、4ボード各5回一致 |
+| fixture生成後の全体E2E | 76件成功、4件skip、失敗なし |
+| シミュレーションE2Eの3回反復 | 30件成功、失敗なし |
 
 ```sh
 tests/fixtures/build-fs.sh
-PLAYWRIGHT_PORT=8124 S5_PLAYWRIGHT_OUTPUT_DIR=build/t4-final-e2e-results \
+PLAYWRIGHT_PORT=8124 S5_PLAYWRIGHT_OUTPUT_DIR=build/t4-c19c69f-e2e-results \
   npx playwright test
+PLAYWRIGHT_PORT=8124 S5_PLAYWRIGHT_OUTPUT_DIR=build/t4-c19c69f-simulation-repeat-results \
+  npx playwright test tests/e2e/simulation.spec.mjs --repeat-each=3
 ```
 
 手動の画面操作録画は未実施です。書き込みのE2Eは仮想USBを使う検査であり、実機の結果ではありません。Tang Nanoの実機は本リポジトリでは試していません。
@@ -57,3 +72,5 @@ PLAYWRIGHT_PORT=8124 S5_PLAYWRIGHT_OUTPUT_DIR=build/t4-final-e2e-results \
 | 964b146の全体E2E初回 | `d926741d6a887c0f241eddeb51a9bf530bf9cabd675b49d276a844d6d124779d` |
 | 波形高とIcarus配布前検査の焦点E2E | `2963d392e595805582af2b6b142991b95fc4011a55336355fdca270c7213373a` |
 | 固定版fixture生成とIDCODE確認 | `9b854cd578471b808609ef697359dec98076c68f1dede18866500f3c86ec3c04` |
+| c19c69fのfixture生成後の全体E2E | `0ec22ff617cb1dfc39b3ff8f3959f6afe807af5101357f843659dc8a7abf4e32` |
+| c19c69fのシミュレーションE2Eの3回反復 | `9b23e6d038cc8b459e78de6e58efaeca1975484bf5012bc70e967e3057e5d049` |
