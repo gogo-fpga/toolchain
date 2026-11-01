@@ -77,4 +77,4 @@ ZIP/OPFS では `.sby`、`.ys`、property、include、data、順序、設定を�
 
 [P0の配布ソース照合](S15-formal-source-closure.md)は別に記録しました。形式検証の実行結果とは区別します。
 
-結果はまだありません。WASM ビルド、双方向輸送、SBY/SMTBMC の原本実行、反例再実行、正式な5回反復は未実施です。初回完全 offline 起動は別の実験です。画面操作・録画も本書で承認済みとはせず、Tang Nano の実機確認と Cloudflare Pages 公開は実施しません。
+P1の[Yosys SAT反例の独立再実行](S15-formal-replay.md)は、限定した診断経路として実装中です。本書を追加したP0では未実施だった検査と、その後の診断試行を区別します。SMTソルバーのWASMビルド、双方向輸送、SBY/SMTBMCの原本実行、正式な5回反復は未実施です。初回完全offline起動は別の実験です。画面操作・録画も本書で承認済みとはせず、Tang Nanoの実機確認とCloudflare Pages公開は実施しません。

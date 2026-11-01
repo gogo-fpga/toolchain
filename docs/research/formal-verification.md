@@ -51,7 +51,17 @@ SAT経路は、準備、前提の整合性確認、証明を別の実行に分�
 
 判定には上流の終了コードと行全体の結果を用います。BMCの反例なしは `bounded-safe` と深さを返し、帰納法は基底部と帰納部を両方確認した場合だけ `proved` を返します。反例はVCDとWaveJSONの両方を要求し、再実行前は `replay: pending` とします。単なる `SUCCESS`、基底部だけの成功、曖昧な結果、異常終了、witness欠落を成功へ変換しません。
 
-検査の入口は `tests/web/formal-properties.test.mjs`、`tests/web/formal-sat.test.mjs` と `tests/synth/formal-sat.test.mjs` です。後者は製品と同じ独自WASI preview1 shimを使い、nativeとWASMのログ・入力・中間JSON・反例とバイナリーのhashを新規の証拠ディレクトリーへ保存します。現段階は実装中の診断試行であり、S15の正式な5回反復、VHDL保持、反例再実行、SMT経路、画面統合は未完了です。
+検査の入口は `tests/web/formal-properties.test.mjs`、`tests/web/formal-sat.test.mjs` と `tests/synth/formal-sat.test.mjs` です。後者は製品と同じ独自WASI preview1 shimを使い、nativeとWASMのログ・入力・中間JSON・反例とバイナリーのhashを新規の証拠ディレクトリーへ保存します。現段階は実装中の診断試行であり、S15の正式な5回反復、VHDL保持、SMT経路、画面統合は未完了です。
+
+## 元のVerilogによる反例の独立再実行
+
+`web/lib/formal-replay.mjs` は、Yosys SATのWaveJSONからテストベンチを生成し、変換前のVerilogをIcarusで再実行します。SMT式や証明手順は実装しません。状態を強制代入せず、元のHDLにある具体的な初期値と、宣言した単一clockの極性を使います。次の入力は有効edgeのnonblocking代入で与え、回路には直前の入力を取り込ませます。各stepで全出力をモデルと照合し、元のassertionのファイル・行と違反stepを記録します。
+
+対象は既知の0/1のport値、具体的な初期値を持つ`$dff`、異なる行に書かれた即時assert/assumeです。初期値のない状態、inout、未知値、重複したproperty行、未対応のWaveJSON、途中終了、VCD欠落、未確認の診断は検証済みにしません。VCDのscope・header・dumpvars・時刻の順序と最終時刻も要求します。assume違反も反例の検証成功にはしません。イベント駆動の即時assertionを観測した結果であり、独立した証明書検査ではありません。未対応の反例は、SATの反例生成と再実行未検証を分けて扱います。
+
+Icarusの`formal: true`は再実行専用の明示設定です。この場合だけgeneration 2012と`FORMAL=1`を使い、通常のVerilogシミュレーションの設定は変えません。一般的なSystemVerilogやSVAの対応を意味しません。ブラウザーのworker・入力snapshotとの接続、VHDL原文での再実行、vacuity検出は未完了です。
+
+`tests/synth/formal-replay.test.mjs`は、native/WASI Yosysの各反例をnative/WASM Icarusで独立に再実行し、stdout/stderr・違反property・VCD全バイトを照合します。N-1/N/N+1、両clock極性、帰納法の基底部、`FORMAL`内の組合せassertion、reset列を対象にし、壊した出力値とreset列をWASMで拒否させます。build-infoの原版・バイナリーhashと実行したvvpの版も照合します。正式な5回反復ではなく、[S15 P1の診断記録](../experiments/S15-formal-replay.md)として保存します。
 
 ## 判定とブラウザー統合
 

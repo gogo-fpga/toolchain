@@ -1,17 +1,15 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { runSatFormal } from "../../web/lib/formal-sat.mjs";
-import { createMemoryTree, runWasiP1, treeToObject } from "../../web/lib/wasi-p1.mjs";
-import { assertYosysCreator } from "./yosys-parity.mjs";
+import { createFormalExecutors } from "./formal-helpers.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const nativePath = path.join(root, "build/native/yosys");
 const wasmPath = path.join(root, "build/wasi/yosys/yosys.wasm");
-const wasm = new WebAssembly.Module(readFileSync(wasmPath));
 mkdirSync(path.join(root, "build/S15"), { recursive: true });
 const evidence = mkdtempSync(path.join(root, "build/S15/p1-sat-"));
 const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -23,56 +21,6 @@ writeFileSync(path.join(evidence, "manifest.json"), JSON.stringify({
   nativeSha256: hash(readFileSync(nativePath)), wasmSha256: hash(readFileSync(wasmPath)),
 }, null, 2));
 console.log(`Retained formal SAT evidence: ${evidence}`);
-
-function executors(name, source) {
-  const directory = path.join(evidence, name);
-  mkdirSync(directory);
-  const nativeDir = path.join(directory, "native");
-  mkdirSync(nativeDir);
-  mkdirSync(path.join(nativeDir, "__formal"));
-  writeFileSync(path.join(nativeDir, "top.v"), source);
-  const workspace = createMemoryTree({ "top.v": source, __formal: {}, tmp: {} });
-  function save(phase, result) {
-    writeFileSync(path.join(directory, `${phase}.stdout`), result.stdout);
-    writeFileSync(path.join(directory, `${phase}.stderr`), result.stderr);
-    for (const name of ["before.json", "after.json"]) {
-      const bytes = result.files.get(`__formal/${name}`);
-      if (bytes) assertYosysCreator(JSON.parse(new TextDecoder().decode(bytes)).creator);
-    }
-    return result;
-  }
-  return {
-    native: async ({ phase, script }) => {
-      writeFileSync(path.join(directory, `native-${phase}.ys`), script);
-      const result = spawnSync(nativePath, ["-Q", "-T", "-p", script], {
-        cwd: nativeDir, encoding: "utf8", timeout: 30_000, maxBuffer: 8 * 1024 * 1024,
-      });
-      assert.ifError(result.error);
-      return save(`native-${phase}`, {
-        exitCode: result.status, stdout: result.stdout, stderr: result.stderr,
-        files: new Map(readdirSync(path.join(nativeDir, "__formal")).map((filename) =>
-          [`__formal/${filename}`, readFileSync(path.join(nativeDir, "__formal", filename))])),
-      });
-    },
-    wasm: async ({ phase, script }) => {
-      writeFileSync(path.join(directory, `wasm-${phase}.ys`), script);
-      const stdout = [];
-      const stderr = [];
-      const result = runWasiP1(wasm, {
-        args: ["yosys", "-Q", "-T", "-p", script], env: { TMPDIR: "/tmp" },
-        preopens: { "/": workspace, "/tmp": workspace.entries.get("tmp") },
-        stdout: (bytes) => stdout.push(bytes), stderr: (bytes) => stderr.push(bytes),
-      });
-      const files = new Map(Object.entries(treeToObject(workspace).__formal).map(([filename, bytes]) => {
-        writeFileSync(path.join(directory, `wasm-${filename}`), bytes);
-        return [`__formal/${filename}`, bytes];
-      }));
-      return save(`wasm-${phase}`, {
-        ...result, stdout: Buffer.concat(stdout).toString("utf8"), stderr: Buffer.concat(stderr).toString("utf8"), files,
-      });
-    },
-  };
-}
 
 const combinational = (property) => `module top(input [3:0] a, output [3:0] y);
   assign y = ~a;
@@ -103,7 +51,7 @@ for (const scenario of [
   { name: "unsupported-syntax", source: "module top(input clk); assert property (@(posedge clk) 1); endmodule", expected: "error" },
 ]) {
   test(`formal native/WASI ${scenario.name}`, async () => {
-    const execute = executors(scenario.name, scenario.source);
+    const execute = createFormalExecutors(evidence, scenario.name, scenario.source);
     const results = [];
     for (const runtime of ["native", "wasm"]) {
       const result = await runSatFormal({ sources: ["top.v"], top: "top", depth: 8, ...scenario, execute: execute[runtime] });
