@@ -17,7 +17,11 @@ const yosysGitlink = execFileSync("git", ["rev-parse", "HEAD:vendor/yosys"], {
   cwd: root,
   encoding: "utf8",
 }).trim();
-const creatorPrefix = `Yosys 0.70+ (git sha1 ${yosysGitlink.slice(0, 9)}`;
+const [yosysVersion, yosysCommit] = execFileSync(
+  "python3", [".github/scripts/check-pins.py", "yosys-pin"], { cwd: root, encoding: "utf8" },
+).trim().split("\t");
+assert.equal(yosysCommit, yosysGitlink, "Yosys pin and gitlink must match");
+const creatorPrefix = `Yosys ${yosysVersion.replace(/^v/, "")} (git sha1 ${yosysGitlink.slice(0, 9)}`;
 const wasmSize = statSync(wasmPath).size;
 const wasmModule = new WebAssembly.Module(readFileSync(wasmPath));
 const synthCommand = "read_verilog src/top.v; synth_gowin -top top -json top.json";
@@ -168,7 +172,7 @@ function assertSynthesisJsonEqual(nativeDocument, wasiDocument) {
   for (const document of [native, wasi]) {
     assert.ok(
       typeof document.creator === "string" && document.creator.startsWith(creatorPrefix),
-      `creator must start with ${creatorPrefix}`,
+      `creator must start with ${creatorPrefix}; received ${JSON.stringify(document.creator)}`,
     );
   }
 
@@ -218,6 +222,15 @@ for (const boardId of Object.keys(TEMPLATE_PINS)) {
       const wasiJson = JSON.parse(readFileSync(path.join(wasiWorkdir, "top.json"), "utf8"));
       const substitutions = assertSynthesisJsonEqual(nativeJson, wasiJson);
       if (boardId === Object.keys(TEMPLATE_PINS)[0]) {
+        for (const expected of [yosysVersion.replace(/^v/, ""), yosysGitlink.slice(0, 9)]) {
+          const wrongCreator = structuredClone(wasiJson);
+          wrongCreator.creator = wrongCreator.creator.replace(expected, "unpinned");
+          assert.throws(
+            () => assertSynthesisJsonEqual(nativeJson, wrongCreator),
+            /creator must start/,
+            "The comparison accepted an unpinned Yosys version or revision",
+          );
+        }
         const mutatedWasiJson = structuredClone(wasiJson);
         mutateFirstCellParameter(mutatedWasiJson);
         assert.throws(
