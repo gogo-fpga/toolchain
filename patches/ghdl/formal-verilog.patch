@@ -14,8 +14,8 @@
 @@ -19,3 +19,4 @@
  with Outputs; use Outputs;
  with Types_Utils; use Types_Utils;
- with Files_Map;
 +with Name_Table;
+ with Files_Map;
 @@ -746,6 +747,44 @@
        Loc : constant Location_Type := Locations.Get_Location (Inst);
        Id : constant Module_Id := Get_Id (Imod);

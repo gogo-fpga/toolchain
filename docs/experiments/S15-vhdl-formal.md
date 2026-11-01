@@ -26,6 +26,8 @@ GHDLのsource位置は開始位置のみなので、形式出力の`src`は同�
 
 検査用の小さなWASMにも初回はconstructor exportがなく、単体8件のうち2件が失敗しました。fixtureへexportを加えた後は8件すべて成功しています。各失敗ログと途中のproperty一覧も保全します。
 
+提出前の差分検査は、patchの空行contextにある末尾空白を検出しました。空行を含まないcontextへ直したbuild3では、末尾にcontextのないimport追加hunkが適用に失敗しました。追加位置を既存importの間へ移し、dry runで確認してからbuild4を新規に開始します。上流のproperty処理と通常出力を変える修正ではありません。build2のsource hashはこのpatch変更後と一致しないので、最終検証には使いません。
+
 ## 固定条件と再実行
 
 ホストはUbuntu 22.04.5 LTS、x86_64、2論理CPU、MemTotal 8,132,568 KiBです。GHDLはUbuntu 26.04.1 LTSの隔離環境でビルドし、比較も同じ環境で実行しました。nativeの実行表示はGHDL 6.0.0、GNAT 14.3.0、mcodeです。Nodeはv24.21.0、WASMのbuild manifestはAdaWebPack 24.0.0・WASI SDK 34.0・clang 23.1.0を記録しています。Yosysは前層と同じ製品用0.70のnative/WASIを再利用し、JSONのcreatorをpinと照合します。ホストではnative GHDLが要求するGLIBC 2.38を満たさないため、native実行も隔離環境で行います。
