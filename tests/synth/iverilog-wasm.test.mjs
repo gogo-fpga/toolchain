@@ -18,6 +18,9 @@ import {
   runWasiP1,
 } from "../../web/lib/wasi-p1.mjs";
 import { runIverilog } from "../../web/lib/iverilog-host.mjs";
+import { inspectInstalledLibraries, prepareLibrarySelection } from "../../web/lib/libraries.mjs";
+import { changeProjectLibraries, prepareProjectInputs } from "../../web/lib/project.mjs";
+import { exportProjectZip, importProjectZip } from "../../web/lib/project-zip.mjs";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const fixtureDir = path.join(repo, "tests/fixtures/iverilog");
@@ -161,10 +164,9 @@ function capture(command, args, cwd) {
   };
 }
 
-function runNative(name, boardId) {
+function runNative(name, boardId, files = filesFor(name, boardId)) {
   const root = mkdtempSync(path.join(os.tmpdir(), "iverilog-native-"));
   try {
-    const files = filesFor(name, boardId);
     const top = boardId ? "tb" : "top";
     const sourceFiles = files
       .filter((file) => file.path.endsWith(".v"))
@@ -227,6 +229,49 @@ function normalizedDiagnostic(text) {
     .filter((line) => /error|fatal/i.test(line))
     .join("\n");
 }
+
+test("pinned libfpga survives portable ZIP and runs exhaustive Gray conversion in native and WASM", async () => {
+  const directory = mkdtempSync(path.join(repo, "build/t5-library-simulation-"));
+  const assets = path.join(directory, "assets");
+  try {
+    const built = capture("python3", ["scripts/build-library-assets.py", "--output", assets], repo);
+    assert.equal(built.status, 0, built.stderr);
+    const catalog = JSON.parse(readFileSync(path.join(assets, "catalog.json"), "utf8"));
+    const added = await prepareLibrarySelection(catalog, { id: "libfpga", component: "gray" },
+      (asset) => readFileSync(path.join(assets, asset.asset)), { requireConfirmed: false });
+    const template = createBlinkTemplate("tangnano1k", "verilog");
+    template.files.set("src/top.v", readFileSync(path.join(fixtureDir, "library_gray.v"), "utf8"));
+    template.project.simulation.top = "top";
+    const installed = await changeProjectLibraries(template.project, template.files, { add: added });
+    const restored = await importProjectZip(await exportProjectZip(installed.project, installed.files));
+    const state = await inspectInstalledLibraries(restored.project, restored.files, catalog);
+    assert.equal(state.records.length, 1);
+    assert.equal(state.records[0].matched, true);
+    const licensePath = "libraries/libfpga/sources/LICENSE";
+    assert.deepEqual(Buffer.from(restored.files.get(licensePath)), readFileSync(path.join(repo, "third_party/libfpga/LICENSE")));
+    assert.ok([...restored.files.keys()].filter((file) => file.startsWith("libraries/"))
+      .every((file) => file.startsWith("libraries/libfpga/")));
+    const input = await prepareProjectInputs(restored.project, restored.files, { simulation: true });
+    for (const broken of [false, true]) {
+      const files = input.files.map((file) => file.path === "src/top.v" && broken
+        ? { ...file, content: Buffer.from(file.content).toString("utf8").replace("decoded !== value", "decoded !== (value ^ 8'h01)") }
+        : file);
+      const native = runNative(null, undefined, files);
+      const wasm = runIverilog({ modules, files, top: input.project.simulation.top,
+        includeDirs: input.includeDirectories, defines: input.defines });
+      assert.equal(native.status, broken ? 1 : 0, `${native.stdout}\n${native.stderr}`);
+      assert.equal(wasm.status, native.status, `${wasm.stdout}\n${wasm.stderr}`);
+      assert.equal(wasm.stdout, native.stdout);
+      assert.deepEqual(Buffer.from(wasm.tree.work["wave.vcd"]), native.vcd);
+      assert.match(wasm.stdout, broken ? /Inverse mismatch/ : /GRAY_256_OK/);
+    }
+    const corrupt = new Map(restored.files);
+    corrupt.set("libraries/libfpga/sources/rtl/math/lfpga_gray.v", "module invalid; endmodule\n");
+    await assert.rejects(exportProjectZip(restored.project, corrupt), /ハッシュ/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
 
 test("Icarus WASI pipeline matches native stdout and VCD", () => {
   for (const name of fixtures) {
