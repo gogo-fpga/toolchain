@@ -6,7 +6,7 @@
 
 T6では upstream の SBY と `yosys-smtbmc` を再利用します。SMT式の生成、BMC、帰納法、モデルとVCDの生成を独自に書き換えません。Yices2とZ3を優先して比較し、BitwuzlaとBoolectorも候補として残します。Yosys内蔵SATは比較経路であり、SMT対応の代わりにはしません。
 
-この記録はソースの静的調査とP0の依存確認です。形式検証ソルバーのビルド、native / WASMの証明、ブラウザーの形式検証画面、5回反復は未実施です。固定ソースの登録だけで、ソルバーを利用可能にはしません。実行前にS15の基準をコミットして検査します。
+P0でソースの静的調査と依存確認を行い、S15の事前基準をコミットしました。P1ではYosys内蔵SATの比較経路を実装中です。SMTソルバーのビルド、ブラウザーの形式検証画面、正式な5回反復は未実施です。固定ソースの登録だけで、ソルバーを利用可能にはしません。
 
 ## 上流の再利用と輸送層
 
@@ -37,9 +37,21 @@ T6では upstream の SBY と `yosys-smtbmc` を再利用します。SMT式の�
 
 通常のSystemVerilog対応と、形式検証専用の限定的なVerilog構文を分けます。`assert`、`assume`、`cover` を解析できることと、意図したpropertyが合成後も残ることは別の検査です。
 
-GHDLでは [synth-flags.ads](https://github.com/ghdl/ghdl/blob/e589c698c351369ac5bcfe7abe1f1152ac5d4727/src/synth/synth-flags.ads) の `Flag_Formal` の初期値がTrueです。[netlists-disp_verilog.adb](https://github.com/ghdl/ghdl/blob/e589c698c351369ac5bcfe7abe1f1152ac5d4727/src/synth/netlists-disp_verilog.adb) に `Id_Assert`、`Id_Assume`、`Id_Cover` の出力処理があります。plain VHDL assertionを残せる候補ですが、現在のWASMでの保持と、PSLの解析フラグ・対応範囲は未確認です。plain assertionとPSLをまとめて対応済みにはしません。
+GHDLでは [synth-flags.ads](https://github.com/ghdl/ghdl/blob/e589c698c351369ac5bcfe7abe1f1152ac5d4727/src/synth/synth-flags.ads) の `Flag_Formal` の初期値がTrueです。当初は [netlists-disp_verilog.adb](https://github.com/ghdl/ghdl/blob/e589c698c351369ac5bcfe7abe1f1152ac5d4727/src/synth/netlists-disp_verilog.adb) に `Id_Assert`、`Id_Assume`、`Id_Cover` があることから、plain assertionの保持候補としました。P1で各出力を読むと、assertは `$fatal`、assumeとcoverはVHDL風の文を出しており、そのままYosysの形式propertyへ渡せる出力ではありません。この点を未確認のまま対応済みにはしません。
+
+PSLコメントの解析は [vhdl-scanner.ads](https://github.com/ghdl/ghdl/blob/e589c698c351369ac5bcfe7abe1f1152ac5d4727/src/vhdl/vhdl-scanner.ads) の `Flag_Psl_Comment` が既定でFalseです。既存のWASM APIにはこれを選ぶ引数がありません。plain assertionとPSLを分け、上流の解析・合成を維持しながら、明示的な形式出力と解析フラグを接続する必要があります。通常の合成出力を黙って変更せず、変更が必要なら `patches/` へ記録します。現在のWASMでの保持とPSLの対応範囲は、引き続き未確認です。
 
 比較にはproperty数とID、0件、途中で消えたassertion、矛盾したassume、clock/reset、初期状態、X、ROM初期化、メモリー、組合せループ、ライブラリーのソース依存を含めます。最初に違反する深さがNの入力で、N-1・N・N+1の境界を調べます。反例は元の回路で独立に再実行し、VCDとpropertyを照合します。複数の正しいモデルがあり得るため、反例の全バイト一致だけを正しさの条件にはしません。
+
+## P1のSAT比較経路
+
+SAT経路は、準備、前提の整合性確認、証明を別の実行に分けます。準備前後のflatten済みJSONでpropertyのID・種類・sourceを照合し、1ビットのA/EN接続を検査します。0件のassertion、失われたproperty、未対応の状態セル、明示したclock/edgeと異なるレジスターを拒否します。初期値を一律に0へ固定する `-set-init-zero` は加えません。
+
+前提の確認は、指定した深さで `sat -set-assumes` を実行します。モデルが存在しない場合は前提が矛盾した結果として止め、証明成功にはしません。これは指定深さの整合性確認であり、全ての時刻で前提が整合する証明ではありません。coverは準備時の一覧には保持しますが、この比較経路のSAT対象から明示的に除き、到達性を判定しません。
+
+判定には上流の終了コードと行全体の結果を用います。BMCの反例なしは `bounded-safe` と深さを返し、帰納法は基底部と帰納部を両方確認した場合だけ `proved` を返します。反例はVCDとWaveJSONの両方を要求し、再実行前は `replay: pending` とします。単なる `SUCCESS`、基底部だけの成功、曖昧な結果、異常終了、witness欠落を成功へ変換しません。
+
+検査の入口は `tests/web/formal-properties.test.mjs`、`tests/web/formal-sat.test.mjs` と `tests/synth/formal-sat.test.mjs` です。後者は製品と同じ独自WASI preview1 shimを使い、nativeとWASMのログ・入力・中間JSON・反例とバイナリーのhashを新規の証拠ディレクトリーへ保存します。現段階は実装中の診断試行であり、S15の正式な5回反復、VHDL保持、反例再実行、SMT経路、画面統合は未完了です。
 
 ## 判定とブラウザー統合
 
