@@ -75,14 +75,15 @@ function chunksToBytes(chunks) {
   return output;
 }
 
-function runStage(module, args, root, libraries, onPollOneoff) {
+function runStage(module, args, root, libraries, onPollOneoff, projectRoot = false) {
   const stdout = [];
   const stderr = [];
   const result = runWasiP1(module, {
     args,
     env: { TMPDIR: "/tmp", SOURCE_DATE_EPOCH: "0", TZ: "UTC" },
-    preopens: {
+    preopens: projectRoot ? { "/": root.entries.get("work") } : {
       "/": root,
+      "/work": root.entries.get("work"),
       "/share": libraries,
       "/tmp": root.entries.get("tmp"),
     },
@@ -176,10 +177,11 @@ export function runIverilog({
 
   const simulated = runStage(
     modules.vvp,
-    ["vvp", "work/design.vvp"],
+    ["vvp", "design.vvp"],
     root,
     libraries,
     onPollOneoff,
+    true,
   );
   return {
     status: simulated.status,

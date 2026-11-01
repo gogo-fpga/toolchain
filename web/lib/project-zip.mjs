@@ -1,37 +1,10 @@
 import { strToU8, unzipSync, zipSync } from "fflate";
-import { migrateProject, validatePath, validateProject } from "./project.mjs";
+import { createProjectSnapshot, migrateProject, validatePath, validateProject } from "./project.mjs";
 
 const MAX_ENTRIES = 256;
 const MAX_UNCOMPRESSED_BYTES = 16 * 1024 * 1024;
 const ZIP_EOCD_SIGNATURE = 0x06054b50;
 const ZIP_CENTRAL_SIGNATURE = 0x02014b50;
-
-function ensureProjectFiles(project, files) {
-  const validation = validateProject(project);
-  if (!validation.ok) {
-    throw new Error(`プロジェクトの内容が不正です: ${validation.errors.join(" ")}`);
-  }
-  if (!(files instanceof Map)) {
-    throw new Error("ファイルの内容は Map で指定してください。");
-  }
-  const paths = project.files.map(({ path }) => path);
-  if (
-    paths.length !== files.size ||
-    paths.some((path) => !files.has(path))
-  ) {
-    throw new Error("プロジェクトの一覧とファイルの内容が一致しません。");
-  }
-  for (const path of paths) {
-    if (!validatePath(path).ok) {
-      throw new Error(`ファイルのパスが不正です: ${path}`);
-    }
-    const content = files.get(path);
-    if (typeof content !== "string" && !(content instanceof Uint8Array)) {
-      throw new Error(`ファイルの内容を保存できません: ${path}`);
-    }
-  }
-  return paths;
-}
 
 function inspectCentralDirectory(bytes) {
   if (!(bytes instanceof Uint8Array) || bytes.length < 22) {
@@ -69,7 +42,7 @@ function inspectCentralDirectory(bytes) {
     throw new Error("ZIP ファイルの構成に対応していません。");
   }
   if (entryCount > MAX_ENTRIES) {
-    throw new Error(`ZIP ファイルの項目数は ${MAX_ENTRIES} 件以内にしてください。`);
+    throw new Error(`ZIP ファイルの項目数は ${MAX_ENTRIES} 件以内にしてください（現在 ${entryCount} 件）。`);
   }
   if (
     directoryOffset + directorySize > endOffset ||
@@ -126,7 +99,7 @@ function inspectCentralDirectory(bytes) {
     names.add(name);
     totalBytes += uncompressedSize;
     if (totalBytes > MAX_UNCOMPRESSED_BYTES) {
-      throw new Error("ZIP ファイルの展開後の合計サイズは 16 MiB 以内にしてください。");
+      throw new Error(`ZIP ファイルの展開後の合計サイズは 16 MiB 以内にしてください（宣言サイズ ${totalBytes} バイト）。`);
     }
     entries.push({ name, compressedSize, uncompressedSize });
     offset = nextOffset;
@@ -137,36 +110,24 @@ function inspectCentralDirectory(bytes) {
   return entries;
 }
 
-export function exportProjectZip(project, files) {
-  const paths = ensureProjectFiles(project, files);
-  if (paths.length + 1 > MAX_ENTRIES) {
-    throw new Error(`ZIP ファイルの項目数は ${MAX_ENTRIES} 件以内にしてください。`);
+export async function exportProjectZip(project, files, { compressionLevel = 6 } = {}) {
+  if (!Number.isInteger(compressionLevel) || compressionLevel < 0 || compressionLevel > 9) {
+    throw new Error("ZIP の圧縮レベルは 0 から 9 にしてください。");
   }
-  const manifest = strToU8(JSON.stringify(project));
-  const uncompressedBytes = paths.reduce((total, path) => {
-    const content = files.get(path);
-    const byteLength = typeof content === "string"
-      ? strToU8(content).length
-      : content.byteLength;
-    return total + byteLength;
-  }, manifest.byteLength);
-  if (uncompressedBytes > MAX_UNCOMPRESSED_BYTES) {
-    throw new Error("ZIP ファイルの展開後の合計サイズは 16 MiB 以内にしてください。");
-  }
+  const snapshot = await createProjectSnapshot(project, files);
   const entries = Object.create(null);
-  entries["project.json"] = manifest;
-  for (const path of paths) {
-    const content = files.get(path);
+  entries["project.json"] = strToU8(snapshot.projectJson);
+  for (const [path, content] of snapshot.files) {
     entries[path] = typeof content === "string" ? strToU8(content) : content;
   }
   try {
-    return zipSync(entries, { level: 6 });
+    return zipSync(entries, { level: compressionLevel });
   } catch (error) {
     throw new Error("ZIP ファイルを書き出せません。", { cause: error });
   }
 }
 
-export function importProjectZip(bytes) {
+export async function importProjectZip(bytes) {
   const entries = inspectCentralDirectory(bytes);
   if (!entries.some(({ name }) => name === "project.json")) {
     throw new Error("ZIP ファイルに project.json がありません。");
@@ -193,7 +154,7 @@ export function importProjectZip(bytes) {
     0,
   );
   if (actualTotal > MAX_UNCOMPRESSED_BYTES) {
-    throw new Error("ZIP ファイルの展開後の合計サイズは 16 MiB 以内にしてください。");
+    throw new Error(`ZIP ファイルの展開後の合計サイズは 16 MiB 以内にしてください（展開後 ${actualTotal} バイト）。`);
   }
   if (
     names.some((name) => unpacked[name].byteLength !== declaredSizes.get(name))
@@ -238,10 +199,8 @@ export function importProjectZip(bytes) {
     }
   }
 
-  return {
-    project,
-    files: new Map(
-      project.files.map(({ path }) => [path, new Uint8Array(unpacked[path])]),
-    ),
-  };
+  const snapshot = await createProjectSnapshot(project, new Map(
+    project.files.map(({ path }) => [path, unpacked[path]]),
+  ));
+  return { project: snapshot.project, files: snapshot.files };
 }

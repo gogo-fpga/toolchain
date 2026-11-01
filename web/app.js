@@ -665,4 +665,5 @@ initializeIde({
     updateForm();
   },
   canStartSimulation: () => !activeWorker && !synthesisBuildRunning,
+  canChangeLibraries: () => !activeWorker,
 });

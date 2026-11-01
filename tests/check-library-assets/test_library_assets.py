@@ -88,6 +88,14 @@ class LibraryAssetsTests(unittest.TestCase):
         self.build()
         self.assertEqual((self.root / "assets/probe/probe.v").read_text(), "module probe; endmodule\n")
 
+    def test_parameter_metadata_is_preserved_and_invalid_shapes_are_rejected(self):
+        self.component["parameters"] = {"WIDTH": "8"}
+        self.assertEqual(self.build()["entries"][0]["components"][0]["parameters"], {"WIDTH": "8"})
+        for parameters in (None, [], {"WIDTH": 8}, {"bad name": "8"}, {"WIDTH": "8\n"}):
+            with self.subTest(parameters=parameters), self.assertRaisesRegex(ValueError, "parameter metadata"):
+                self.component["parameters"] = parameters
+                library_assets.validate_catalog(self.catalog)
+
     def test_builds_are_reproducible_and_do_not_overwrite_existing_evidence(self):
         first = self.build()
         second = library_assets.build_catalog(self.root, self.catalog, self.root / "second")

@@ -1,4 +1,5 @@
 import { getBoard } from "./boards.mjs";
+import { inspectInstalledLibraries, isLibraryPath, validateLibrarySelections } from "./libraries.mjs";
 
 const PROJECT_KEYS = new Set([
   "version",
@@ -8,10 +9,11 @@ const PROJECT_KEYS = new Set([
   "files",
   "vhdlStandard",
   "simulation",
+  "libraries",
 ]);
 const FILE_KEYS = new Set(["path"]);
 const SIMULATION_KEYS = new Set(["top", "files", "timeLimitSeconds"]);
-export const PROJECT_VERSION = 2;
+export const PROJECT_VERSION = 3;
 export const DEFAULT_SIMULATION_SETTINGS = Object.freeze({
   top: "top_tb",
   files: null,
@@ -27,6 +29,10 @@ const ALLOWED_EXTENSIONS = new Set([
   ".cst",
   ".md",
   ".txt",
+  ".hex",
+  ".mem",
+  ".bin",
+  ".dat",
 ]);
 
 function isObject(value) {
@@ -62,12 +68,12 @@ export function validatePath(path) {
   }
 
   if (
-    path.length > 128 ||
+    path.length > (isLibraryPath(path) ? 512 : 128) ||
     path.startsWith("/") ||
     path.includes("\\") ||
     path.includes("\u0000")
   ) {
-    errors.push("ファイルのパスは 128 文字以内の相対パスにしてください。");
+    errors.push(`ファイルのパスは ${isLibraryPath(path) ? 512 : 128} 文字以内の相対パスにしてください。`);
   }
 
   const segments = path.split("/");
@@ -86,9 +92,14 @@ export function validatePath(path) {
   const fileName = segments.at(-1) ?? "";
   const extensionIndex = fileName.lastIndexOf(".");
   const extension = extensionIndex < 0 ? "" : fileName.slice(extensionIndex);
-  if (!ALLOWED_EXTENSIONS.has(extension)) {
+  if (isLibraryPath(path)) {
+    if (!/^libraries\/[a-z0-9]+(?:-[a-z0-9]+)*\/(?:sources\/.+|snapshots\/[a-z0-9]+(?:-[a-z0-9]+)*\.json)$/.test(path)) {
+      errors.push("ライブラリーの予約パスが不正です。");
+    }
+  } else if (!ALLOWED_EXTENSIONS.has(extension)) {
     errors.push("対応していないファイルの拡張子です。");
   }
+  if (path === "project.json") errors.push("project.json は予約されたファイル名です。");
 
   return { ok: errors.length === 0, errors };
 }
@@ -124,8 +135,12 @@ export function migrateProject(project) {
     migrated.vhdlStandard = "2008";
   }
   if (migrated.version === 1) {
-    migrated.version = PROJECT_VERSION;
+    migrated.version = 2;
     migrated.simulation ??= defaultSimulationSettings();
+  }
+  if (migrated.version === 2) {
+    migrated.version = PROJECT_VERSION;
+    if (!Object.hasOwn(migrated, "libraries")) migrated.libraries = [];
   }
   return migrated;
 }
@@ -147,6 +162,7 @@ export function validateProject(project) {
   }
 
   errors.push(...validateProjectName(project.name).errors);
+  errors.push(...validateLibrarySelections(project.libraries));
 
   if (typeof project.board !== "string" || !getBoard(project.board)) {
     errors.push("対応していないボードです。");
@@ -219,6 +235,14 @@ export function validateProject(project) {
         paths.add(file.path);
       }
     });
+    for (const path of paths) {
+      const segments = path.split("/");
+      for (let index = 1; index < segments.length; index += 1) {
+        if (paths.has(segments.slice(0, index).join("/"))) {
+          errors.push(`ファイルとディレクトリーのパスが衝突しています: ${path}`);
+        }
+      }
+    }
   }
 
   if (isObject(project.simulation) && Array.isArray(project.simulation.files)) {
@@ -244,11 +268,79 @@ export function validateProject(project) {
         continue;
       }
       const extension = path.slice(path.lastIndexOf(".")).toLowerCase();
-      if (![".v", ".vh"].includes(extension)) {
+      if (isLibraryPath(path) || ![".v", ".vh"].includes(extension)) {
         errors.push(`シミュレーションには Verilog ファイルを選んでください: ${path}`);
       }
     }
   }
 
   return { ok: errors.length === 0, errors };
+}
+
+export async function createProjectSnapshot(project, files) {
+  const validation = validateProject(project);
+  if (!validation.ok) {
+    throw new Error(`プロジェクトが不正です: ${validation.errors.join(" ")}`);
+  }
+  if (!(files instanceof Map)) throw new Error("プロジェクトのファイルは Map で指定してください。");
+  if (project.files.length !== files.size || project.files.some(({ path }) => !files.has(path))) {
+    throw new Error("プロジェクトの一覧とファイルの内容が一致しません。");
+  }
+  const projectJson = JSON.stringify(project);
+  const savedProject = JSON.parse(projectJson);
+  const savedFiles = new Map();
+  const encoder = new TextEncoder();
+  let size = encoder.encode(projectJson).byteLength;
+  if (files.size + 1 > 256) throw new Error(`プロジェクトの項目数は 256 件以内にしてください（現在 ${files.size + 1} 件）。`);
+  for (const [path, content] of files) {
+    if (typeof content !== "string" && !(content instanceof Uint8Array)) {
+      throw new Error(`ファイルの内容を保存できません: ${path}`);
+    }
+    size += typeof content === "string" ? encoder.encode(content).byteLength : content.byteLength;
+    savedFiles.set(path, typeof content === "string" ? content : new Uint8Array(content));
+  }
+  if (size > 16 * 1024 * 1024) throw new Error(`プロジェクトの展開後の合計サイズは 16 MiB 以内にしてください（現在 ${size} バイト）。`);
+  const libraryState = await inspectInstalledLibraries(savedProject, savedFiles);
+  return { project: savedProject, files: savedFiles, projectJson, libraryState };
+}
+
+export async function changeProjectLibraries(project, files, { add = null, remove = null } = {}) {
+  const snapshot = await createProjectSnapshot(project, files);
+  const next = snapshot.project;
+  if (remove) next.libraries = next.libraries.filter(({ id, component }) => id !== remove.id || component !== remove.component);
+  const retained = new Set(snapshot.libraryState.records.filter(({ id, component }) =>
+    next.libraries.some((selection) => selection.id === id && selection.component === component),
+  ).flatMap(({ paths }) => paths));
+  const nextFiles = new Map([...snapshot.files].filter(([path]) =>
+    !path.startsWith("build/") && (!isLibraryPath(path) || retained.has(path)),
+  ));
+  if (add) {
+    next.libraries.push(add.selection);
+    for (const [path, content] of add.files) {
+      if (!isLibraryPath(path)) throw new Error(`依存はライブラリーの専用領域へ追加してください: ${path}`);
+      nextFiles.set(path, content);
+    }
+  }
+  next.files = [...nextFiles.keys()].map((path) => ({ path }));
+  if (next.simulation.files !== null) next.simulation.files = next.simulation.files.filter((path) => nextFiles.has(path));
+  return createProjectSnapshot(next, nextFiles);
+}
+
+export async function prepareProjectInputs(project, files, { simulation = false } = {}) {
+  const snapshot = await createProjectSnapshot(project, files);
+  const selected = snapshot.project.simulation.files;
+  const userFiles = [...snapshot.files].filter(([path]) => {
+    if (isLibraryPath(path) || path.startsWith("build/")) return false;
+    if (/\.(?:hex|mem|bin|dat)$/.test(path)) return true;
+    return simulation
+      ? /\.(?:v|vh)$/.test(path) && (selected === null || selected.includes(path))
+      : /\.(?:v|vh|vhd|vhdl|cst)$/.test(path) && !/(?:^|\/)top_tb\.v$/i.test(path);
+  }).map(([path, content]) => ({ path, content }));
+  const librarySources = snapshot.libraryState.sources.filter((source) => !simulation || source.language === "verilog");
+  return {
+    project: snapshot.project,
+    files: [...librarySources, ...snapshot.libraryState.data, ...userFiles],
+    includeDirectories: snapshot.libraryState.includeDirectories,
+    defines: snapshot.libraryState.defines,
+  };
 }

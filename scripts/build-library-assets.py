@@ -86,7 +86,7 @@ def validate_catalog(catalog: dict) -> list[dict]:
             raise ValueError(f"{identifier}: available library has no components")
         component_ids: set[str] = set()
         for component in entry["components"]:
-            checked_keys(component, COMPONENT_KEYS, COMPONENT_KEYS)
+            checked_keys(component, COMPONENT_KEYS | {"parameters"}, COMPONENT_KEYS)
             component_id = component["id"]
             if not isinstance(component_id, str) or not SLUG.fullmatch(component_id) or component_id in component_ids:
                 raise ValueError(f"{identifier}: invalid or duplicate component id")
@@ -98,6 +98,14 @@ def validate_catalog(catalog: dict) -> list[dict]:
                     raise ValueError(f"{identifier}: {key} must be a list")
             if not component["sources"]:
                 raise ValueError(f"{identifier}: component has no sources")
+            parameters = component.get("parameters", {})
+            if not isinstance(parameters, dict) or any(
+                not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name)
+                or not isinstance(value, str) or not value.strip() or len(value) > 1024
+                or any(ord(char) < 32 for char in value)
+                for name, value in parameters.items()
+            ):
+                raise ValueError(f"{identifier}: invalid parameter metadata")
             paths: set[str] = set()
             for source in component["sources"]:
                 checked_keys(source, {"path", "language", "library"}, {"path", "language"})

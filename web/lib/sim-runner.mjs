@@ -106,7 +106,7 @@ export function createSimRunner({
     return worker;
   }
 
-  function run({ files, top, timeLimitMs }) {
+  function run({ files, top, timeLimitMs, includeDirectories, defines }) {
     if (active) {
       return Promise.reject(new Error("A simulation is already running"));
     }
@@ -170,7 +170,7 @@ export function createSimRunner({
         );
       }, moduleLoadTimeoutMs);
       try {
-        operation.worker.postMessage({ files, top });
+        operation.worker.postMessage({ files, top, includeDirectories, defines });
       } catch (error) {
         finish(emptyResult("failed", String(error)), true);
       }

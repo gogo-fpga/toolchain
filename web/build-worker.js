@@ -5,6 +5,7 @@ import { createMemoryTree, runWasiP1, setTreeEntry } from "./lib/wasi-p1.mjs";
 import { readUstar } from "./lib/ustar.mjs";
 import { runGhdlSynth } from "./lib/ghdl-host.mjs";
 import { analyzeVhdlDesign, orderVhdlFiles } from "./lib/vhdl-order.mjs";
+import { validateCompileOptions, verilogReadCommand } from "./lib/libraries.mjs";
 
 const synthURL = new URL("./synth/", import.meta.url);
 const synthCacheName = "gogo-fpga-synth-v1";
@@ -92,6 +93,7 @@ function checkedFiles(files) {
       throw new Error("A project file has an invalid path");
     }
     insertFile(tree, file.path, file.content);
+    if (file.role === "data") continue;
     if (/\.(?:v|sv)$/i.test(file.path) && !/(?:^|\/)top_tb\.v$/i.test(file.path)) {
       sourcePaths.push(file.path);
     }
@@ -159,6 +161,7 @@ self.addEventListener("message", async ({ data }) => {
       throw new Error("The top module name is invalid");
     }
     const { tree, sourcePaths, vhdlFiles, constraintPath } = checkedFiles(data.files);
+    const compileOptions = validateCompileOptions(data);
     const hasVhdl = vhdlFiles.length > 0;
     let vhdlTime = 0;
     let vhdlStarted = 0;
@@ -168,6 +171,9 @@ self.addEventListener("message", async ({ data }) => {
     let vhdlTargets = [];
     if (hasVhdl) {
       stage = "vhdl";
+      if (vhdlFiles.some((file) => file.library && file.library.toLowerCase() !== "work")) {
+        throw new Error("名前付き VHDL library には新しい GHDL ホスト API が必要です。");
+      }
       self.postMessage({ type: "stage", stage });
       vhdlStarted = performance.now();
       const ordering = orderVhdlFiles(vhdlFiles);
@@ -296,7 +302,7 @@ self.addEventListener("message", async ({ data }) => {
     const yosysReadCommands = [];
     if (sourcePaths.length) {
       yosysReadCommands.push(
-        `read_verilog ${sourcePaths.map((path) => JSON.stringify(path)).join(" ")}`,
+        verilogReadCommand(sourcePaths, compileOptions),
       );
     }
     if (generatedVhdlPaths.length) {
