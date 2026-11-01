@@ -89,6 +89,7 @@ const binaryInfo = Object.fromEntries(["native", "wasi"].map((mode) => {
   assert.equal(info.artifact.size, statSync(executable).size);
   assert.deepEqual(info.numerics, {
     eigen_definitions: ["EIGEN_DONT_VECTORIZE"], translation_unit: "common/place/placer_heap.cc",
+    fp_contract: "off",
   });
   assert.equal(info.build_script_sha256, hash(readFileSync(path.join(root, "scripts/build-pnr-wasm.sh"))));
   for (const [name, digest] of Object.entries(info.build_helpers)) {

@@ -876,7 +876,7 @@ jobs:
             build/wasi-sdk-*
             build/wasi/nextpnr/
             build/native/nextpnr/
-          key: nextpnr-ubuntu-26.04-${{ steps.nextpnr-pin.outputs.gitlink }}-${{ steps.nextpnr-pin.outputs.dependencies }}-${{ hashFiles('scripts/build-pnr-wasm.sh', 'scripts/build-pnr-info.py') }}
+          key: nextpnr-ubuntu-26.04-${{ steps.nextpnr-pin.outputs.gitlink }}-${{ steps.nextpnr-pin.outputs.dependencies }}-${{ hashFiles('scripts/build-pnr-wasm.sh', 'scripts/build-pnr-info.py', 'scripts/prepare-pnr-source.py', 'scripts/nextpnr-patches.cmake', 'patches/nextpnr/*.patch') }}
 
       - name: native nextpnr をビルド
         env:
@@ -1488,8 +1488,18 @@ jobs:
           path: build/cache/pack/
           key: pyodide-pack-ubuntu-26.04-${{ hashFiles('package.json', 'package-lock.json', 'requirements-nextpnr.txt', 'scripts/build-pack-assets.sh', 'scripts/build-pack-assets.py', '.github/scripts/check-pins.py') }}
 
-      - name: Native / Pyodide gowin_pack parity
+      - id: pack-parity
+        name: Native / Pyodide gowin_pack parity
         run: node --test tests/synth/gowin-pack.test.mjs tests/synth/library-components.test.mjs tests/synth/yosys-parity.test.mjs tests/synth/library-measurements.test.mjs
+
+      - name: 合成・配置配線・packの失敗した入力とログを保存
+        if: always() && steps.pack-parity.outcome == 'failure'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ci-library-flow-failure-${{ github.run_id }}
+          path: build/t5-library-flow-*/
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Pyodide pack assets を保存
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

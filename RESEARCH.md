@@ -122,6 +122,8 @@ CPU 7候補のプログラム実行、負の対照、4ボードでの比較は [
 
 上記は正式反復より前の状態です。その後、パッチ0004の同一grid keyの順序固定と `EIGEN_DONT_VECTORIZE` を製品用ビルドへ適用し、[CPUの正式反復](docs/experiments/S14-production-cpu.md)を完走しました。28組は配置配線成功18・容量超過6・frontend非対応4です。成功した18組の生JSONと資源は両系で各5回一致し、該当ボードをconfirmedへ更新しました。残る2分類は選択できない理由を保持します。元の差を正規化で隠したり、初回の失敗を成功に書き換えたりしていません。
 
+その後、GCC 15のFMAを使う環境でSERV / 20Kの差が見つかりました。[S14Aの固定artifact・fast / off対照](docs/experiments/S14A-pnr-fp-contract.md)でheap placerの演算の縮約へ切り分け、その翻訳単位だけに `-ffp-contract=off` を追加します。6条件の各系5回、全60実行とA/A、値・キー順の負の対照、全列CSVを記録しました。compilerとchipdbの根拠を保持し、JSONやcreatorの置換で差を隠していません。
+
 Apycula 0.35 と `requirements-nextpnr.txt` の固定依存で、4 family の chipdb 生成と P&R が成功しました。他の Apycula 版は試していません。native と WASI で別々に生成した `.bba` と chipdb は一致しなかったため、native build の `.bba` を WASI build に取り込みます。これにより、両実行形式が同じ chipdb を使うことをテストで byte 単位に確認します。
 
 Boost 1.92.0 は `-fwasm-exceptions` と `libunwind` を使って WASI 向けにビルドできました。別の Boost 版は試していません。nextpnr WASM は 34,141,610 bytes、native binary は 55,324,696 bytes です。ビルド時間は初回の WASI が 5 分 5.890 秒、native が 2 分 44.644 秒でした。chipdb 生成を共有する変更後の再ビルドは、既存のビルドを再利用して WASI が 10.957 秒、native が 4.575 秒でした。
