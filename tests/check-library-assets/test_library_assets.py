@@ -3,6 +3,7 @@ import csv
 import hashlib
 import importlib.util
 import json
+import os
 import shutil
 import subprocess
 import tempfile
@@ -86,7 +87,13 @@ class LibraryAssetsTests(unittest.TestCase):
 
     @staticmethod
     def git(root, *args):
-        return subprocess.check_output(["git", "-C", str(root), *args], text=True, stderr=subprocess.PIPE)
+        env = os.environ | {
+            "GIT_AUTHOR_NAME": "Test",
+            "GIT_AUTHOR_EMAIL": "test@example.invalid",
+            "GIT_COMMITTER_NAME": "Test",
+            "GIT_COMMITTER_EMAIL": "test@example.invalid",
+        }
+        return subprocess.check_output(["git", "-C", str(root), *args], text=True, stderr=subprocess.PIPE, env=env)
 
     def build(self):
         return library_assets.build_catalog(self.root, self.catalog, self.root / "assets")

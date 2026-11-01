@@ -278,14 +278,22 @@ async function libraryBuildMatrix(t, { cpu = false } = {}) {
     const catalog = JSON.parse(readFileSync(path.join(assets, "catalog.json"), "utf8"));
     const matrix = samples.flatMap((sample) => BOARDS.map((board) => ({ ...sample, board })));
     for (const { id, component, language, fixture, board, frontendFailure } of matrix) {
+      const recipe = catalog.entries.find((entry) => entry.id === id).components.find((entry) => entry.id === component);
+      const expectedState = recipe.boards[board.id];
+      const matrixOnly = cpu && !preflight && ["capacity-exceeded", "frontend-unsupported"].includes(expectedState);
+      const selection = { id, component };
+      const loadAsset = (asset) => readFileSync(path.join(assets, asset.asset));
+      if (matrixOnly) {
+        await assert.rejects(prepareLibrarySelection(catalog, selection, loadAsset, { board: board.id }), /このボードでは選択できません/);
+      }
       const added = await prepareLibrarySelection(
-        catalog, { id, component },
-        (asset) => readFileSync(path.join(assets, asset.asset)), { board: board.id, requireConfirmed: !preflight && !frontendFailure },
+        catalog, selection, loadAsset, { board: board.id, requireConfirmed: !preflight && !matrixOnly },
       );
       await t.test(`${id}/${board.id}`, async () => {
         const workdir = path.join(directory, id, board.id);
         for (const part of ["src", "constraints", "tmp"]) mkdirSync(path.join(workdir, part), { recursive: true });
         const measurement = { id, component, board: board.id, status: "failed", timings: {}, hashes: {} };
+        measurement.selection = { catalog_state: expectedState, require_confirmed: !preflight && !matrixOnly, normal_selection_rejected: matrixOnly };
         const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
         try {
         const template = createBlinkTemplate(board.id, cpu ? "verilog" : language);
@@ -313,8 +321,7 @@ async function libraryBuildMatrix(t, { cpu = false } = {}) {
           writeFileSync(target, file.content);
         }
         if (frontendFailure) {
-          const componentRecipe = catalog.entries.find((entry) => entry.id === id).components.find((entry) => entry.id === component);
-          assert.ok(preflight || componentRecipe.boards[board.id] === "frontend-unsupported", "Unrecorded CPU frontend failure");
+          assert.ok(preflight || expectedState === "frontend-unsupported", "Unrecorded CPU frontend failure");
           const wasmDir = path.resolve(root, process.env.IVERILOG_WASM_DIR ?? "build/iverilog-wasm/output");
           const modules = Object.fromEntries(["ivlpp", "ivl", "vvp"].map((name) =>
             [name, new WebAssembly.Module(readFileSync(path.join(wasmDir, `${name}.wasm`)))]));
@@ -388,8 +395,7 @@ async function libraryBuildMatrix(t, { cpu = false } = {}) {
         measurement.resources = parseDeviceUtilization(pnr.stderr, { allowExceeded: cpu });
         assert.deepEqual(parseDeviceUtilization(nativePnr.stderr, { allowExceeded: cpu }), measurement.resources);
         if (cpu && isCapacityExceeded(pnr, nativePnr, measurement.resources)) {
-          const componentRecipe = catalog.entries.find((entry) => entry.id === id).components.find((entry) => entry.id === component);
-          assert.ok(preflight || componentRecipe.boards[board.id] === "capacity-exceeded", "Unrecorded CPU capacity failure");
+          assert.ok(preflight || expectedState === "capacity-exceeded", "Unrecorded CPU capacity failure");
           measurement.status = "capacity-exceeded";
           capacityExceeded += 1;
           return;
@@ -420,6 +426,7 @@ async function libraryBuildMatrix(t, { cpu = false } = {}) {
         measurement.fs_bytes = packed.fs.length;
         measurement.pack_memory_bytes = packed.memoryBytes;
         measurement.peak_rss_so_far_kib = process.resourceUsage().maxRSS;
+        assert.ok(preflight || expectedState === "confirmed", "Unrecorded successful board build");
         measurement.status = "passed";
         passedBoards += 1;
         } catch (error) {
