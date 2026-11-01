@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   copyFileSync,
   existsSync,
@@ -116,6 +117,24 @@ function assertBoardIdcode(bytes, board) {
   );
 }
 
+function assertTimescalePreservesBitstream(board, source, expectedFs) {
+  const directive = "`timescale 1ns/1ps\n";
+  assert.ok(source.startsWith(directive), "The simulation template must specify its timescale");
+  const workdir = createWorkdir("gowin-pack-before-timescale-");
+  try {
+    runYosysWasi(workdir, source.slice(directive.length));
+    writeFileSync(path.join(workdir, "constraints/board.cst"), generateCst(board.id));
+    const pnr = runWasi(workdir, pnrArgs(board));
+    assert.equal(pnr.status, 0, `Baseline nextpnr failed for ${board.id}:\n${pnr.stderr}`);
+    const routedJson = readFileSync(path.join(workdir, "pnr.json"));
+    const { output } = runNativePack(board, routedJson, workdir);
+    assert.deepStrictEqual(output, expectedFs, `The timescale changed the .fs for ${board.id}`);
+    console.log(`${board.id}: before/after timescale .fs SHA-256 ${createHash("sha256").update(output).digest("hex")}`);
+  } finally {
+    rmSync(workdir, { recursive: true, force: true });
+  }
+}
+
 for (const board of BOARDS) {
   test(`Pyodide gowin_pack matches native for ${board.id}`, async () => {
     const workdir = createWorkdir("gowin-pack-test-");
@@ -134,6 +153,7 @@ for (const board of BOARDS) {
       try {
         const { output: nativeFs, elapsed: nativeElapsed } = runNativePack(board, routedJson, nativeWorkdir);
         assertBoardIdcode(nativeFs, board);
+        assertTimescalePreservesBitstream(board, source, nativeFs);
         const packTimes = [];
         let fallbackWarning = "";
         for (let repeat = 0; repeat < 5; repeat += 1) {
