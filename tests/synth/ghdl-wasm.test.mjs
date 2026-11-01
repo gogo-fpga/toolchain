@@ -48,7 +48,7 @@ test("pinned VHDL libraries preserve their named library after portable ZIP impo
       await t.test(id, async () => {
         const added = await prepareLibrarySelection(
           catalog, { id, component },
-          (asset) => readFileSync(path.join(assets, asset.asset)), { requireConfirmed: false },
+          (asset) => readFileSync(path.join(assets, asset.asset)), { board: "tangnano20k" },
         );
         const template = createBlinkTemplate("tangnano20k", "vhdl");
         template.files.set("src/top.vhd", readFileSync(path.join(root, "tests/fixtures/libraries", fixture)));

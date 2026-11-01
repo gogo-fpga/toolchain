@@ -229,7 +229,7 @@ test("pinned HDL libraries build from portable ZIP into all four board bitstream
     for (const { id, component, language, fixture, board } of matrix) {
       const added = await prepareLibrarySelection(
         catalog, { id, component },
-        (asset) => readFileSync(path.join(assets, asset.asset)), { requireConfirmed: false },
+        (asset) => readFileSync(path.join(assets, asset.asset)), { board: board.id },
       );
       await t.test(`${id}/${board.id}`, async () => {
         const workdir = path.join(directory, id, board.id);

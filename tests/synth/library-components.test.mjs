@@ -69,7 +69,7 @@ test("eight pinned HDL representatives execute independent scoreboards after por
     for (const { id, component, language, fixture } of HDL_LIBRARY_CASES) {
       await t.test(id, async () => {
         const added = await prepareLibrarySelection(catalog, { id, component },
-          (asset) => readFileSync(path.join(assets, asset.asset)), { requireConfirmed: false });
+          (asset) => readFileSync(path.join(assets, asset.asset)), { board: "tangnano20k" });
         const template = createBlinkTemplate("tangnano20k", language);
         template.files.set(language === "vhdl" ? "src/top.vhd" : "src/top.v", readFileSync(path.join(root, "tests/fixtures/libraries", fixture)));
         const installed = await changeProjectLibraries(template.project, template.files, { add: added });
