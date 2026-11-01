@@ -2,6 +2,8 @@
 
 [S14の事前基準・初回の失敗へ戻る](S14-cpu-library-matrix.md) / [HDLの正式結果](S14-production-hdl.md) / [実験の索引](README.md)
 
+カタログ昇格後の再検査は[全60組の最終回帰と配布ソースの照合](S14-final-regression.md)に分けました。本書の正式反復とは実行したrevision・出力先が異なります。元の反復・失敗ログを新しい結果へ置き換えていません。
+
 ## 目的と判定
 
 CPU7候補と4ボードの全28組を検査しました。固定構成のSERV、PicoRV32、NEORV32、Hazard3、VexRiscv生成済みRTL、DarkRISCVは、4K・9K・20Kの18組でnative / WASIの配置配線結果が各5回一致しました。同じ6候補の1Kは容量超過です。FemtoRV Quarkの4組は、native / WASMのIcarusで同じ解析エラーを確認し、frontend非対応と分類しました。

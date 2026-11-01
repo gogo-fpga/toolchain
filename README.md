@@ -6,7 +6,7 @@ Web ブラウザーだけで VHDL と Verilog の編集、論理合成、配置�
 
 ## 開発状況
 
-T0 から T3 の編集・保存・合成・配置配線・ビットストリーム作成に加え、T4 の Verilog シミュレーションと波形表示を実装しています。合成には Yosys + ABC と GHDL、配置配線には nextpnr-himbaechel、ビットストリームの作成には Apicula を使います。書き込み部は、[午後のFPGA Web Flasher](https://github.com/gogo-fpga/flasher) から移植したものです。T5 は22候補の固定版カタログ、依存解決、選択画面、ZIPへの同梱と名前付きVHDLライブラリーに対応しています。[HDL8部品の全4ボード](docs/experiments/S14-production-hdl.md)と[CPU6候補の4K・9K・20K](docs/experiments/S14-production-cpu.md)は、代表回路のnative / WASI配置配線を各5回照合しました。CPU6候補の1Kは容量超過、FemtoRVはIcarus frontend非対応として選択を制限します。これは固定構成の仮想検証であり、T5の配布・最終回帰はまだ未完了です。形式検証（T6）は未対応です。
+T0 から T3 の編集・保存・合成・配置配線・ビットストリーム作成に加え、T4 の Verilog シミュレーションと波形表示を実装しています。合成には Yosys + ABC と GHDL、配置配線には nextpnr-himbaechel、ビットストリームの作成には Apicula を使います。書き込み部は、[午後のFPGA Web Flasher](https://github.com/gogo-fpga/flasher) から移植したものです。T5 は22候補の固定版カタログ、依存解決、選択画面、ZIPへの同梱と名前付きVHDLライブラリーに対応しています。[HDL8部品の全4ボード](docs/experiments/S14-production-hdl.md)と[CPU6候補の4K・9K・20K](docs/experiments/S14-production-cpu.md)は、代表回路のnative / WASI配置配線を各5回照合しました。CPU6候補の1Kは容量超過、FemtoRVはIcarus frontend非対応として選択を制限します。これは固定構成の仮想検証です。[昇格後の最終回帰と配布ソースの照合](docs/experiments/S14-final-regression.md)に、全60組の分類、全列CSV、警告の根拠、Git情報なしの再生成と未確認範囲を記録しています。形式検証（T6）は未対応です。
 
 書き込み部は Chromium 系ブラウザーの WebUSB を使います。実機の Tang Nano では試していません。
 

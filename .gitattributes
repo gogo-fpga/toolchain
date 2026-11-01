@@ -1,3 +1,5 @@
 .github/scripts/data/jisx0213-2004-std.txt whitespace=-blank-at-eol
 patches/iverilog/static-wasi.patch whitespace=-blank-at-eol,-space-before-tab
 patches/nextpnr/0003-stabilize-router-arc-hashes.patch whitespace=-blank-at-eol
+docs/experiments/S14-final-regression-hdl.csv -text whitespace=cr-at-eol
+docs/experiments/S14-final-regression-cpu.csv -text whitespace=cr-at-eol
