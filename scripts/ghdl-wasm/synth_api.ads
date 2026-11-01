@@ -16,6 +16,9 @@ package Synth_Api is
    --  configure diagnostics. 0 = success.
    function Synth_Init return Integer;
 
+   function Synth_Set_Library
+     (Name : Thin_String_Ptr; Len : Natural) return Integer;
+
    --  Analyze FILE into the work library. The caller must provide files in
    --  dependency order (packages before units that use them).
    --  0 = success; negative values identify an analysis failure.

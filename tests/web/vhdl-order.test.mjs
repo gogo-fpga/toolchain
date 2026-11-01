@@ -2,10 +2,55 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   analyzeVhdlDesign,
+  getVhdlLibrary,
   orderVhdlFiles,
 } from "../../web/lib/vhdl-order.mjs";
 
 const file = (path, content) => ({ path, content });
+
+test("named libraries qualify unit identities and work aliases without rewriting source", () => {
+  const alphaPackage = { ...file("alpha/pkg.vhd", "package cfg is end;"), library: "Alpha" };
+  const betaPackage = { ...file("beta/pkg.vhd", "package cfg is end;"), library: "beta" };
+  const alphaChild = { ...file("alpha/child.vhd", "use work.cfg.all; entity child is end;"), library: "alpha" };
+  const betaChild = { ...file("beta/child.vhd", "use work.cfg.all; entity child is end;"), library: "beta" };
+  const top = file("src/top.vhd", "entity top is end; architecture rtl of top is begin a: entity alpha.child; b: entity beta.child; end;");
+  const before = JSON.stringify([top, betaChild, alphaChild, betaPackage, alphaPackage]);
+  const result = orderVhdlFiles([top, betaChild, alphaChild, betaPackage, alphaPackage]);
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.deepEqual(result.order, [betaPackage, betaChild, alphaPackage, alphaChild, top]);
+  assert.equal(JSON.stringify([top, betaChild, alphaChild, betaPackage, alphaPackage]), before);
+});
+
+test("duplicate primary and secondary units fail only within the same logical library", () => {
+  const one = file("src/one.vhd", "entity top is end; architecture rtl of top is begin end;");
+  for (const content of ["entity top is end;", "architecture rtl of top is begin end;"]) {
+    const result = orderVhdlFiles([one, file("src/two.vhd", content)]);
+    assert.equal(result.ok, false);
+    assert.match(result.errors[0].message, /Duplicate work design unit/);
+  }
+  const different = file("src/two.vhd", "entity other is end; architecture rtl of other is begin end;");
+  assert.equal(orderVhdlFiles([one, different]).ok, true);
+  assert.equal(orderVhdlFiles([one, { ...one, path: "alpha/one.vhd", library: "alpha" }]).ok, true);
+});
+
+test("named-library missing dependencies and cycles remain fail closed", () => {
+  const missing = { ...file("alpha/a.vhd", "use work.missing.all; entity a is end;"), library: "alpha" };
+  assert.match(orderVhdlFiles([missing]).errors[0].message, /Unresolved alpha reference "missing"/);
+  const a = { ...file("alpha/a.vhd", "package cfg is use beta.cfg.all; end;"), library: "alpha" };
+  const b = { ...file("beta/b.vhd", "package cfg is use alpha.cfg.all; end;"), library: "beta" };
+  const result = orderVhdlFiles([a, b]);
+  assert.equal(result.ok, false);
+  assert.equal(result.errors.length, 2);
+  assert.ok(result.errors.every(({ message }) => /dependency cycle/.test(message)));
+});
+
+test("library names are case-insensitive basic identifiers rather than paths or options", () => {
+  assert.equal(getVhdlLibrary({}), "work");
+  assert.equal(getVhdlLibrary({ library: "Open_Logic" }), "open_logic");
+  for (const library of [null, 3, "", "../escape", "--work=alpha", "trailing_", "two__underscores"]) {
+    assert.throws(() => getVhdlLibrary({ library }), /Invalid VHDL library/);
+  }
+});
 
 test("orders package, package body, entity and architecture dependencies", () => {
   const architecture = file(

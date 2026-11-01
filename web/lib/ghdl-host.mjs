@@ -1,4 +1,5 @@
 import { createMemoryTree, createWasiP1ImportObject, setTreeEntry } from "./wasi-p1.mjs";
+import { getVhdlLibrary } from "./vhdl-order.mjs";
 
 const decoder = new TextDecoder("latin1");
 
@@ -53,7 +54,10 @@ export function runGhdlSynth({
   const standardCode = standard === "2008" ? 8 : standard === "2019" ? 19 : 0;
   if (!standardCode) throw new TypeError(`Unsupported VHDL standard: ${standard}`);
   const tree = { ghdl: { lib: { ghdl: librariesTree } }, tmp: {} };
-  for (const file of files) insertFile(tree, file.path, file.content);
+  for (const file of files) {
+    if (file.role !== "data") getVhdlLibrary(file);
+    insertFile(tree, file.path, file.content);
+  }
   const filesystem = createMemoryTree(tree);
   const descriptors = new Map();
   let nextDescriptor = 100;
@@ -403,7 +407,33 @@ export function runGhdlSynth({
     };
   }
 
-  for (const file of files) {
+  let currentLibrary = "work";
+  const selectLibrary = (library) => {
+    if (library === currentLibrary) return 0;
+    if (typeof exports.synth_api__synth_set_library !== "function") {
+      emit("GHDL WASM does not support named VHDL libraries");
+      return -1;
+    }
+    const [pointer, length] = pushString(library);
+    let result;
+    try {
+      result = exports.synth_api__synth_set_library(pointer, length);
+    } catch {
+      result = 1;
+    } finally {
+      exports.free(pointer);
+    }
+    if (result === 0) currentLibrary = library;
+    return result;
+  };
+  const libraryFailure = (status, file) => ({
+    status, verilog: "", log: log(), stage: "library", file,
+    durationMs: performance.now() - started, memoryBytes: memoryBytes(),
+  });
+  for (const file of files.filter((file) => file.role !== "data")) {
+    chunks.length = 0;
+    const selected = selectLibrary(getVhdlLibrary(file));
+    if (selected !== 0) return libraryFailure(selected, file.path);
     stage = "analyze";
     chunks.length = 0;
     const [pointer, length] = pushString(file.path);
@@ -427,8 +457,10 @@ export function runGhdlSynth({
     }
   }
 
-  stage = "synthesize";
   chunks.length = 0;
+  const selected = selectLibrary("work");
+  if (selected !== 0) return libraryFailure(selected);
+  stage = "synthesize";
   const [topPointer, topLength] = pushString(top.toLowerCase());
   let result;
   try {
