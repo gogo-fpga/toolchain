@@ -19,7 +19,17 @@
       "deprecated": false,
       "status": "unverified",
       "reason": "代表部品の合成・動作と対応ボードは未検証です。",
-      "components": []
+      "components": [{
+        "id": "counter",
+        "label": "剰余カウンター",
+        "parameters": { "g_MODULO": "10", "g_COUNTER_WIDTH": "4" },
+        "sources": [
+          { "path": "src/common/utils.vhdl", "language": "vhdl", "library": "colibri" },
+          { "path": "src/common/counter.vhdl", "language": "vhdl", "library": "colibri" }
+        ],
+        "data": [], "dependencies": [], "includeDirectories": [], "defines": {},
+        "boards": { "tangnano1k": "unverified", "tangnano4k": "unverified", "tangnano9k": "unverified", "tangnano20k": "unverified" }
+      }]
     },
     {
       "id": "open-logic",
@@ -37,7 +47,17 @@
       "deprecated": false,
       "status": "unverified",
       "reason": "代表部品の合成・動作と対応ボードは未検証です。",
-      "components": []
+      "components": [{
+        "id": "gray",
+        "label": "Gray 符号と論理関数",
+        "sources": [
+          { "path": "src/base/vhdl/olo_base_pkg_array.vhd", "language": "vhdl", "library": "olo" },
+          { "path": "src/base/vhdl/olo_base_pkg_math.vhd", "language": "vhdl", "library": "olo" },
+          { "path": "src/base/vhdl/olo_base_pkg_logic.vhd", "language": "vhdl", "library": "olo" }
+        ],
+        "data": [], "dependencies": [], "includeDirectories": [], "defines": {},
+        "boards": { "tangnano1k": "unverified", "tangnano4k": "unverified", "tangnano9k": "unverified", "tangnano20k": "unverified" }
+      }]
     },
     {
       "id": "hdl-modules",
@@ -54,7 +74,16 @@
       "deprecated": false,
       "status": "unverified",
       "reason": "代表部品の合成・動作と対応ボードは未検証です。",
-      "components": []
+      "components": [{
+        "id": "handshake-pipeline",
+        "label": "ハンドシェイク・パイプライン",
+        "parameters": { "data_width": "8", "full_throughput": "true", "pipeline_control_signals": "true", "pipeline_data_signals": "true" },
+        "sources": [
+          { "path": "modules/common/src/handshake_pipeline.vhd", "language": "vhdl", "library": "common" }
+        ],
+        "data": [], "dependencies": [], "includeDirectories": [], "defines": {},
+        "boards": { "tangnano1k": "unverified", "tangnano4k": "unverified", "tangnano9k": "unverified", "tangnano20k": "unverified" }
+      }]
     },
     {
       "id": "verilog-axis",

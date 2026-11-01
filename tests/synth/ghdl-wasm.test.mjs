@@ -18,6 +18,10 @@ import { tmpdir } from "node:os";
 import test from "node:test";
 import { runGhdlSynth } from "../../web/lib/ghdl-host.mjs";
 import { getVhdlLibrary } from "../../web/lib/vhdl-order.mjs";
+import { prepareLibrarySelection } from "../../web/lib/libraries.mjs";
+import { changeProjectLibraries, prepareProjectInputs } from "../../web/lib/project.mjs";
+import { exportProjectZip, importProjectZip } from "../../web/lib/project-zip.mjs";
+import { createBlinkTemplate } from "../../web/lib/templates.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const buildRoot = path.resolve(root, process.env.GHDL_WASM_BUILD_ROOT ?? "build");
@@ -27,6 +31,51 @@ const libDir = path.join(buildRoot, "ghdl-native/lib/ghdl");
 const nativePath = path.join(buildRoot, "ghdl-native/bin/ghdl");
 const wasmModule = new WebAssembly.Module(readFileSync(wasmPath));
 const librariesTree = loadLibraryTree(libDir);
+
+test("pinned VHDL libraries preserve their named library after portable ZIP import", async (t) => {
+  const directory = mkdtempSync(path.join(root, "build/t5-vhdl-libraries-"));
+  const assets = path.join(directory, "assets");
+  let passed = 0;
+  const cases = [
+    ["colibri", "counter", "colibri-counter.vhd"],
+    ["open-logic", "gray", "open-logic-gray.vhd"],
+    ["hdl-modules", "handshake-pipeline", "hdl-modules-pipeline.vhd"],
+  ];
+  try {
+    const built = spawnSync("python3", ["scripts/build-library-assets.py", "--output", assets], {
+      cwd: root, encoding: "utf8", maxBuffer: 16 * 1024 * 1024,
+    });
+    assert.equal(built.status, 0, `${built.stderr}\n${built.error ?? ""}`);
+    const catalog = JSON.parse(readFileSync(path.join(assets, "catalog.json"), "utf8"));
+    for (const [id, component, fixture] of cases) {
+      await t.test(id, async () => {
+        const added = await prepareLibrarySelection(
+          catalog, { id, component },
+          (asset) => readFileSync(path.join(assets, asset.asset)), { requireConfirmed: false },
+        );
+        const template = createBlinkTemplate("tangnano20k", "vhdl");
+        template.files.set("src/top.vhd", readFileSync(path.join(root, "tests/fixtures/libraries", fixture)));
+        const installed = await changeProjectLibraries(template.project, template.files, { add: added });
+        const zip = await exportProjectZip(installed.project, installed.files);
+        writeFileSync(path.join(directory, `${id}.zip`), zip);
+        const restored = await importProjectZip(zip);
+        const input = await prepareProjectInputs(restored.project, restored.files);
+        const sources = input.files.filter((file) => file.role !== "data" && /\.(vhd|vhdl)$/i.test(file.path));
+        assert.ok(sources.some((file) => file.path.startsWith(`libraries/${id}/`) && file.library !== "work"));
+        const native = runNative("top", sources);
+        assert.equal(native.status, 0, `${native.output}\n${native.stderr ?? ""}\n${native.error ?? ""}`);
+        const wasm = await runWasm("top", sources);
+        assert.equal(wasm.status, 0, wasm.log);
+        assert.equal(wasm.verilog, native.output, differenceSummary(native.output, wasm.verilog));
+        assert.match(wasm.verilog, /module top/);
+        passed += 1;
+      });
+    }
+  } finally {
+    if (passed === cases.length) rmSync(directory, { recursive: true, force: true });
+    else console.error(`Retained failing VHDL library evidence: ${directory}`);
+  }
+});
 
 assert.ok(statSync(libDir).isDirectory(), `GHDL libraries are missing: ${libDir}`);
 assert.ok(statSync(nativePath).isFile(), `Native GHDL is missing: ${nativePath}`);
@@ -45,7 +94,7 @@ function loadLibraryTree(directory) {
 function fixtureFiles(names) {
   return names.map((name) => {
     const file = typeof name === "string" ? { path: name } : name;
-    return { ...file, content: new Uint8Array(readFileSync(path.join(fixtureRoot, file.path))) };
+    return { ...file, content: file.content ?? new Uint8Array(readFileSync(path.join(fixtureRoot, file.path))) };
   });
 }
 
@@ -64,6 +113,7 @@ function runNative(top, names, standard = "2008") {
   const nativeStandard = standard === "2019" ? "19" : "08";
   try {
     for (const file of fixtureFiles(names)) {
+      mkdirSync(path.dirname(path.join(workDir, file.path)), { recursive: true });
       writeFileSync(path.join(workDir, file.path), file.content);
     }
     for (const file of fixtureFiles(names).filter((file) => file.role !== "data")) {
@@ -88,6 +138,7 @@ function runNative(top, names, standard = "2008") {
     return {
       status: synthesis.status ?? 1,
       output: synthesis.stdout ?? "",
+      stderr: synthesis.stderr ?? "",
       error: synthesis.error,
     };
   } finally {
