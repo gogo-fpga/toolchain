@@ -53,6 +53,10 @@ Taxi の有償ライセンスには別途契約が必要です。MIT の旧ラ�
 
 HDL ライブラリー8候補と CPU 7候補は、代表部品、依存の解析、合成、動作を検証する対象です。登録直後の状態は「未検証」です。ボードの容量超過、言語の非対応、未検証は区別します。CPU はプログラムの実行による出力を確認し、定数化された回路だけで合格としません。
 
+その後、[製品用HDLの正式反復](../experiments/S14-production-hdl.md)で8部品の全4ボード、[製品用CPUの正式反復](../experiments/S14-production-cpu.md)で6候補の4K・9K・20Kを、両系の配置配線各5回の一致からconfirmedへ更新しました。CPU6候補の1Kはcapacity-exceeded、FemtoRV Quarkの全ボードはIcarus 13.0の宣言前参照の解析エラーからfrontend-unsupportedとし、選択できない理由を表示します。全CPU構成や実機を確認した結果ではありません。正式反復には生CSV、全列監査、対照、版とhash、再生成手順を保存しました。
+
+実行したfrontendで非対応と確認した候補は、候補全体の状態も `frontend-unsupported` とし、未検証や言語自体が対象外の `unsupported` と分けます。部品とボードの根拠は削除せず保持し、全てのボードが同じfrontend非対応でなければカタログを拒否します。確認済みのボードをこの分類に混在させて選択可能にすることはできません。
+
 Ibex、CV32E40P、Taxi は SystemVerilog、VexiiRiscv は Scala からの生成が必要なため、現段階では非対応です。OSVVM、UVVM、VUnit は VHDL の検証用で、現段階のシミュレーターでは実行できません。この7候補は理由付きで残し、選択できない状態で表示する対象です。
 
 `verilog-axis`、`verilog-uart`、`verilog-axi`、`verilog-ethernet` は、固定版の README が deprecated と明記し、後継に Taxi を案内しています。保守終了の表示を残し、明示的な選択だけで使います。

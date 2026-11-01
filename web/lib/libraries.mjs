@@ -114,7 +114,7 @@ function indexCatalog(catalog) {
     assert(object(entry) && typeof entry.id === "string" && SLUG.test(entry.id) && !entries.has(entry.id), "候補の ID が不正または重複しています。");
     assert(object(entry.source) && SHA.test(entry.source.revision ?? "") &&
       typeof entry.source.url === "string" && /^https:\/\/[^\s]+$/.test(entry.source.url), "取得元の固定情報が不正です。");
-    assert(["available", "unverified", "unsupported"].includes(entry.status) &&
+    assert(["available", "unverified", "unsupported", "frontend-unsupported"].includes(entry.status) &&
       typeof entry.deprecated === "boolean" && Array.isArray(entry.components) &&
       (entry.status !== "unsupported" || entry.components.length === 0), "候補の状態が不正です。");
     assert(object(entry.license) && typeof entry.license.expression === "string" && entry.license.expression.length > 0 &&
@@ -147,6 +147,9 @@ function indexCatalog(catalog) {
           ["confirmed", "capacity-exceeded", "frontend-unsupported", "unverified"].includes(status)), "ボードの確認状態が不正です。");
       components.set(key, { entry, component });
     }
+    assert(entry.status !== "frontend-unsupported" || (entry.components.length > 0 &&
+      entry.components.every((component) => Object.values(component.boards).every((state) => state === "frontend-unsupported"))),
+    "フロントエンド非対応の部品とボードの状態が一致しません。");
   }
   return { entries, components };
 }

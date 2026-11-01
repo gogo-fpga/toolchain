@@ -289,8 +289,8 @@
         ]
       },
       "deprecated": false,
-      "status": "unverified",
-      "reason": "固定構成のソースと接続条件を登録済みです。4ボードの最終検証と正式測定は未完了です。",
+      "status": "available",
+      "reason": "固定構成の代表回路は4K・9K・20Kで確認済みです。1Kは容量超過です。実機は本リポジトリでは試していません。",
       "components": [
         {
           "id": "rv32i",
@@ -378,10 +378,10 @@
           "includeDirectories": [],
           "defines": {},
           "boards": {
-            "tangnano1k": "unverified",
-            "tangnano4k": "unverified",
-            "tangnano9k": "unverified",
-            "tangnano20k": "unverified"
+            "tangnano1k": "capacity-exceeded",
+            "tangnano4k": "confirmed",
+            "tangnano9k": "confirmed",
+            "tangnano20k": "confirmed"
           }
         }
       ]
@@ -399,8 +399,8 @@
         ]
       },
       "deprecated": false,
-      "status": "unverified",
-      "reason": "固定構成のソースと接続条件を登録済みです。4ボードの最終検証と正式測定は未完了です。",
+      "status": "available",
+      "reason": "固定構成の代表回路は4K・9K・20Kで確認済みです。1Kは容量超過です。実機は本リポジトリでは試していません。",
       "components": [
         {
           "id": "rv32e",
@@ -429,10 +429,10 @@
           "includeDirectories": [],
           "defines": {},
           "boards": {
-            "tangnano1k": "unverified",
-            "tangnano4k": "unverified",
-            "tangnano9k": "unverified",
-            "tangnano20k": "unverified"
+            "tangnano1k": "capacity-exceeded",
+            "tangnano4k": "confirmed",
+            "tangnano9k": "confirmed",
+            "tangnano20k": "confirmed"
           }
         }
       ]
@@ -450,8 +450,8 @@
         ]
       },
       "deprecated": false,
-      "status": "unverified",
-      "reason": "固定構成のソースと接続条件を登録済みです。4ボードの最終検証と正式測定は未完了です。",
+      "status": "available",
+      "reason": "固定構成の代表回路は4K・9K・20Kで確認済みです。1Kは容量超過です。実機は本リポジトリでは試していません。",
       "components": [
         {
           "id": "rv32e",
@@ -571,10 +571,10 @@
           },
           "defines": {},
           "boards": {
-            "tangnano1k": "unverified",
-            "tangnano4k": "unverified",
-            "tangnano9k": "unverified",
-            "tangnano20k": "unverified"
+            "tangnano1k": "capacity-exceeded",
+            "tangnano4k": "confirmed",
+            "tangnano9k": "confirmed",
+            "tangnano20k": "confirmed"
           }
         }
       ]
@@ -592,8 +592,8 @@
         ]
       },
       "deprecated": false,
-      "status": "unverified",
-      "reason": "固定構成のソースと接続条件を登録済みです。4ボードの最終検証と正式測定は未完了です。",
+      "status": "available",
+      "reason": "固定構成の代表回路は4K・9K・20Kで確認済みです。1Kは容量超過です。実機は本リポジトリでは試していません。",
       "components": [
         {
           "id": "rv32e",
@@ -721,10 +721,10 @@
           },
           "defines": {},
           "boards": {
-            "tangnano1k": "unverified",
-            "tangnano4k": "unverified",
-            "tangnano9k": "unverified",
-            "tangnano20k": "unverified"
+            "tangnano1k": "capacity-exceeded",
+            "tangnano4k": "confirmed",
+            "tangnano9k": "confirmed",
+            "tangnano20k": "confirmed"
           }
         }
       ]
@@ -744,8 +744,8 @@
         "note": "生成済み RTL 配布元の原文と、同配布元が固定する生成元サブモジュールの原文を保持します。生成済み RTL の再生成は検証の範囲外です。"
       },
       "deprecated": false,
-      "status": "unverified",
-      "reason": "生成済み RTL と生成元のライセンス原文を登録済みです。4ボードの最終検証と正式測定は未完了です。",
+      "status": "available",
+      "reason": "固定構成の代表回路は4K・9K・20Kで確認済みです。1Kは容量超過です。実機は本リポジトリでは試していません。",
       "components": [
         {
           "id": "min",
@@ -762,10 +762,10 @@
           "parameters": {},
           "defines": {},
           "boards": {
-            "tangnano1k": "unverified",
-            "tangnano4k": "unverified",
-            "tangnano9k": "unverified",
-            "tangnano20k": "unverified"
+            "tangnano1k": "capacity-exceeded",
+            "tangnano4k": "confirmed",
+            "tangnano9k": "confirmed",
+            "tangnano20k": "confirmed"
           }
         }
       ]
@@ -872,8 +872,8 @@
         ]
       },
       "deprecated": false,
-      "status": "unverified",
-      "reason": "固定構成のソースと接続条件を登録済みです。4ボードの最終検証と正式測定は未完了です。",
+      "status": "available",
+      "reason": "固定構成の代表回路は4K・9K・20Kで確認済みです。1Kは容量超過です。実機は本リポジトリでは試していません。",
       "components": [
         {
           "id": "rv32i",
@@ -898,10 +898,10 @@
           },
           "defines": {},
           "boards": {
-            "tangnano1k": "unverified",
-            "tangnano4k": "unverified",
-            "tangnano9k": "unverified",
-            "tangnano20k": "unverified"
+            "tangnano1k": "capacity-exceeded",
+            "tangnano4k": "confirmed",
+            "tangnano9k": "confirmed",
+            "tangnano20k": "confirmed"
           }
         }
       ]
@@ -919,8 +919,8 @@
         ]
       },
       "deprecated": false,
-      "status": "unverified",
-      "reason": "固定構成のソースと接続条件を登録済みです。4ボードの最終検証と正式測定は未完了です。",
+      "status": "frontend-unsupported",
+      "reason": "固定版のQuarkはIcarus 13.0で宣言前のinstr参照を解決できません。nativeとWASMで同じ解析エラーを確認しました。",
       "components": [
         {
           "id": "quark",
@@ -942,10 +942,10 @@
             "NRV_COUNTER_WIDTH": "8"
           },
           "boards": {
-            "tangnano1k": "unverified",
-            "tangnano4k": "unverified",
-            "tangnano9k": "unverified",
-            "tangnano20k": "unverified"
+            "tangnano1k": "frontend-unsupported",
+            "tangnano4k": "frontend-unsupported",
+            "tangnano9k": "frontend-unsupported",
+            "tangnano20k": "frontend-unsupported"
           }
         }
       ]

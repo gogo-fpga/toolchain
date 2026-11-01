@@ -99,7 +99,7 @@ export function createLibrarySelector(container, { getWorkspace, getBoard, canCh
         item.className = "library-candidate";
         item.dataset.library = entry.id;
         const details = document.createElement("details");
-        const state = entry.status === "available" ? "検証済み部品あり" : entry.status === "unsupported" ? "非対応" : "未検証";
+        const state = entry.status === "available" ? "検証済み部品あり" : entry.status === "unsupported" ? "非対応" : entry.status === "frontend-unsupported" ? "フロントエンド非対応" : "未検証";
         text(details, "summary", `${entry.label} / ${entry.kind === "cpu" ? "CPU" : entry.kind === "verification" ? "検証用" : "ライブラリー"} / ${state}${entry.deprecated ? " / 保守終了" : ""}`);
         text(details, "p", `HDL: ${entry.language} / ライセンス: ${entry.license.expression}`);
         text(details, "p", `固定版: ${entry.source.revision}`);

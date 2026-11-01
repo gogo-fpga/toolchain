@@ -108,6 +108,19 @@ test("selector keeps all 22 unverified and unsupported candidates visible with d
   assert.equal(ui.requests.length, 1);
 });
 
+test("selector labels tested frontend rejection separately from unverified candidates", async (t) => {
+  const { catalog, contents } = await createLibraryFixture();
+  catalog.entries[0].status = "frontend-unsupported";
+  for (const board of Object.keys(catalog.entries[0].components[0].boards)) {
+    catalog.entries[0].components[0].boards[board] = "frontend-unsupported";
+  }
+  const ui = await harness(t, createBlinkTemplate("tangnano1k", "verilog"), catalog, contents);
+  assert.match(ui.list.textContent, /フロントエンド非対応/);
+  assert.equal(ui.button("primary").disabled, true);
+  assert.equal(ui.requests.length, 1);
+  assert.deepEqual(ui.events, []);
+});
+
 test("selector commits a verified dependency closure only after same-origin static downloads", async (t) => {
   const { catalog, contents } = await createLibraryFixture();
   catalog.entries[0].components[0].parameters = { WIDTH: "8", MODE: '"<script>"' };

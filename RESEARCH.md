@@ -125,6 +125,8 @@ T5 の UART で見つかった native / WASI の配置差には、同じ座標�
 
 CPU 7候補のプログラム実行、負の対照、4ボードでの比較は [S14](docs/experiments/S14-cpu-library-matrix.md) に採否の基準を先に定め、実装を進めています。6候補の正常系と5種類の負の対照は予備検証済みです。SERV の4K は分散 RAM への割当を避ける上流の `-nolutram` で bitstream まで一致しました。1K の容量不足と9K・20K の配線差は別に記録し、差のあるボードを確認済みにはしていません。正式な性能測定とボードの昇格は未実施です。
 
+上記は正式反復より前の状態です。その後、パッチ0004の同一grid keyの順序固定と `EIGEN_DONT_VECTORIZE` を製品用ビルドへ適用し、[CPUの正式反復](docs/experiments/S14-production-cpu.md)を完走しました。28組は配置配線成功18・容量超過6・frontend非対応4です。成功した18組の生JSONと資源は両系で各5回一致し、該当ボードをconfirmedへ更新しました。残る2分類は選択できない理由を保持します。元の差を正規化で隠したり、初回の失敗を成功に書き換えたりしていません。
+
 Apycula 0.35 と `requirements-nextpnr.txt` の固定依存で、4 family の chipdb 生成と P&R が成功しました。他の Apycula 版は試していません。native と WASI で別々に生成した `.bba` と chipdb は一致しなかったため、native build の `.bba` を WASI build に取り込みます。これにより、両実行形式が同じ chipdb を使うことをテストで byte 単位に確認します。
 
 Boost 1.92.0 は `-fwasm-exceptions` と `libunwind` を使って WASI 向けにビルドできました。別の Boost 版は試していません。nextpnr WASM は 34,141,610 bytes、native binary は 55,324,696 bytes です。ビルド時間は初回の WASI が 5 分 5.890 秒、native が 2 分 44.644 秒でした。chipdb 生成を共有する変更後の再ビルドは、既存のビルドを再利用して WASI が 10.957 秒、native が 4.575 秒でした。
@@ -184,6 +186,8 @@ VexRiscv は生成済みパッケージのライセンスだけでなく、同�
 製品用スカラー設定のnextpnrによる[HDLの正式反復](docs/experiments/S14-production-hdl.md)は、8部品と4ボードの全32組でnative / WASIを各5回照合しました。A/A20回と負の対照10回も含む350行39列を監査し、生CSVとmetadata、summaryを保存しました。CPUとの並行負荷があるため、隔離した性能改善は主張しません。これは代表部品の仮想検証で、CPU全体や実機の確認とは区別します。
 
 [初回の正式反復の失敗](docs/experiments/S14-cpu-library-matrix.md#初回の正式反復で見つかった負の対照の不備)では、未知のセルへ変更した既存LUTがSERVのwide MUXも壊し、意図した診断を検証できませんでした。CPUは未完了、同じ初回のHDLも修正後の版の確認には流用しません。全2,914ファイルのサイズとhashを目録に残し、新しい出力先での反復と区別します。
+
+その後の[CPU正式反復](docs/experiments/S14-production-cpu.md)では、生CSVの370行39列、14,430値を監査しました。passed 200、負の対照のfailed 30、capacity-exceeded 80、frontend-unsupported 60を区別し、性能統計は正常な本試行18組だけから再計算しました。metadata・summary・生CSVと、前提回帰も含む全3,768ファイルのhash目録を保存しました。HDLとの並行負荷があり、隔離した性能改善は主張しません。実機とブラウザー画面操作の検証ではありません。
 
 [初期調査で転記した11候補とライセンスの記録](docs/research/hdl-library-survey-history.md)は、現在のカタログと区別して保存します。誤っていた取得元やライセンスも、当時の記録を改変せず、訂正先と原典を追えるようにしています。
 

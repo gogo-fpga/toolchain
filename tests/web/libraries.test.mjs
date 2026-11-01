@@ -46,6 +46,22 @@ test("unconfirmed, unsupported, capacity-exceeded and implicit deprecated select
   assert.equal(resolveLibraryClosure(catalog, [selection, { id: "dependency", component: "rtl" }], { board: "tangnano1k" }).ordered.length, 2);
 });
 
+test("frontend-unsupported components retain board evidence without becoming selectable", async () => {
+  const { catalog, selection } = await fixture();
+  const entry = catalog.entries[0];
+  entry.status = "frontend-unsupported";
+  const boards = entry.components[0].boards;
+  for (const board of Object.keys(boards)) boards[board] = "frontend-unsupported";
+  assert.throws(() => resolveLibraryClosure(catalog, [selection], { board: "tangnano1k" }), /選択できません/);
+  assert.equal(resolveLibraryClosure(catalog, []).ordered.length, 0);
+  for (const state of ["confirmed", "unverified", "capacity-exceeded"]) {
+    boards.tangnano1k = state;
+    assert.throws(() => resolveLibraryClosure(catalog, []), /状態が一致しません/);
+  }
+  entry.components = [];
+  assert.throws(() => resolveLibraryClosure(catalog, []), /状態が一致しません/);
+});
+
 test("installed libraries retain original source and license bytes and can match the current catalog", async () => {
   const { catalog, prepare } = await fixture();
   const installed = await prepare();

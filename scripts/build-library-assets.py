@@ -64,7 +64,7 @@ def validate_catalog(catalog: dict) -> list[dict]:
             raise ValueError(f"{identifier}: submodule must match library id")
         if entry["kind"] not in KINDS or entry["language"] not in LANGUAGES:
             raise ValueError(f"{identifier}: invalid kind or language")
-        if entry["status"] not in {"unverified", "unsupported", "available"}:
+        if entry["status"] not in {"unverified", "unsupported", "frontend-unsupported", "available"}:
             raise ValueError(f"{identifier}: invalid status")
         if not isinstance(entry["deprecated"], bool):
             raise ValueError(f"{identifier}: invalid maintenance flag")
@@ -141,6 +141,13 @@ def validate_catalog(catalog: dict) -> list[dict]:
             "confirmed" in component["boards"].values() for component in entry["components"]
         ):
             raise ValueError(f"{identifier}: available library has no confirmed board")
+        if entry["status"] == "frontend-unsupported" and (
+            not entry["components"] or any(
+                state != "frontend-unsupported"
+                for component in entry["components"] for state in component["boards"].values()
+            )
+        ):
+            raise ValueError(f"{identifier}: frontend-unsupported library must retain only unsupported boards")
     components = {f'{entry["id"]}/{component["id"]}': component for entry in catalog["entries"] for component in entry["components"]}
     visiting: set[str] = set()
     visited: set[str] = set()

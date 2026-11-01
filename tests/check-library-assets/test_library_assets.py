@@ -1,4 +1,5 @@
 import copy
+import csv
 import hashlib
 import importlib.util
 import json
@@ -17,6 +18,38 @@ SPEC.loader.exec_module(library_assets)
 
 
 class LibraryAssetsTests(unittest.TestCase):
+    def test_cpu_board_availability_matches_all_formal_main_rows(self):
+        catalog = json.loads((ROOT / "libraries/catalog.json").read_text())
+        with (ROOT / "docs/experiments/S14-production-cpu.csv").open(newline="") as stream:
+            rows = list(csv.DictReader(stream))
+        main = [row for row in rows if row["run_id"].startswith("main-")]
+        self.assertEqual(len(main), 280)
+        cases = {}
+        for row in main:
+            cases.setdefault((row["library"], row["board"]), []).append(row)
+        candidates = {"serv", "picorv32", "neorv32", "hazard3", "vexriscv", "darkriscv", "femtorv"}
+        boards = {"tangnano1k", "tangnano4k", "tangnano9k", "tangnano20k"}
+        self.assertEqual(set(cases), {(candidate, board) for candidate in candidates for board in boards})
+        mapping = {"passed": "confirmed", "capacity-exceeded": "capacity-exceeded", "frontend-unsupported": "frontend-unsupported"}
+        for entry in catalog["entries"]:
+            if entry["id"] not in candidates:
+                continue
+            self.assertEqual(len(entry["components"]), 1)
+            actual = entry["components"][0]["boards"]
+            self.assertEqual(set(actual), boards)
+            for board in boards:
+                with self.subTest(candidate=entry["id"], board=board):
+                    measured = cases[(entry["id"], board)]
+                    self.assertEqual(len(measured), 10)
+                    self.assertEqual({row["variant"] for row in measured}, {"native", "wasi"})
+                    self.assertEqual({row["repeat"] for row in measured}, {"1", "2", "3", "4", "5"})
+                    statuses = {row["status"] for row in measured}
+                    self.assertEqual(len(statuses), 1)
+                    status = statuses.pop()
+                    self.assertEqual({row["case_status"] for row in measured}, {status})
+                    self.assertEqual(actual[board], mapping[status])
+            self.assertEqual(entry["status"], "available" if "confirmed" in actual.values() else "frontend-unsupported")
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -225,6 +258,19 @@ class LibraryAssetsTests(unittest.TestCase):
             library_assets.validate_catalog(self.catalog)
         self.component["boards"]["tangnano1k"] = "confirmed"
         library_assets.validate_catalog(self.catalog)
+
+    def test_frontend_unsupported_requires_component_evidence_and_never_confirmed_boards(self):
+        self.entry["status"] = "frontend-unsupported"
+        self.component["boards"]["tangnano1k"] = "frontend-unsupported"
+        library_assets.validate_catalog(self.catalog)
+        for state in ("confirmed", "unverified", "capacity-exceeded"):
+            with self.subTest(state=state):
+                self.component["boards"]["tangnano1k"] = state
+                with self.assertRaisesRegex(ValueError, "must retain only unsupported boards"):
+                    library_assets.validate_catalog(self.catalog)
+        self.entry["components"] = []
+        with self.assertRaisesRegex(ValueError, "must retain only unsupported boards"):
+            library_assets.validate_catalog(self.catalog)
 
     def test_missing_and_cyclic_dependencies_are_rejected(self):
         self.component["dependencies"] = ["missing/probe"]
