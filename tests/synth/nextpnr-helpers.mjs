@@ -114,13 +114,13 @@ export function runNative(workdir, args) {
   };
 }
 
-export function runYosysWasi(workdir, source) {
+export function runYosysWasi(workdir, source, command = "read_verilog src/top.v; synth_gowin -top top -json top.json") {
   writeFileSync(path.join(workdir, "src/top.v"), source);
   const stdout = openSync(path.join(workdir, "yosys.stdout"), "w");
   const stderr = openSync(path.join(workdir, "yosys.stderr"), "w");
   const wasi = new WASI({
     version: "preview1",
-    args: ["yosys", "-q", "-p", "read_verilog src/top.v; synth_gowin -top top -json top.json"],
+    args: ["yosys", "-q", "-p", command],
     env: { TMPDIR: "/tmp" },
     preopens: {
       "/": workdir,

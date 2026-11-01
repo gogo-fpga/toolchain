@@ -19,6 +19,9 @@ import { pathToFileURL } from "node:url";
 import { loadPyodide } from "pyodide";
 import { BOARDS } from "../../web/lib/boards.mjs";
 import { createBlinkTemplate, generateCst } from "../../web/lib/templates.mjs";
+import { prepareLibrarySelection, verilogReadCommand } from "../../web/lib/libraries.mjs";
+import { changeProjectLibraries, prepareProjectInputs } from "../../web/lib/project.mjs";
+import { exportProjectZip, importProjectZip } from "../../web/lib/project-zip.mjs";
 import { fsIdcode, fsIdcodeMatchesBoard } from "../../web/lib/fs-idcode.mjs";
 import {
   prepareGowinPackRuntime,
@@ -192,6 +195,78 @@ for (const board of BOARDS) {
     }
   });
 }
+
+test("pinned libfpga builds from portable ZIP into all four board bitstreams", async (t) => {
+  const directory = mkdtempSync(path.join(root, "build/t5-gray-flow-"));
+  const assets = path.join(directory, "assets");
+  let passedBoards = 0;
+  try {
+    const built = spawnSync("python3", ["scripts/build-library-assets.py", "--output", assets], {
+      cwd: root, encoding: "utf8", maxBuffer: 16 * 1024 * 1024,
+    });
+    assert.equal(built.status, 0, `${built.stderr}\n${built.error ?? ""}`);
+    const catalog = JSON.parse(readFileSync(path.join(assets, "catalog.json"), "utf8"));
+    const added = await prepareLibrarySelection(
+      catalog, { id: "libfpga", component: "gray" },
+      (asset) => readFileSync(path.join(assets, asset.asset)), { requireConfirmed: false },
+    );
+    for (const board of BOARDS) {
+      await t.test(board.id, async () => {
+        const workdir = path.join(directory, board.id);
+        for (const part of ["src", "constraints", "tmp"]) mkdirSync(path.join(workdir, part), { recursive: true });
+        const template = createBlinkTemplate(board.id, "verilog");
+        template.files.set("src/top.v", `// SPDX-License-Identifier: BSD-3-Clause
+module top(input wire clk, output wire led);
+  reg [3:0] value = 0;
+  reg [3:0] delayed = 0;
+  wire [3:0] gray, decoded;
+  lfpga_bin2gray #(.WIDTH(4)) encoder (.bin(value), .gray(gray));
+  lfpga_gray2bin #(.WIDTH(4)) decoder (.gray(delayed), .bin(decoded));
+  always @(posedge clk) begin
+    value <= value + 1;
+    delayed <= gray;
+  end
+  assign led = gray[0] ^ decoded[1];
+endmodule
+`);
+        const installed = await changeProjectLibraries(template.project, template.files, { add: added });
+        const zip = await exportProjectZip(installed.project, installed.files);
+        writeFileSync(path.join(workdir, "project.zip"), zip);
+        const restored = await importProjectZip(zip);
+        const input = await prepareProjectInputs(restored.project, restored.files);
+        assert.ok(input.files.some((file) => file.path === "libraries/libfpga/sources/rtl/math/lfpga_gray.v"));
+        for (const file of input.files) {
+          const target = path.join(workdir, file.path);
+          mkdirSync(path.dirname(target), { recursive: true });
+          writeFileSync(target, file.content);
+        }
+        const source = input.files.find((file) => file.path === "src/top.v");
+        const command = verilogReadCommand(input.files.filter((file) => file.role !== "data" && /\.vh?$/i.test(file.path)).map((file) => file.path), input);
+        runYosysWasi(workdir, source.content, `${command}; synth_gowin -top top -json top.json`);
+        const netlist = JSON.parse(readFileSync(path.join(workdir, "top.json"), "utf8"));
+        assert.ok(Object.keys(netlist.modules.top.cells).length > 0, "The library design was optimized away");
+        writeFileSync(path.join(workdir, "constraints/board.cst"), generateCst(board.id));
+        const pnr = runWasi(workdir, pnrArgs(board));
+        assert.equal(pnr.status, 0, `${pnr.stderr}\n${pnr.error ?? ""}`);
+        const routedJson = readFileSync(path.join(workdir, "pnr.json"));
+        const nativeWorkdir = path.join(workdir, "native");
+        mkdirSync(nativeWorkdir);
+        const native = runNativePack(board, routedJson, nativeWorkdir);
+        const packed = await runGowinPack({
+          loadPyodide: pyodideLoader, indexURL, apyculaWheelURL,
+          netlistJson: routedJson, device: board.packDevice,
+        });
+        assertBoardIdcode(native.output, board);
+        assertBoardIdcode(packed.fs, board);
+        assert.deepEqual(Buffer.from(packed.fs), native.output, createDiffSummary(native.output, packed.fs));
+        passedBoards += 1;
+      });
+    }
+  } finally {
+    if (passedBoards === BOARDS.length) rmSync(directory, { recursive: true, force: true });
+    else console.error(`Retained failing library-flow evidence: ${directory}`);
+  }
+});
 
 test("invalid routed JSON and a missing Apicula wheel fail closed", async () => {
   await assert.rejects(
