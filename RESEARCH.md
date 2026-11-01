@@ -174,27 +174,7 @@ S4 のビルド時間、圧縮資材の復号、配信量と配信先の比較�
 
 ## 5. HDL ライブラリーと CPU コア
 
-T5 の22候補、ライセンス本文、部品の登録と更新監視は、[HDL ライブラリーと CPU コアの調査](docs/research/hdl-libraries.md)にまとめました。現在の取得元は `.gitmodules`、固定版は gitlink が正です。下表は初期調査で転記した記録です。Colibri の取得元と Open Logic のライセンス表記には誤りがあり、分割した調査に訂正内容と原典を記載しました。
-
-VexRiscv は生成済みパッケージのライセンスだけでなく、同じパッケージが gitlink で固定する生成元のライセンス原文も保持します。入れ子の URL と revision は原本のメタデータから取り、ソースアーカイブにも必要な原文を追加します。手元の生成器で、Git を呼べない状態から22候補の資材を同一ハッシュで再生成しました。根拠と検証の境界は、上記の分割した調査に記録しています。
-
-製品用スカラー設定のnextpnrによる[HDLの正式反復](docs/experiments/S14-production-hdl.md)は、8部品と4ボードの全32組でnative / WASIを各5回照合しました。A/A20回と負の対照10回も含む350行39列を監査し、生CSVとmetadata、summaryを保存しました。CPUとの並行負荷があるため、隔離した性能改善は主張しません。これは代表部品の仮想検証で、CPU全体や実機の確認とは区別します。
-
-[初回の正式反復の失敗](docs/experiments/S14-cpu-library-matrix.md#初回の正式反復で見つかった負の対照の不備)では、未知のセルへ変更した既存LUTがSERVのwide MUXも壊し、意図した診断を検証できませんでした。CPUは未完了、同じ初回のHDLも修正後の版の確認には流用しません。全2,914ファイルのサイズとhashを目録に残し、新しい出力先での反復と区別します。
-
-その後の[CPU正式反復](docs/experiments/S14-production-cpu.md)では、生CSVの370行39列、14,430値を監査しました。passed 200、負の対照のfailed 30、capacity-exceeded 80、frontend-unsupported 60を区別し、性能統計は正常な本試行18組だけから再計算しました。metadata・summary・生CSVと、前提回帰も含む全3,768ファイルのhash目録を保存しました。HDLとの並行負荷があり、隔離した性能改善は主張しません。実機とブラウザー画面操作の検証ではありません。
-
-カタログ昇格後の最終回帰ではHDL全32組が成功しましたが、容量超過のCPU入力を通常選択の制限が拒否して検査が停止しました。製品の制限は維持し、拒否確認後に検査用入力だけを実行し、実測分類とカタログを照合するように修正しました。Git設定なしで失敗した資材生成のfixtureも、subprocess内だけで検証用identityを設定し、23件を再検証しました。[失敗と修正の記録](docs/experiments/S14-production-cpu.md#カタログ昇格後の選択制限と検査の修正)に分けて保持します。
-
-修正後の9e098b9では[全60組の最終回帰と配布ソースの照合](docs/experiments/S14-final-regression.md)が完走しました。HDL32組成功、CPU18組成功・容量超過6組・frontend非対応4組で、catalogと通常APIの拒否を再検査しました。measurementの全列7,700値をCSVと照合し、元の実測値5,594項目、成果物のhash、警告と期待したERRORを監査しています。Git情報のないソースから22候補・全107 source/license assetを再生成し、Web組立と配布ZIPを照合しました。検証済みバイナリーを再利用した確認で、全コンパイラーの新規ビルド、Native Stack整列後のcommit、CI、実機の確認とは区別します。
-
-[初期調査で転記した11候補とライセンスの記録](docs/research/hdl-library-survey-history.md)は、現在のカタログと区別して保存します。誤っていた取得元やライセンスも、当時の記録を改変せず、訂正先と原典を追えるようにしています。
-
-Native Stack整列後は07e2256を固定し、[同一revisionの全60組と配布ソース](docs/experiments/S14-final-regression.md#整列後の同一revision検証)を再検査しました。HDL32組成功、CPU18組成功・容量超過6組・frontend非対応4組で、全7,700値と診断・選択制限を再監査しました。Git情報なしの22候補107資材、rootの457追跡ファイルと35gitlink、source TARの45,227ファイル、Web ZIPの695ファイルとライセンスを照合しました。全コンパイラーの新規ビルドとCI・実機の確認ではありません。照合器をリポジトリへ加え、改変と欠落を拒否する単体9件も確認しました。
-
-更新検知ではGHDLの日付タグとRust channelのCargo版の誤認を修正しました。[版の検出方法と負の対照](docs/research/dependency-version-detection.md)に、保存入力のhash、安定版の選択条件、TOML解析の境界を記録します。固定した依存は変更していません。
-
-保存方式へ検査を追従させた876c2a8の[整列後E2Eと配布物再生成](docs/experiments/S14-post-stack-e2e.md)は、全体76件成功・比較専用4件skipでした。Git探索を禁止した配布ソースから22候補107資材とWeb全661ファイルを再生成し、source TARの45,233ファイル、root 463ファイルと35gitlink、ライセンスを含むWeb ZIPの695ファイルを照合しました。先行した失敗試行と検査器の修正、検証済みコンパイラー出力の再利用、未実施の範囲は別に記録します。
+T5の22候補、ライセンス本文、取得元と固定版は、[HDLライブラリーとCPUコアの調査](docs/research/hdl-libraries.md)にまとめました。[検証の経緯](docs/research/hdl-validation-history.md)には、正式反復と全60組の回帰、失敗と修正、配布ソース照合の原記録を保持しています。実機での確認とは区別します。
 
 ## 6. ライセンスとソース配布
 
@@ -206,7 +186,7 @@ GHDL、NVC、Icarus Verilog など GPL のツールを WASM にビルドして R
 
 ## 7. 分割した調査
 
-T6は上流SBY・SMTBMCの再利用を選び、固定ソースと[S15の事前基準](docs/experiments/S15-formal-verification.md)を登録しました。実行は未確認です。以下に初期調査との差、依存、GMPの取得失敗と署名鍵の期限切れも記録します。
+T6は上流SBY・SMTBMCの再利用を選び、固定ソースと[S15の事前基準](docs/experiments/S15-formal-verification.md)を登録しました。Yosys SATの比較経路と、元のVerilogをIcarusで独立に再実行する限定した検査経路を実装中です。SMTソルバー・画面統合と正式5回反復は未完了です。以下に方式と制限、初期調査との差、依存、GMPの取得失敗と署名鍵の期限切れも記録します。
 
 大きな調査は `docs/research/` に分けて置きます。
 
@@ -223,6 +203,7 @@ T6は上流SBY・SMTBMCの再利用を選び、固定ソースと[S15の事前�
 | [HDL ライブラリーと CPU コアの調査](docs/research/hdl-libraries.md) | T5 の22候補、ライセンスの原典、対応範囲、固定版と更新監視（2026-11-01） |
 | [HDL ライブラリー候補の初期調査記録](docs/research/hdl-library-survey-history.md) | 初期の11候補、当時の転記、訂正先と原典。現在のカタログとは区別 |
 | [形式検証の原本とブラウザーの制約](docs/research/formal-verification.md) | SBY・SMTBMC、Z3のWASM先例、property、輸送と非成功判定 |
+| [HDLライブラリーとCPUコアの検証経緯](docs/research/hdl-validation-history.md) | 正式反復と全60組の回帰、失敗と修正、配布ソースの原記録 |
 | [形式検証の固定ソース・依存・配布条件](docs/research/formal-sources.md) | 採用releaseと初期snapshot、依存、SQLite、license、GMP、source closure |
 
 Actions.lock は今回は導入を見送り、現行の完全長 SHA 固定を維持します。取得元 ID と推移依存の保護という追加価値、導入の制限、未確認の事項は上記の調査に記録しました。

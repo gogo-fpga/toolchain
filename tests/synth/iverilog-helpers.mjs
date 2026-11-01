@@ -45,14 +45,15 @@ export function nativeSimulation(directory, files, options) {
   writeFileSync(path.join(directory, "work/ivlpp.flags"), [
     "I:work/src", ...options.includeDirectories.map((name) => `I:work/${name}`),
     ...Object.entries(options.defines).map(([name, value]) => `D:${name}=${value}`),
+    ...(options.formal ? ["D:FORMAL=1"] : []),
   ].join("\n") + "\n");
   const preprocessed = run("ivlpp", ["-F", "work/ivlpp.flags", "-L", ...files.filter((file) => file.role !== "data" && /\.v$/i.test(file.path)).map((file) => `work/${file.path}`)]);
   if (preprocessed.status !== 0) return preprocessed;
   writeFileSync(path.join(directory, "work/preprocessed.v"), preprocessed.stdout);
-  writeFileSync(path.join(directory, "work/ivl.conf"), ["module:system", "flag:DLL=vvp.tgt", "flag:VVP_EXECUTABLE=vvp", "functor:cprop", "functor:nodangle", "root:tb", "out:work/design.vvp", "generation:2"].join("\n"));
+  writeFileSync(path.join(directory, "work/ivl.conf"), ["module:system", "flag:DLL=vvp.tgt", "flag:VVP_EXECUTABLE=vvp", "functor:cprop", "functor:nodangle", `root:${options.top ?? "tb"}`, "out:work/design.vvp", `generation:${options.formal ? "2012" : "2"}`].join("\n"));
   const compiled = run("ivl", ["-C", "work/ivl.conf", "work/preprocessed.v"]);
   if (compiled.status !== 0) return compiled;
   const simulated = run("vvp", ["design.vvp"], path.join(directory, "work"));
-  const vcd = path.join(directory, "work/wave.vcd");
+  const vcd = path.join(directory, "work", options.vcdFile ?? "wave.vcd");
   return { ...simulated, vcd: existsSync(vcd) ? readFileSync(vcd) : null };
 }
