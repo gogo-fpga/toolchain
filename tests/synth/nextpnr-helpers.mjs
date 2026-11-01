@@ -17,12 +17,13 @@ import { WASI } from "node:wasi";
 
 export const root = path.resolve(import.meta.dirname, "../..");
 const wasiBuildRoot = path.resolve(root, process.env.S5_WASI_ROOT ?? "build/wasi");
+const nativeBuildRoot = path.resolve(root, process.env.S5_NATIVE_ROOT ?? "build/native");
 export const yosysWasmPath = path.join(wasiBuildRoot, "yosys/yosys.wasm");
 export const yosysSharePath = path.join(wasiBuildRoot, "yosys/share");
 export const nextpnrWasmPath = path.join(wasiBuildRoot, "nextpnr/nextpnr-himbaechel-gowin.wasm");
-export const nextpnrNativePath = path.join(root, "build/native/nextpnr/nextpnr-himbaechel-gowin");
+export const nextpnrNativePath = path.join(nativeBuildRoot, "nextpnr/nextpnr-himbaechel-gowin");
 export const wasiSharePath = path.join(wasiBuildRoot, "nextpnr/share");
-export const nativeSharePath = path.join(root, "build/native/nextpnr/share");
+export const nativeSharePath = path.join(nativeBuildRoot, "nextpnr/share");
 export const chipdbPath = path.join(wasiSharePath, "himbaechel/gowin");
 export const nativeChipdbPath = path.join(nativeSharePath, "himbaechel/gowin");
 export const wasmModule = new WebAssembly.Module(readFileSync(nextpnrWasmPath));
@@ -73,9 +74,9 @@ export function runWasi(workdir, args, sharePath = wasiSharePath, executable = w
   const started = performance.now();
   let status = 1;
   let error;
+  let instance;
   try {
     const importObject = wasi.getImportObject();
-    let instance;
     if (clockTimeGet) {
       importObject.wasi_snapshot_preview1.clock_time_get = (clockId, precision, timePointer) =>
         clockTimeGet(instance.exports.memory, clockId, precision, timePointer);
@@ -93,6 +94,7 @@ export function runWasi(workdir, args, sharePath = wasiSharePath, executable = w
     stdout: readFileSync(stdoutPath, "utf8"),
     stderr: readFileSync(stderrPath, "utf8"),
     elapsed: performance.now() - started,
+    memoryBytes: instance?.exports.memory instanceof WebAssembly.Memory ? instance.exports.memory.buffer.byteLength : null,
     error,
   };
 }

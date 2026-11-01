@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -25,6 +26,8 @@ import { exportProjectZip, importProjectZip } from "../../web/lib/project-zip.mj
 import { runGhdlSynth } from "../../web/lib/ghdl-host.mjs";
 import { orderVhdlFiles } from "../../web/lib/vhdl-order.mjs";
 import { HDL_LIBRARY_CASES } from "../fixtures/libraries/cases.mjs";
+import { assertYosysParity, runNativeYosys } from "./yosys-parity.mjs";
+import { parseDeviceUtilization } from "./library-measurements.mjs";
 import { fsIdcode, fsIdcodeMatchesBoard } from "../../web/lib/fs-idcode.mjs";
 import {
   prepareGowinPackRuntime,
@@ -34,6 +37,7 @@ import {
   createWorkdir,
   nextpnrWasmPath,
   pnrArgs,
+  runNative,
   runWasi,
   runYosysWasi,
 } from "./nextpnr-helpers.mjs";
@@ -207,7 +211,9 @@ function loadLibraryTree(directory) {
 }
 
 test("pinned HDL libraries build from portable ZIP into all four board bitstreams", async (t) => {
-  const directory = mkdtempSync(path.join(root, "build/t5-library-flow-"));
+  const keepEvidence = process.env.HDL_MATRIX_EVIDENCE !== undefined;
+  const directory = keepEvidence ? path.resolve(root, process.env.HDL_MATRIX_EVIDENCE) : mkdtempSync(path.join(root, "build/t5-library-flow-"));
+  if (keepEvidence) mkdirSync(directory);
   const assets = path.join(directory, "assets");
   let passedBoards = 0;
   try {
@@ -228,12 +234,16 @@ test("pinned HDL libraries build from portable ZIP into all four board bitstream
       await t.test(`${id}/${board.id}`, async () => {
         const workdir = path.join(directory, id, board.id);
         for (const part of ["src", "constraints", "tmp"]) mkdirSync(path.join(workdir, part), { recursive: true });
+        const measurement = { id, component, board: board.id, status: "failed", timings: {}, hashes: {} };
+        const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
+        try {
         const template = createBlinkTemplate(board.id, language);
         const sourcePath = language === "vhdl" ? "src/top.vhd" : "src/top.v";
         template.files.set(sourcePath, readFileSync(path.join(root, "tests/fixtures/libraries", fixture)));
         const installed = await changeProjectLibraries(template.project, template.files, { add: added });
         const zip = await exportProjectZip(installed.project, installed.files);
         writeFileSync(path.join(workdir, "project.zip"), zip);
+        measurement.hashes.project_zip = hash(zip);
         const restored = await importProjectZip(zip);
         const input = await prepareProjectInputs(restored.project, restored.files);
         assert.ok(input.files.some((file) => file.path.startsWith(`libraries/${id}/sources/`)));
@@ -246,38 +256,75 @@ test("pinned HDL libraries build from portable ZIP into all four board bitstream
         if (language === "vhdl") {
           const ordered = orderVhdlFiles(input.files.filter((file) => file.role !== "data" && /\.(?:vhd|vhdl)$/i.test(file.path)));
           assert.equal(ordered.ok, true, JSON.stringify(ordered));
+          const started = performance.now();
           const generated = runGhdlSynth({ module: ghdlModule, librariesTree, files: ordered.order, top: "top", standard: "2008" });
+          measurement.timings.ghdl_wasm_ms = performance.now() - started;
           writeFileSync(path.join(workdir, "ghdl.log"), generated.log);
           assert.equal(generated.status, 0, generated.log);
           sources = [{ path: "src/top.v", content: generated.verilog }, ...sources];
         }
         const source = sources.find((file) => file.path === "src/top.v");
         const command = verilogReadCommand(sources.map((file) => file.path), input);
+        const synthStarted = performance.now();
         runYosysWasi(workdir, source.content, `${command}; synth_gowin -top top -json top.json`);
+        measurement.timings.yosys_wasi_ms = performance.now() - synthStarted;
         const netlist = JSON.parse(readFileSync(path.join(workdir, "top.json"), "utf8"));
+        measurement.timings.yosys_native_ms = runNativeYosys(workdir, `${command}; synth_gowin -top top -json native-top.json`);
+        assertYosysParity(JSON.parse(readFileSync(path.join(workdir, "native-top.json"), "utf8")), netlist);
+        measurement.hashes.yosys_wasi = hash(readFileSync(path.join(workdir, "top.json")));
+        measurement.hashes.yosys_native = hash(readFileSync(path.join(workdir, "native-top.json")));
         assert.ok(Object.keys(netlist.modules.top.cells).length > 0, "The library design was optimized away");
         assert.ok(Object.values(netlist.modules.top.cells).some((cell) => cell.type.startsWith("DFF")), "The library design has no retained state");
         writeFileSync(path.join(workdir, "constraints/board.cst"), generateCst(board.id));
         const pnr = runWasi(workdir, pnrArgs(board));
         assert.equal(pnr.status, 0, `${pnr.stderr}\n${pnr.error ?? ""}`);
+        measurement.timings.pnr_wasi_ms = pnr.elapsed;
+        measurement.resources = parseDeviceUtilization(pnr.stderr);
         const routedJson = readFileSync(path.join(workdir, "pnr.json"));
+        const nativeArgs = pnrArgs(board);
+        nativeArgs[nativeArgs.indexOf("--write") + 1] = "native-pnr.json";
+        const nativePnr = runNative(workdir, nativeArgs);
+        writeFileSync(path.join(workdir, "native-pnr.stdout"), nativePnr.stdout);
+        writeFileSync(path.join(workdir, "native-pnr.stderr"), nativePnr.stderr);
+        assert.equal(nativePnr.status, 0, `${nativePnr.stderr}\n${nativePnr.error ?? ""}`);
+        measurement.timings.pnr_native_ms = nativePnr.elapsed;
+        assert.deepEqual(parseDeviceUtilization(nativePnr.stderr), measurement.resources);
+        const nativeRouted = readFileSync(path.join(workdir, "native-pnr.json"));
+        assert.equal(JSON.stringify(JSON.parse(nativeRouted)), JSON.stringify(JSON.parse(routedJson)), "Native/WASI PNR JSON differs (including key order)");
+        measurement.hashes.pnr_wasi = hash(routedJson);
+        measurement.hashes.pnr_native = hash(nativeRouted);
         const nativeWorkdir = path.join(workdir, "native");
         mkdirSync(nativeWorkdir);
         const native = runNativePack(board, routedJson, nativeWorkdir);
+        measurement.timings.pack_native_ms = native.elapsed;
+        const packStarted = performance.now();
         const packed = await runGowinPack({
           loadPyodide: pyodideLoader, indexURL, apyculaWheelURL,
           netlistJson: routedJson, device: board.packDevice,
         });
+        measurement.timings.pack_pyodide_ms = performance.now() - packStarted;
         writeFileSync(path.join(workdir, "pyodide.fs"), packed.fs);
         assertBoardIdcode(native.output, board);
         assertBoardIdcode(packed.fs, board);
         assert.deepEqual(Buffer.from(packed.fs), native.output, createDiffSummary(native.output, packed.fs));
+        measurement.hashes.fs = hash(packed.fs);
+        measurement.fs_bytes = packed.fs.length;
+        measurement.peak_rss_so_far_kib = process.resourceUsage().maxRSS;
+        measurement.status = "passed";
         passedBoards += 1;
+        } catch (error) {
+          measurement.error = error.stack ?? String(error);
+          throw error;
+        } finally {
+          writeFileSync(path.join(workdir, "measurement.json"), JSON.stringify(measurement, null, 2), { flag: "wx" });
+        }
       });
     }
   } finally {
-    if (passedBoards === BOARDS.length * HDL_LIBRARY_CASES.length) rmSync(directory, { recursive: true, force: true });
-    else console.error(`Retained failing library-flow evidence: ${directory}`);
+    const expectedBoards = BOARDS.length * HDL_LIBRARY_CASES.length;
+    writeFileSync(path.join(directory, "summary.json"), JSON.stringify({ passed: passedBoards, expected: expectedBoards, pyodideSetupMs }, null, 2), { flag: "wx" });
+    if (passedBoards === expectedBoards && !keepEvidence) rmSync(directory, { recursive: true, force: true });
+    else console.error(`Retained library-flow evidence: ${directory}`);
   }
 });
 

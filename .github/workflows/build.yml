@@ -817,6 +817,9 @@ jobs:
           pins="$(python3 .github/scripts/check-pins.py pnr-cache-pin)"
           printf '%s' "$pins" | sha256sum | awk '{ print "dependencies=" $1 }' >> "$GITHUB_OUTPUT"
 
+      - name: nextpnr の整列パッチと負の対照を検証
+        run: node --test tests/synth/nextpnr-control-set.test.mjs
+
       - id: nextpnr-cache-restore
         name: nextpnr build cache を復元
         if: github.event_name != 'schedule' && (github.event_name != 'workflow_dispatch' || inputs.cache)
@@ -828,7 +831,7 @@ jobs:
             build/wasi-sdk-*
             build/wasi/nextpnr/
             build/native/nextpnr/
-          key: nextpnr-ubuntu-26.04-${{ steps.nextpnr-pin.outputs.gitlink }}-${{ steps.nextpnr-pin.outputs.dependencies }}-${{ hashFiles('scripts/build-pnr-wasm.sh', 'scripts/build-pnr-info.py') }}
+          key: nextpnr-ubuntu-26.04-${{ steps.nextpnr-pin.outputs.gitlink }}-${{ steps.nextpnr-pin.outputs.dependencies }}-${{ hashFiles('scripts/build-pnr-wasm.sh', 'scripts/build-pnr-info.py', 'scripts/prepare-pnr-source.py', 'scripts/nextpnr-patches.cmake', 'patches/nextpnr/*.patch') }}
 
       - id: nextpnr-wasi-build
         name: WASI nextpnr と chipdb をビルド
@@ -1335,8 +1338,8 @@ jobs:
 
   pyodide-pack:
     name: Pyodide gowin_pack
-    needs: [changes, nextpnr, nextpnr-compare, ghdl, iverilog]
-    if: needs.changes.outputs.build == 'true' && needs.nextpnr.result == 'success' && needs.nextpnr-compare.result == 'success' && needs.ghdl.result == 'success' && needs.iverilog.result == 'success'
+    needs: [changes, nextpnr, nextpnr-compare, synth-native, ghdl, iverilog]
+    if: needs.changes.outputs.build == 'true' && needs.nextpnr.result == 'success' && needs.nextpnr-compare.result == 'success' && needs.synth-native.result == 'success' && needs.ghdl.result == 'success' && needs.iverilog.result == 'success'
     runs-on: ubuntu-26.04
     timeout-minutes: 60
     permissions:
@@ -1371,6 +1374,12 @@ jobs:
           name: ci-yosys-synth-${{ github.run_id }}
           path: build/wasi/yosys
 
+      - name: Native Yosys の比較用資材を取得
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ci-yosys-native-${{ github.run_id }}
+          path: build/native
+
       - name: nextpnr artifacts を取得
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -1390,7 +1399,9 @@ jobs:
           path: build
 
       - name: Icarus Verilog native 版の実行権限を設定
-        run: chmod +x build/iverilog-native/output/ivlpp build/iverilog-native/output/ivl build/iverilog-native/output/vvp
+        run: |
+          chmod +x build/iverilog-native/output/ivlpp build/iverilog-native/output/ivl build/iverilog-native/output/vvp
+          chmod +x build/native/yosys build/native/yosys-abc build/native/nextpnr/nextpnr-himbaechel-gowin
 
       - id: pack-cache-restore
         name: Pyodide pack asset cache を復元
@@ -1417,7 +1428,7 @@ jobs:
           key: pyodide-pack-ubuntu-26.04-${{ hashFiles('package.json', 'package-lock.json', 'requirements-nextpnr.txt', 'scripts/build-pack-assets.sh', 'scripts/build-pack-assets.py', '.github/scripts/check-pins.py') }}
 
       - name: Native / Pyodide gowin_pack parity
-        run: node --test tests/synth/gowin-pack.test.mjs tests/synth/library-components.test.mjs
+        run: node --test tests/synth/gowin-pack.test.mjs tests/synth/library-components.test.mjs tests/synth/yosys-parity.test.mjs tests/synth/library-measurements.test.mjs
 
       - name: Pyodide pack assets を保存
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

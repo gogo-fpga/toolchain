@@ -31,6 +31,23 @@ def sha256_file(path):
     return digest.hexdigest()
 
 
+def patch_metadata(build_dir):
+    metadata = json.loads((build_dir / "patched/placer_heap.json").read_text(encoding="utf-8"))
+    patch_directory = ROOT / "patches/nextpnr"
+    patch = (patch_directory / metadata["patch"]).resolve()
+    if patch.parent != patch_directory.resolve():
+        raise SystemExit("Invalid nextpnr patch path")
+    expected = {
+        "patch": patch.name,
+        "patch_sha256": sha256_file(patch),
+        "source_sha256": sha256_file(ROOT / "vendor/nextpnr/common/place/placer_heap.cc"),
+        "patched_source_sha256": sha256_file(build_dir / "patched/placer_heap.cc"),
+    }
+    if metadata != expected:
+        raise SystemExit("nextpnr patch metadata does not match the source and patch")
+    return metadata
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=("wasi", "native"), required=True)
@@ -76,6 +93,11 @@ def main():
             "apycula": {"version": apycula_version, "hashes": apycula_hashes},
         },
         "build_script_sha256": sha256_file(BUILD_SCRIPT),
+        "patches": patch_metadata(build_dir),
+        "build_helpers": {
+            name: sha256_file(ROOT / "scripts" / name)
+            for name in ("nextpnr-patches.cmake", "prepare-pnr-source.py")
+        },
         "artifact": {
             "path": binary.name,
             "sha256": sha256_file(binary),
