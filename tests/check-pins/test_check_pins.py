@@ -60,6 +60,7 @@ class CheckPinsTests(unittest.TestCase):
                 "https://gitlab.com/libeigen/eigen/-/archive/5.0.1/eigen-5.0.1.tar.gz |\n"
                 "| adawebpack | 24.0.0 | `8edaae8b9987a20aec430d750f30033f12f953ce2b6437afb87fbf8cc1063796` | "
                 "https://github.com/godunko/adawebpack/releases/download/24.0.0/adawebpack-24.0.0.tar.gz |\n"
+                "| gmp | 6.3.0 | `" + "c" * 64 + "` | https://ftp.gnu.org/gnu/gmp/gmp-6.3.0.tar.xz |\n"
                 "\nSurfer WASM build tools:\n\n"
                 "| Tool | Version | SHA-256 | URL |\n"
                 "|---|---|---|---|\n"
@@ -495,6 +496,13 @@ class CheckPinsTests(unittest.TestCase):
                 check=True,
             )
         self.commit_fixture("upstream fixture")
+        research = (self.root / "RESEARCH.md").read_text()
+        rows = []
+        for name in check_pins.FORMAL_SOURCES:
+            version = {"sby": "snapshot", "yices2": "yices-1.0.0", "z3": "z3-1.0.0"}.get(name, "1.0.0")
+            rows.append(f"| {name} | {version} | `{self.pinned[name]}` | https://example.invalid/{name}.git |")
+        boundary = research.index("\n\n")
+        (self.root / "RESEARCH.md").write_text(research[:boundary] + "\n" + "\n".join(rows) + research[boundary:])
         self.latest_wasi_sdk = (
             '{"assets":[{"name":"wasi-sdk-34.0-x86_64-linux.tar.gz","digest":"sha256:'
             + "e" * 64
@@ -506,7 +514,10 @@ class CheckPinsTests(unittest.TestCase):
             "binaryen": "version_123",
         }
         return {
-            name: f"{sha}\trefs/tags/v1.0.0\n"
+            name: f"{sha}\trefs/tags/" + (
+                check_pins.parse_research_dependency((self.root / "RESEARCH.md").read_text(), name)["version"]
+                if name in check_pins.FORMAL_SOURCES else "v1.0.0"
+            ) + "\n"
             for name, sha in self.pinned.items()
             if name in check_pins.TAGGED_SUBMODULES
         }
@@ -536,6 +547,8 @@ class CheckPinsTests(unittest.TestCase):
                     if args[3] in archive_tags:
                         return archive_tags[args[3]]
                     return tag_outputs[module_urls[args[3]]]
+                if args[2] == "https://example.invalid/sby.git":
+                    return self.pinned["sby"] + "\t" + args[3] + "\n"
                 refs.append(args[3])
                 if branch_error:
                     raise subprocess.CalledProcessError(2, args)
@@ -543,6 +556,8 @@ class CheckPinsTests(unittest.TestCase):
             raise AssertionError(f"unexpected command: {args}")
 
         def fake_fetch(url):
+            if url == check_pins.ARCHIVE_INDEX_SOURCES["gmp"]:
+                return '<a href="gmp-6.3.0.tar.xz">GMP</a>'
             if url == check_pins.NODE_INDEX:
                 return '[{"version":"v24.22.1","lts":"Krypton"}]'
             if url == check_pins.ACTIONLINT_RELEASE:
