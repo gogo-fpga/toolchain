@@ -53,7 +53,7 @@ labelは上流GHDLが生成した小文字のinstance名として保持します
 
 GHDL標準のVPIを使い、元のVHDLを変更せずnative runtimeでSAT反例を再実行します。VHDL/PSL parserやmonitorは自作しません。通常assertionとclocked PSLの評価位相を区別し、全入出力のVPI観測、独立したVCD、上流の`--psl-report`を照合します。coverは既定では標準出力に診断を出さないため、上流JSONの件数と状態を使います。root moduleの取得には`vpi_iterate(vpiModule, NULL)`と`vpi_scan`を使い、全ポートの方向・幅・一覧を確かめます。
 
-native/WASMの合成とSATの4組から得た28反例、実runtimeの負の対照12件、位相・未知値・欠落・改変の検査とCSV全列監査を含む予備検査55件が成功しました。正式反復と提出commit検証、下位化後のVerilog/Icarusとの照合、追加fixtureは未完了です。失敗試行、評価時刻、provenanceと制限を[S15の原文再実行記録](../experiments/S15-vhdl-native-replay.md)へ保存します。このnative検査器をブラウザー製品の機能としては扱いません。
+native/WASMの合成とSATの4組から得た28反例、実runtimeの負の対照12件、位相・未知値・欠落・改変の検査とCSV全列監査を含む55件が、清浄な同一commitで5回とA/Aの2回成功しました。全280行19列を元ファイルへ結び付けて監査しています。下位化後のVerilog/Icarusとの照合、追加fixtureは未完了です。生CSV、失敗試行、評価時刻、provenanceと制限を[S15の原文再実行記録](../experiments/S15-vhdl-native-replay.md)へ保存します。このnative検査器をブラウザー製品の機能としては扱いません。
 
 ## P1のSAT比較経路
 
