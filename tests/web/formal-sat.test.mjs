@@ -24,6 +24,7 @@ function execution({ presat = "SAT solving finished - model found:\n", proof = "
 test("SAT scripts fix command and input boundaries without overriding initial state", () => {
   const scripts = createSatScripts({ ...config, sources: ["src/top.v", "properties/check.v"], includeDirs: [".", "src", "src"] });
   assert.match(scripts.prepare, /read_verilog -formal -I\. -Isrc "src\/top.v"/);
+  assert.match(scripts.prepare, /opt_clean; check -assert; write_json/);
   assert.match(scripts.prepare, /read_verilog -formal -I\. -Isrc "properties\/check.v"/);
   assert.match(scripts.presat, /sat -seq 4 -set-assumes/);
   assert.match(scripts.proof, /-prove-asserts -verify/);

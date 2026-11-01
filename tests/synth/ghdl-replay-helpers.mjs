@@ -3,10 +3,11 @@ import { spawnSync } from "node:child_process";
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { verifyGhdlReplayVcd } from "./ghdl-replay-vcd.mjs";
+import { getVhdlLibrary } from "../../web/lib/vhdl-order.mjs";
 
 const identifier = /^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/;
 
-export function createGhdlReplay(replay, { top, psl = false } = {}) {
+export function createGhdlReplay(replay, { top, psl = false, document } = {}) {
   assert.ok(identifier.test(top) && typeof psl === "boolean", "Unsupported GHDL replay top or language mode");
   assert.ok(!psl || replay.clock, "Clocked PSL replay requires a clock");
   assert.ok(!replay.clock || identifier.test(replay.clock), "Unsupported GHDL replay clock");
@@ -30,7 +31,46 @@ export function createGhdlReplay(replay, { top, psl = false } = {}) {
   if (psl) mark("FORMAL_GHDL_FLUSH", 10 * replay.steps);
   const endTimeNs = psl ? 10 * replay.steps + 1 : 10 * (replay.steps - 1) + 3;
   mark("FORMAL_GHDL_DONE", endTimeNs);
-  return { ...replay, top, psl, ports, inactive, content: `${lines.join("\n")}\n`, markers, markerTimesNs, endTimeNs };
+  const propertyInputs = document ? findPropertyInputs(document, top, replay.properties) : undefined;
+  return { ...replay, top, psl, ports, inactive, content: `${lines.join("\n")}\n`, markers, markerTimesNs, endTimeNs, propertyInputs };
+}
+
+export function findPropertyInputs(document, top, properties) {
+  const module = document.modules[top];
+  const inputs = new Map();
+  const drivers = new Map();
+  for (const [name, port] of Object.entries(module.ports)) if (port.direction === "input") {
+    for (const bit of port.bits) inputs.set(bit, [...(inputs.get(bit) ?? []), name]);
+  }
+  for (const cell of Object.values(module.cells)) for (const [port, bits] of Object.entries(cell.connections)) {
+    assert.ok(["input", "output"].includes(cell.port_directions?.[port]), "Missing property dependency direction");
+    if (cell.port_directions[port] !== "output") continue;
+    for (const bit of bits) {
+      assert.ok(!drivers.has(bit), "Multiple property dependency drivers");
+      drivers.set(bit, cell);
+    }
+  }
+  function visit(bit, active, found) {
+    if (["0", "1"].includes(bit)) return;
+    assert.ok(Number.isSafeInteger(bit) && bit >= 0, "Unknown property dependency value");
+    if (inputs.has(bit)) { for (const name of inputs.get(bit)) found.add(name); return; }
+    assert.ok(!active.has(bit), "Combinational property dependency cycle");
+    const cell = drivers.get(bit);
+    assert.ok(cell, "Undriven property dependency");
+    if (cell.type === "$dff") return;
+    assert.ok(!/^\$(?:.*ff|.*latch|mem|anyinit|sr$)/i.test(cell.type), "Unsupported property dependency state");
+    const next = new Set(active).add(bit);
+    for (const [port, bits] of Object.entries(cell.connections)) if (cell.port_directions[port] === "input") {
+      for (const dependency of bits) visit(dependency, next, found);
+    }
+  }
+  return Object.fromEntries(properties.map(({ id }) => {
+    const cell = module.cells[id];
+    assert.ok(cell && ["$assert", "$assume", "$cover"].includes(cell.type), "Missing property dependency target");
+    const found = new Set();
+    for (const port of ["A", "EN"]) for (const bit of cell.connections[port]) visit(bit, new Set(), found);
+    return [id, [...found].sort()];
+  }));
 }
 
 function timeNs(digits, unit) {
@@ -103,7 +143,11 @@ export function verifyGhdlReplay(plan, execution) {
       assert.ok(property.source.startsWith(`${file}:${sourceLine}.${column}-`), "Original VHDL diagnostic column mismatch");
       assert.match(lines[++index] ?? "", new RegExp(`^  instance: /${plan.top}(?:/[a-z0-9_/]+)?$`), "Missing VHDL diagnostic instance");
       if (lines[index + 1]?.startsWith("  from: process ")) {
-        assert.ok(lines[++index].endsWith(`.${property.id}`), "Original VHDL diagnostic label mismatch");
+        const origin = lines[++index];
+        const annotation = / at ([^:\r\n]+):(\d+)$/.exec(origin);
+        if (annotation) assert.ok(annotation[1] === file && Number(annotation[2]) === Number(sourceLine), "Original VHDL process source mismatch");
+        const process = annotation ? origin.slice(0, annotation.index) : origin;
+        assert.ok(process.endsWith(`.${property.id}`), "Original VHDL diagnostic label mismatch");
       }
       const ns = timeNs(digits, unit), psl = type.startsWith("psl ");
       assert.ok(observed.length > 0 && observed.length < plan.markers.length &&
@@ -119,7 +163,9 @@ export function verifyGhdlReplay(plan, execution) {
         trailing.push(event);
       } else if (kind === "assert") {
         if (!psl && step > 1 && ns % 10 < 1) {
-          assert.ok(plan.ports.every((port) => port.direction !== "input" || port.values[step - 1] === port.values[step - 2]), "Ambiguous assertion during an input transition");
+          const relevant = plan.propertyInputs?.[property.id];
+          assert.ok(plan.ports.every((port) => port.direction !== "input" || relevant && !relevant.includes(port.name) ||
+            port.values[step - 1] === port.values[step - 2]), "Ambiguous assertion during an input transition");
         }
         failures.push({ id: property.id, source: property.source, step });
       }
@@ -159,13 +205,21 @@ export function buildGhdlReplayPlugin(native, directory) {
   return path.join(directory, "replay.vpi");
 }
 
-export function runGhdlReplay({ native, plugin, directory, source, plan }) {
+export function runGhdlReplay({ native, plugin, directory, source, plan, dependencies = [] }) {
   const started = performance.now();
   mkdirSync(directory);
   writeFileSync(path.join(directory, "top.vhd"), source, { flag: "wx" });
   writeFileSync(path.join(directory, "formal-ghdl-input.txt"), plan.content, { flag: "wx" });
   copyFileSync(plugin, path.join(directory, "replay.vpi"));
   const flags = ["--std=08", ...(plan.psl ? ["-fpsl"] : [])];
+  for (const [index, file] of dependencies.entries()) {
+    assert.ok(file.path && path.basename(file.path) === file.path && file.path !== "top.vhd", "Unsupported replay dependency path");
+    writeFileSync(path.join(directory, file.path), file.content, { flag: "wx" });
+    const analyzed = runRecorded(native, ["-a", ...flags, `--work=${getVhdlLibrary(file)}`, file.path], directory, `dependency-${index}`);
+    assert.ifError(analyzed.error);
+    assert.equal(analyzed.status, 0, analyzed.stderr);
+    assert.equal(analyzed.stdout + analyzed.stderr, "", "Unexpected replay dependency diagnostic");
+  }
   const analysis = runRecorded(native, ["-a", ...flags, "top.vhd"], directory, "analyze");
   assert.ifError(analysis.error);
   assert.equal(analysis.status, 0, analysis.stderr);
