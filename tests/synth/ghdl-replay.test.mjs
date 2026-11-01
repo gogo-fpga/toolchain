@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createGhdlReplay, verifyGhdlReplay } from "./ghdl-replay-helpers.mjs";
+import { createGhdlReplay, findPropertyInputs, verifyGhdlReplay } from "./ghdl-replay-helpers.mjs";
 
 function fixture({ psl = false, edge = "posedge", trailing = false } = {}) {
   const property = { id: "p_bound", kind: "assert", source: psl ? "top.vhd:16.10-16.10" : "top.vhd:14.3-14.3" };
@@ -133,4 +133,35 @@ test("PSL report completeness and exact native counters fail closed", () => {
   const { plan, execution } = fixture({ psl: true });
   plan.properties.push({ ...plan.properties[0], id: "p_bound_cover", kind: "cover" });
   assert.equal(verifyGhdlReplay(plan, execution).status, "verified");
+});
+
+test("GHDL process source annotations must match the diagnostic exactly", () => {
+  for (const annotation of [" at top.vhd:14", " at other.vhd:14", " at top.vhd:13"]) {
+    const { plan, execution } = fixture();
+    execution.stdout = execution.stdout.replace(".p_bound\n", `.p_bound${annotation}\n`);
+    assert.equal(verifyGhdlReplay(plan, execution).status, annotation === " at top.vhd:14" ? "verified" : "rejected");
+  }
+});
+
+test("property dependency cones stop at registers, but retain direct inputs", () => {
+  const property = { id: "p" };
+  const document = { modules: { top: {
+    ports: { clk: { direction: "input", bits: [1] }, a: { direction: "input", bits: [2] } },
+    cells: {
+      p: { type: "$assert", connections: { A: [3], EN: ["1"] }, port_directions: { A: "input", EN: "input" } },
+      state: { type: "$dff", connections: { CLK: [1], D: [2], Q: [3] }, port_directions: { CLK: "input", D: "input", Q: "output" } },
+    },
+  } } };
+  assert.deepEqual(findPropertyInputs(document, "top", [property]), { p: [] });
+  document.modules.top.cells.p.connections.A = [2];
+  assert.deepEqual(findPropertyInputs(document, "top", [property]), { p: ["a"] });
+  document.modules.top.cells.p.connections.A = [4];
+  document.modules.top.cells.logic = { type: "$not", connections: { A: [2], Y: [4] }, port_directions: { A: "input", Y: "output" } };
+  assert.deepEqual(findPropertyInputs(document, "top", [property]), { p: ["a"] });
+  document.modules.top.cells.logic.connections.A = [4];
+  assert.throws(() => findPropertyInputs(document, "top", [property]), /cycle/);
+  document.modules.top.cells.logic.connections.A = [5];
+  assert.throws(() => findPropertyInputs(document, "top", [property]), /Undriven/);
+  document.modules.top.cells.logic.connections.A = ["x"];
+  assert.throws(() => findPropertyInputs(document, "top", [property]), /Unknown/);
 });
