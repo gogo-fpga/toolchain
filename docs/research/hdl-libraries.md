@@ -32,7 +32,7 @@ T5 では22候補を登録します。現段階の HDL は VHDL と Verilog で�
 | PicoRV32 | CPU・Verilog | ISC | `COPYING` |
 | NEORV32 | CPU・VHDL | BSD-3-Clause | `LICENSE` |
 | Hazard3 | CPU・Verilog | Apache-2.0 | `LICENSE` |
-| VexRiscv の生成済みリポジトリー | CPU・Verilog | MIT | `LICENSE` |
+| VexRiscv の生成済みリポジトリー | CPU・Verilog | MIT | `LICENSE` と `pythondata_cpu_vexriscv/verilog/ext/VexRiscv/LICENSE` |
 | DarkRISCV | CPU・Verilog | BSD-3-Clause | `LICENSE` |
 | learn-fpga の FemtoRV | CPU・Verilog | BSD-3-Clause | `LICENSE` |
 | Ibex | CPU・SystemVerilog | Apache-2.0 | `LICENSE`、`NOTICE` |
@@ -78,6 +78,12 @@ VHDL の依存にはコンパイル順と library 名を保持します。ソー
 Web 配布物には静的カタログ、必要なライセンス本文、登録した部品のソースを含めます。Release のソースアーカイブには `third_party/` の固定版も含めます。実行時に GitHub や GitLab へ設計データを送信する構成ではありません。
 
 ソースアーカイブには、生成した `libraries/source-manifest.json` と各依存の `.gitcommit` も含めます。Git の履歴がなくても、記録したハッシュと原文ファイルを照合して静的資材を再生成できます。Release のパッケージ処理はこの再生成結果を元のカタログと比較します。この照合は破損の検出であり、アーカイブ単体で upstream の真正性を証明するものではありません。
+
+VexRiscv の生成済み RTL パッケージの `LICENSE` は、著作権者の欄が未記入の雛形でした。原文を書き換えずに保持し、同じパッケージが gitlink で固定する入れ子の VexRiscv ソースの `LICENSE` も同梱します。後者には `Copyright (c) 2016 Spinal HDL contributors` とあります。生成済み RTL のヘッダーにある Git hash は、この gitlink と異なります。ヘッダーの値を生成元の固定版として転記せず、生成済みパッケージの revision と入れ子の gitlink を分けて記録します。生成器を動かして同じ RTL を再生成する検証は、今回の範囲に含めません。
+
+資材ごとの `provenance` は、入れ子のパス、親の固定版の `.gitmodules` にある HTTPS URL、親 tree の gitlink revision を保持します。生成器は、入れ子の checkout の revision が gitlink と一致することを要求し、未取得の checkout、別の revision、パス中のシンボリックリンクを拒否します。作業中に変更したファイルや `.gitmodules` から原文や URL を取り込みません。Release のソースアーカイブへは、必要な入れ子の原文ファイルも追加します。
+
+生成器の手元の予備検証では、22候補のカタログと107件の資材記録について、Git を呼べない状態のソースアーカイブから再生成した結果が、元のサイズ、SHA-256、内容と一致しました。これは作業中の生成器の機械的な検証であり、最終 commit の Release 全体や CPU の対応ボードの確認ではありません。
 
 portable ZIP は、選択した依存と原文のライセンスを同梱します。schema 3 の `libraries` は部品、固定版、manifest のハッシュを保持します。旧 schema 1・2 は選択なしで移行し、シミュレーションの設定を保持します。ZIP の全項目は256項目、展開後16 MiB 以下です。ソースだけでなく、ライセンス、データ、manifest、`project.json` も制限に算入します。
 

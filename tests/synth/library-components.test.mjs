@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { HDL_LIBRARY_CASES } from "../fixtures/libraries/cases.mjs";
@@ -12,10 +12,10 @@ import { changeProjectLibraries, prepareProjectInputs } from "../../web/lib/proj
 import { exportProjectZip, importProjectZip } from "../../web/lib/project-zip.mjs";
 import { createBlinkTemplate } from "../../web/lib/templates.mjs";
 import { orderVhdlFiles } from "../../web/lib/vhdl-order.mjs";
+import { nativeSimulation } from "./iverilog-helpers.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const ghdlRoot = path.resolve(root, process.env.GHDL_WASM_BUILD_ROOT ?? "build");
-const nativeDir = path.resolve(root, process.env.IVERILOG_NATIVE_DIR ?? "build/iverilog-native/output");
 const wasmDir = path.resolve(root, process.env.IVERILOG_WASM_DIR ?? "build/iverilog-wasm/output");
 const modules = Object.fromEntries(["ivlpp", "ivl", "vvp"].map((name) =>
   [name, new WebAssembly.Module(readFileSync(path.join(wasmDir, `${name}.wasm`)))]));
@@ -29,34 +29,6 @@ function tree(directory) {
 }
 const librariesTree = tree(path.join(ghdlRoot, "ghdl-native/lib/ghdl"));
 
-function nativeSimulation(directory, files, options) {
-  for (const file of files) {
-    const name = path.join(directory, "work", file.path);
-    mkdirSync(path.dirname(name), { recursive: true });
-    writeFileSync(name, file.content);
-  }
-  const run = (tool, args, cwd = directory) => {
-    const result = spawnSync(path.join(nativeDir, tool), args, {
-      cwd, encoding: "utf8", timeout: 30000, maxBuffer: 16 * 1024 * 1024,
-      env: { ...process.env, SOURCE_DATE_EPOCH: "0", TZ: "UTC" },
-    });
-    assert.ifError(result.error);
-    return { status: result.status, stdout: result.stdout, stderr: result.stderr };
-  };
-  writeFileSync(path.join(directory, "work/ivlpp.flags"), [
-    "I:work/src", ...options.includeDirectories.map((name) => `I:work/${name}`),
-    ...Object.entries(options.defines).map(([name, value]) => `D:${name}=${value}`),
-  ].join("\n") + "\n");
-  const preprocessed = run("ivlpp", ["-F", "work/ivlpp.flags", "-L", ...files.filter((file) => file.role !== "data" && /\.v$/i.test(file.path)).map((file) => `work/${file.path}`)]);
-  if (preprocessed.status !== 0) return preprocessed;
-  writeFileSync(path.join(directory, "work/preprocessed.v"), preprocessed.stdout);
-  writeFileSync(path.join(directory, "work/ivl.conf"), ["module:system", "flag:DLL=vvp.tgt", "flag:VVP_EXECUTABLE=vvp", "functor:cprop", "functor:nodangle", "root:tb", "out:work/design.vvp", "generation:2"].join("\n"));
-  const compiled = run("ivl", ["-C", "work/ivl.conf", "work/preprocessed.v"]);
-  if (compiled.status !== 0) return compiled;
-  const simulated = run("vvp", ["design.vvp"], path.join(directory, "work"));
-  const vcd = path.join(directory, "work/wave.vcd");
-  return { ...simulated, vcd: existsSync(vcd) ? readFileSync(vcd) : null };
-}
 
 test("eight pinned HDL representatives execute independent scoreboards after portable ZIP import", async (t) => {
   const directory = mkdtempSync(path.join(root, "build/t5-library-simulation-"));

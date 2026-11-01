@@ -1,4 +1,4 @@
-import { getBoard } from "./lib/boards.mjs";
+import { getBoard, gowinSynthesisCommand } from "./lib/boards.mjs";
 import { releaseDecoders } from "./lib/decompress.mjs";
 import { createVerifiedAssetLoader, safePath } from "./lib/verified-assets.mjs";
 import { createMemoryTree, runWasiP1, setTreeEntry } from "./lib/wasi-p1.mjs";
@@ -316,7 +316,7 @@ self.addEventListener("message", async ({ data }) => {
     }
     const yosysCommand =
       `${yosysReadCommands.join("; ")}; ` +
-      `synth_gowin -top ${data.top} -json build/top.json`;
+      gowinSynthesisCommand(board.id, data.top, "build/top.json");
     const synthStarted = performance.now();
     const yosysResult = toolResult(
       yosysModule,

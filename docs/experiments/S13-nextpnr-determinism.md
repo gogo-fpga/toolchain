@@ -165,3 +165,17 @@ node scripts/verify-pnr-library-matrix.mjs \
 反復ドライバーと大きな生ログは CI では実行・保存しません。CI には元ソースの保全、パッチの適用、比較式、同じキーの入力順、資源表の負の対照など軽い検査だけを載せます。CPU 7候補、画面操作、実ブラウザーでの性能、実機の検査はこの記録の対象外です。Tang Nano の実機は本リポジトリでは試していません。
 
 大きなログ、全32組の入力と bitstream、350回の結果、元の製品用バイナリー、今回のバイナリーと build-info、ライセンス、失敗した準備ログは、証拠 ZIP `t5-hdl-production-evidence-41c6c3c.zip` に保存しました。3,531ファイルを CRC と SHA-256 で読み戻して検証済みです。ZIP は79,192,998 bytes、SHA-256 は `07f4de227960e624ad2753062c063042d2c46f31778de5eda61807e2187bc435` です。ZIP 内の `manifest.json` で各ファイルを照合できます。大きな証拠 ZIP はコミットせず、セッションの添付で保持します。再生成には上記の手順を使います。
+
+### 確認済みの部品だけを許可する選択制限の回帰
+
+`725e9820284450ba702ef0e3c217e8186fc9bf18` のカタログと検査器で、選択制限を解除せずに再検査しました。
+
+```sh
+HDL_MATRIX_EVIDENCE=build/t5-hdl-confirmed-matrix-1 \
+  node --test --test-name-pattern='pinned HDL libraries build from portable ZIP' \
+  tests/synth/gowin-pack.test.mjs
+```
+
+終了コードは0、親の検査を含む33件が成功し、`summary.json` は32 / 32でした。全32件の `measurement.json` と268件のログを読み、状態、時間、hash、全資源の使用数と上限、出力サイズ、累積の peak RSS を照合しました。配置配線 JSON と bitstream の比較も全て成功しました。警告は、`translate_off` コメントとメモリーをレジスターへ展開する Yosys の診断でした。致命的なエラーはありませんでした。
+
+各測定 JSON を libfpga、Colibri、Open Logic、hdl-modules、AXIS、UART、AXI、Ethernet の順、それぞれ1K、4K、9K、20K の順で連結した SHA-256 は `9128377e86f0786c3dff2549e82bc3cb308add5a5bd0972c40e26581f1554b78` です。これは選択制限を含む正しさの回帰であり、新しい正式な性能測定ではありません。先の証拠 ZIP には、この追加実行のログは含めていません。

@@ -10,6 +10,52 @@ const upstream = path.join(root, "vendor/nextpnr/common/place/placer_heap.cc");
 const patchFile = path.join(root, "patches/nextpnr/0002-stabilize-equal-coordinate-cuts.patch");
 const sha256 = (content) => createHash("sha256").update(content).digest("hex");
 
+test("nextpnr numeric metadata requires the actual unique scalar placer compile definition", () => {
+  const directory = mkdtempSync(path.join(root, "build/t5-pnr-numerics-check-"));
+  let passed = false;
+  try {
+    mkdirSync(path.join(directory, "patched"));
+    const source = path.join(directory, "patched/placer_heap.cc");
+    writeFileSync(source, "");
+    const database = path.join(directory, "compile_commands.json");
+    const verify = (entries) => {
+      writeFileSync(database, JSON.stringify(entries));
+      return spawnSync("python3", ["-c", `
+import importlib.util, json
+from pathlib import Path
+spec = importlib.util.spec_from_file_location("pnr_info", ${JSON.stringify(path.join(root, "scripts/build-pnr-info.py"))})
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+print(json.dumps(module.compiler_metadata(Path(${JSON.stringify(directory)}))))
+`], { encoding: "utf8" });
+    };
+    const entry = { directory, file: "patched/placer_heap.cc", arguments: ["c++", "-DEIGEN_DONT_VECTORIZE", "-DEIGEN_MPL2_ONLY", "-c", source] };
+    const expected = { translation_unit: "common/place/placer_heap.cc", eigen_definitions: ["EIGEN_DONT_VECTORIZE", "EIGEN_MPL2_ONLY"] };
+    for (const candidate of [entry, { directory, file: source, command: `c++ -DEIGEN_DONT_VECTORIZE -DEIGEN_MPL2_ONLY -c ${JSON.stringify(source)}` }]) {
+      const result = verify([candidate]);
+      assert.equal(result.status, 0, result.stderr);
+      assert.deepEqual(JSON.parse(result.stdout), expected);
+    }
+    for (const entries of [
+      [], [entry, entry], [{ ...entry, file: "patched/globals.cc" }],
+      ...[[], ["-DEIGEN_DONT_VECTORIZE=0"], ["-DEIGEN_DONT_VECTORIZE=1"],
+        ["-DEIGEN_DONT_VECTORIZE", "-DEIGEN_DONT_VECTORIZE"],
+        ["-DEIGEN_DONT_VECTORIZE", "-UEIGEN_DONT_VECTORIZE"],
+        ["-DEIGEN_DONT_VECTORIZE", "-U", "EIGEN_DONT_VECTORIZE"],
+        "c++ -DEIGEN_DONT_VECTORIZE",
+      ].map((arguments_) => [{ ...entry, arguments: arguments_ }]),
+    ]) {
+      const result = verify(entries);
+      assert.equal(result.status, 1, `${result.stdout}\n${result.stderr}`);
+      assert.match(result.stderr, /compile command|compile arguments|disable Eigen vectorization/);
+    }
+    passed = true;
+  } finally {
+    if (passed) rmSync(directory, { recursive: true, force: true });
+    else console.error(`Retained nextpnr numeric metadata evidence: ${directory}`);
+  }
+});
+
 test("the nextpnr source preparer preserves upstream, is idempotent, and rejects bad patches and metadata", () => {
   const directory = mkdtempSync(path.join(root, "build/t5-pnr-prepare-check-"));
   let passed = false;
@@ -32,6 +78,7 @@ test("the nextpnr source preparer preserves upstream, is idempotent, and rejects
     assert.deepEqual(readFileSync(source), original);
     const metadata = JSON.parse(readFileSync(metadataPath));
     assert.deepEqual(metadata, {
+      translation_unit: "common/place/placer_heap.cc",
       source_sha256: sha256(original), patch: path.basename(patchFile),
       patch_sha256: sha256(readFileSync(patchFile)), patched_source_sha256: sha256(patched),
     });
@@ -53,6 +100,19 @@ test("the nextpnr source preparer preserves upstream, is idempotent, and rejects
     writeFileSync(invalidPatch, readFileSync(patchFile, "utf8").replace("-            std::sort", "-            std::absent_sort"));
     assert.equal(prepare(invalidPatch).status, 1);
     assert.deepEqual(readFileSync(output), patched);
+    const globalSource = path.join(root, "vendor/nextpnr/himbaechel/uarch/gowin/globals.cc");
+    const globalOriginal = readFileSync(globalSource);
+    const globalOutput = path.join(directory, "patched/globals.cc");
+    const globalPatch = path.join(root, "patches/nextpnr/0004-stabilize-segment-grid-order.patch");
+    const globalPrepared = spawnSync("python3", [
+      path.join(root, "scripts/prepare-pnr-source.py"), "--source", globalSource, "--patch", globalPatch,
+      "--output", globalOutput, "--translation-unit", "himbaechel/uarch/gowin/globals.cc",
+    ], { encoding: "utf8" });
+    assert.equal(globalPrepared.status, 0, globalPrepared.stderr);
+    assert.equal(readFileSync(globalOutput, "utf8"), globalOriginal.toString().replace(
+      "std::unordered_multimap<uint32_t, grid_net> grid;", "std::multimap<uint32_t, grid_net> grid;",
+    ));
+    assert.deepEqual(readFileSync(globalSource), globalOriginal);
     const verify = () => spawnSync("python3", ["-c", `
 import importlib.util
 from pathlib import Path
@@ -72,6 +132,16 @@ module.patch_metadata(Path(${JSON.stringify(directory)}))
     writeFileSync(metadataPath, JSON.stringify({ ...metadata, patch: "../outside.patch" }));
     rejected(/Invalid nextpnr patch path/);
     writeFileSync(metadataPath, JSON.stringify(metadata));
+    const globalMetadataPath = path.join(directory, "patched/globals.json");
+    const globalMetadata = JSON.parse(readFileSync(globalMetadataPath));
+    writeFileSync(globalMetadataPath, JSON.stringify({ ...globalMetadata, translation_unit: "common/route/router1.cc" }));
+    rejected(/patch metadata does not match/);
+    writeFileSync(globalMetadataPath, JSON.stringify(globalMetadata));
+    writeFileSync(globalOutput, Buffer.concat([readFileSync(globalOutput), Buffer.from("// corruption\n")]));
+    rejected(/patch metadata does not match/);
+    writeFileSync(globalOutput, globalOriginal.toString().replace(
+      "std::unordered_multimap<uint32_t, grid_net> grid;", "std::multimap<uint32_t, grid_net> grid;",
+    ));
     writeFileSync(output, Buffer.concat([patched, Buffer.from("// corruption\n")]));
     rejected(/patch metadata does not match/);
     passed = true;

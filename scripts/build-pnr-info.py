@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import shlex
 import sys
 from pathlib import Path
 
@@ -32,20 +33,51 @@ def sha256_file(path):
 
 
 def patch_metadata(build_dir):
-    metadata = json.loads((build_dir / "patched/placer_heap.json").read_text(encoding="utf-8"))
+    return [
+        translation_unit_metadata(build_dir, relative_source)
+        for relative_source in ("common/place/placer_heap.cc", "himbaechel/uarch/gowin/globals.cc")
+    ]
+
+
+def translation_unit_metadata(build_dir, relative_source):
+    source = Path(relative_source)
+    metadata = json.loads((build_dir / "patched" / source.with_suffix(".json").name).read_text(encoding="utf-8"))
     patch_directory = ROOT / "patches/nextpnr"
     patch = (patch_directory / metadata["patch"]).resolve()
     if patch.parent != patch_directory.resolve():
         raise SystemExit("Invalid nextpnr patch path")
     expected = {
+        "translation_unit": relative_source,
         "patch": patch.name,
         "patch_sha256": sha256_file(patch),
-        "source_sha256": sha256_file(ROOT / "vendor/nextpnr/common/place/placer_heap.cc"),
-        "patched_source_sha256": sha256_file(build_dir / "patched/placer_heap.cc"),
+        "source_sha256": sha256_file(ROOT / "vendor/nextpnr" / source),
+        "patched_source_sha256": sha256_file(build_dir / "patched" / source.name),
     }
     if metadata != expected:
         raise SystemExit("nextpnr patch metadata does not match the source and patch")
     return metadata
+
+
+def compiler_metadata(build_dir):
+    source = (build_dir / "patched/placer_heap.cc").resolve()
+    if not source.is_file():
+        raise SystemExit("The patched nextpnr heap placer source is missing")
+    entries = json.loads((build_dir / "compile_commands.json").read_text(encoding="utf-8"))
+    commands = [entry for entry in entries if (Path(entry["directory"]) / entry["file"]).resolve() == source]
+    if len(commands) != 1:
+        raise SystemExit("Expected exactly one nextpnr heap placer compile command")
+    entry = commands[0]
+    arguments = entry.get("arguments")
+    if arguments is None:
+        arguments = shlex.split(entry["command"])
+    if not isinstance(arguments, list) or not all(isinstance(arg, str) for arg in arguments):
+        raise SystemExit("Invalid nextpnr heap placer compile arguments")
+    definitions = sorted(arg[2:] for arg in arguments if arg.startswith("-DEIGEN_"))
+    if definitions.count("EIGEN_DONT_VECTORIZE") != 1 or any(
+        arg == "-U" or arg.startswith("-UEIGEN_") for arg in arguments
+    ):
+        raise SystemExit("The nextpnr heap placer must disable Eigen vectorization")
+    return {"translation_unit": "common/place/placer_heap.cc", "eigen_definitions": definitions}
 
 
 def main():
@@ -94,6 +126,7 @@ def main():
         },
         "build_script_sha256": sha256_file(BUILD_SCRIPT),
         "patches": patch_metadata(build_dir),
+        "numerics": compiler_metadata(build_dir),
         "build_helpers": {
             name: sha256_file(ROOT / "scripts" / name)
             for name in ("nextpnr-patches.cmake", "prepare-pnr-source.py")

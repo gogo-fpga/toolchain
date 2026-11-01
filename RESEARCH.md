@@ -123,6 +123,8 @@ nextpnr は ISC、Boost は Boost Software License 1.0、Eigen は主に MPL-2.0
 
 T5 の UART で見つかった native / WASI の配置差には、同じ座標のセルの入力順を保持するパッチをビルド時に適用します。製品用の8代表回路×4ボードを各実行系で5回ずつ比較し、全320回の配置 JSON が一致しました。A/A 20回と負例10回、資源・時間・メモリー・ビルドの根拠は [S13 の記録と生 CSV](docs/experiments/S13-nextpnr-determinism.md) に残します。回路や JSON のキー順の正規化で差を隠していません。実機は本リポジトリでは試していません。
 
+CPU 7候補のプログラム実行、負の対照、4ボードでの比較は [S14](docs/experiments/S14-cpu-library-matrix.md) に採否の基準を先に定め、実装を進めています。6候補の正常系と5種類の負の対照は予備検証済みです。SERV の4K は分散 RAM への割当を避ける上流の `-nolutram` で bitstream まで一致しました。1K の容量不足と9K・20K の配線差は別に記録し、差のあるボードを確認済みにはしていません。正式な性能測定とボードの昇格は未実施です。
+
 Apycula 0.35 と `requirements-nextpnr.txt` の固定依存で、4 family の chipdb 生成と P&R が成功しました。他の Apycula 版は試していません。native と WASI で別々に生成した `.bba` と chipdb は一致しなかったため、native build の `.bba` を WASI build に取り込みます。これにより、両実行形式が同じ chipdb を使うことをテストで byte 単位に確認します。
 
 Boost 1.92.0 は `-fwasm-exceptions` と `libunwind` を使って WASI 向けにビルドできました。別の Boost 版は試していません。nextpnr WASM は 34,141,610 bytes、native binary は 55,324,696 bytes です。ビルド時間は初回の WASI が 5 分 5.890 秒、native が 2 分 44.644 秒でした。chipdb 生成を共有する変更後の再ビルドは、既存のビルドを再利用して WASI が 10.957 秒、native が 4.575 秒でした。
@@ -174,6 +176,8 @@ S4 のビルド時間、圧縮資材の復号、配信量と配信先の比較�
 ## 5. HDL ライブラリーと CPU コア
 
 T5 の22候補、ライセンス本文、部品の登録と更新監視は、[HDL ライブラリーと CPU コアの調査](docs/research/hdl-libraries.md)にまとめました。現在の取得元は `.gitmodules`、固定版は gitlink が正です。下表は初期調査で転記した記録です。Colibri の取得元と Open Logic のライセンス表記には誤りがあり、分割した調査に訂正内容と原典を記載しました。
+
+VexRiscv は生成済みパッケージのライセンスだけでなく、同じパッケージが gitlink で固定する生成元のライセンス原文も保持します。入れ子の URL と revision は原本のメタデータから取り、ソースアーカイブにも必要な原文を追加します。手元の生成器で、Git を呼べない状態から22候補の資材を同一ハッシュで再生成しました。根拠と検証の境界は、上記の分割した調査に記録しています。
 
 次の URL と revision は、[fpga-agent の HDL ライブラリー登録](https://github.com/VibeBB/fpga-agent/blob/76560989bf570fca1e0e3b864dd466251c210117/scripts/hdl_libraries.json)から転記しています。すべて T5 の候補で、T0 では取り込んでいません。
 

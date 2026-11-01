@@ -195,16 +195,40 @@ def pinned_revision(root: Path, path: str) -> str:
     return revision
 
 
-def pinned_file(root: Path, revision: str, path: str) -> bytes:
+def pinned_file(root: Path, revision: str, path: str, provenance: list[dict] | None = None) -> bytes:
     relative_path(path)
-    line = git(root, "ls-tree", "-z", revision, "--", path)
-    if not line:
-        raise ValueError(f"Missing pinned source: {path}")
-    metadata, name = line.rstrip(b"\0").decode().split("\t", 1)
-    mode, kind, blob = metadata.split()
-    if name != path or mode not in {"100644", "100755"} or kind != "blob":
-        raise ValueError(f"Not a regular pinned file: {path}")
-    return git(root, "cat-file", "blob", blob)
+    parts = PurePosixPath(path).parts
+    for index in range(len(parts)):
+        prefix = "/".join(parts[:index + 1])
+        line = git(root, "ls-tree", "-z", revision, "--", prefix)
+        if not line:
+            raise ValueError(f"Missing pinned source: {path}")
+        metadata, name = line.rstrip(b"\0").decode().split("\t", 1)
+        mode, kind, blob = metadata.split()
+        if name != prefix:
+            raise ValueError(f"Unexpected pinned source: {path}")
+        if mode == "160000" and kind == "commit" and index + 1 < len(parts):
+            nested = root / prefix
+            if any((root / Path(*parts[:i + 1])).is_symlink() for i in range(index + 1)):
+                raise ValueError(f"Nested submodule symlink is not allowed: {prefix}")
+            if not (nested / ".git").exists():
+                raise ValueError(f"Missing initialized nested submodule: {prefix}")
+            if git(nested, "rev-parse", "HEAD").decode().strip() != blob:
+                raise ValueError(f"{prefix}: nested checkout differs from pinned gitlink")
+            config = configparser.ConfigParser(interpolation=None)
+            config.read_string(git(root, "show", f"{revision}:.gitmodules").decode())
+            urls = [section.get("url", "") for section in config.values() if section.get("path") == prefix]
+            if len(urls) != 1 or not re.fullmatch(r"https://[^\s]+", urls[0]):
+                raise ValueError(f"Invalid pinned nested upstream URL: {prefix}")
+            if provenance is not None:
+                parent = provenance[-1]["path"] + "/" if provenance else ""
+                provenance.append({"path": parent + prefix, "url": urls[0], "revision": blob})
+            return pinned_file(nested, blob, "/".join(parts[index + 1:]), provenance)
+        if index + 1 == len(parts) and mode in {"100644", "100755"} and kind == "blob":
+            return git(root, "cat-file", "blob", blob)
+        if mode != "040000" or kind != "tree":
+            raise ValueError(f"Not a regular pinned file: {path}")
+    raise ValueError(f"Not a regular pinned file: {path}")
 
 
 def archive_catalog(root: Path) -> dict[str, dict] | None:
@@ -229,21 +253,62 @@ def archive_path(root: Path, path: str) -> Path:
     return current
 
 
-def archive_file(root: Path, module: str, entry: dict, path: str) -> bytes:
+def archive_file(root: Path, module: str, entry: dict, path: str, provenance: list[dict] | None = None) -> bytes:
     records = entry["license"]["files"] + [
         asset for component in entry["components"]
         for asset in component["sources"] + component["data"]
     ]
     matches = [asset for asset in records if asset["path"] == path]
     if not matches or any(
-        any(asset[key] != matches[0][key] for key in ("asset", "size", "sha256"))
+        any(asset.get(key) != matches[0].get(key) for key in ("asset", "size", "sha256", "provenance"))
         for asset in matches[1:]
     ):
         raise ValueError(f"Missing or conflicting source archive record: {module}/{path}")
+    origins = matches[0].get("provenance", [])
+    if not isinstance(origins, list):
+        raise ValueError(f"Invalid nested provenance: {module}/{path}")
+    parent = ""
+    for origin in origins:
+        checked_keys(origin, {"path", "url", "revision"}, {"path", "url", "revision"})
+        prefix = relative_path(origin["path"]) + "/"
+        if not prefix.startswith(parent) or prefix == parent or not path.startswith(prefix) or not isinstance(origin["url"], str) or not re.fullmatch(
+            r"https://[^\s]+", origin["url"]
+        ) or not isinstance(origin["revision"], str) or not FULL_SHA.fullmatch(origin["revision"]):
+            raise ValueError(f"Invalid nested provenance: {module}/{path}")
+        parent = prefix
+    if provenance is not None:
+        provenance.extend(origins)
     data = archive_path(root, f"{module}/{path}").read_bytes()
     if matches[0]["size"] != len(data) or matches[0]["sha256"] != hashlib.sha256(data).hexdigest():
         raise ValueError(f"Source archive hash mismatch: {module}/{path}")
     return data
+
+
+def copy_nested_assets(root: Path, manifest: dict, output: Path) -> None:
+    files: dict[Path, bytes] = {}
+    for entry in manifest["entries"]:
+        assets = entry["license"]["files"] + [
+            asset for component in entry["components"] for asset in component["sources"] + component["data"]
+        ]
+        nested_assets = [asset for asset in assets if asset.get("provenance")]
+        if not nested_assets:
+            continue
+        module = relative_path(entry["submodule"])
+        revision = pinned_revision(root, module)
+        if revision != entry["source"]["revision"]:
+            raise ValueError(f"Nested source archive revision mismatch: {module}")
+        for asset in nested_assets:
+            provenance: list[dict] = []
+            data = pinned_file(root / module, revision, asset["path"], provenance)
+            if provenance != asset["provenance"] or len(data) != asset["size"] or hashlib.sha256(data).hexdigest() != asset["sha256"]:
+                raise ValueError(f"Nested source archive provenance or hash mismatch: {module}/{asset['path']}")
+            destination = archive_path(output, f"{module}/{asset['path']}")
+            if destination.exists() and destination.read_bytes() != data:
+                raise ValueError(f"Cannot overwrite nested source archive file: {destination}")
+            files[destination] = data
+    for destination, data in files.items():
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(data)
 
 
 def build_catalog(root: Path, catalog: dict, output: Path) -> dict:
@@ -273,13 +338,17 @@ def build_catalog(root: Path, catalog: dict, output: Path) -> dict:
         entry["source"] = {"url": module["url"], "revision": revision}
 
         def asset(path: str) -> dict:
+            provenance: list[dict] = []
             data = (
-                pinned_file(root / entry["submodule"], revision, path) if archived_entry is None
-                else archive_file(root, entry["submodule"], archived_entry, path)
+                pinned_file(root / entry["submodule"], revision, path, provenance) if archived_entry is None
+                else archive_file(root, entry["submodule"], archived_entry, path, provenance)
             )
             name = f'{entry["id"]}/{path}'
             assets[name] = data
-            return {"path": path, "asset": name, "size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+            record = {"path": path, "asset": name, "size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+            if provenance:
+                record["provenance"] = provenance
+            return record
 
         entry["license"]["files"] = [asset(path) for path in entry["license"]["files"]]
         for component in entry["components"]:

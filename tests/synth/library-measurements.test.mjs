@@ -1,8 +1,19 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseDeviceUtilization } from "./library-measurements.mjs";
+import { executionErrorDetails, inspectCpuStructure, isCapacityExceeded, parseDeviceUtilization } from "./library-measurements.mjs";
 
 const log = "Info: Device utilisation:\nInfo: LUT4: 217/ 1152 18%\nInfo: DFF: 81/ 864 9%\nInfo: BSRAM: 0/ 4 0%\nInfo:\n";
+
+test("serialized execution errors retain JavaScript and WebAssembly exception identity", () => {
+  assert.equal(executionErrorDetails(undefined), null);
+  assert.equal(executionErrorDetails(null), null);
+  assert.deepEqual(executionErrorDetails(new Error("spawn failed")), { name: "Error", message: "spawn failed" });
+  assert.deepEqual(executionErrorDetails(new WebAssembly.RuntimeError("out of bounds")), { name: "RuntimeError", message: "out of bounds" });
+  const exception = new WebAssembly.Exception(new WebAssembly.Tag({ parameters: [] }), []);
+  assert.deepEqual(JSON.parse(JSON.stringify(executionErrorDetails(exception))), {
+    name: "WebAssembly.Exception", message: String(exception),
+  });
+});
 
 test("resource measurements retain exact used and available counts", () => {
   assert.deepEqual(parseDeviceUtilization(log), {
@@ -21,4 +32,80 @@ test("unparseable, absent, repeated, exceeded, or optimized-away resources fail 
     log.replace("18%", "19%"), log.replace("Info:\n", ""),
     log.replace("Info: DFF", "Info: LUT4: 1/ 10 10%\nInfo: DFF"),
   ]) assert.throws(() => parseDeviceUtilization(broken), assert.AssertionError);
+});
+
+test("explicit capacity diagnostics retain exceeded counts without relaxing table validation", () => {
+  const exceeded = log.replace("217/ 1152 18%", "1153/ 1152 100%");
+  assert.equal(parseDeviceUtilization(exceeded, { allowExceeded: true }).LUT4.used, 1153);
+  assert.throws(() => parseDeviceUtilization(exceeded), assert.AssertionError);
+  for (const broken of [exceeded.replace("100%", "99%"), exceeded.replace("Info:\n", ""), exceeded.replace("BSRAM: 0/ 4", "BSRAM: 0/ 0")]) {
+    assert.throws(() => parseDeviceUtilization(broken, { allowExceeded: true }), assert.AssertionError);
+  }
+});
+
+test("capacity classification requires matching diagnostics and rejects traps, signals, and unrelated errors", () => {
+  const resources = { LUT4: { used: 1322, total: 1152 } };
+  const stderr = "ERROR: Unable to find legal placement for cell cpu.cell\n";
+  const wasi = { status: 1, stderr };
+  const native = { status: 125, stderr, signal: null };
+  assert.equal(isCapacityExceeded(wasi, native, resources), true);
+  const exception = new WebAssembly.Exception(new WebAssembly.Tag({ parameters: [] }), []);
+  assert.equal(isCapacityExceeded({ ...wasi, error: exception }, native, resources), true);
+  assert.equal(isCapacityExceeded(wasi, native, { LUT4: { used: 100, total: 1152 } }), false);
+  for (const [badWasi, badNative] of [
+    [{ ...wasi, status: 0 }, native], [wasi, { ...native, status: 0 }],
+    [{ ...wasi, status: 9 }, native], [wasi, { ...native, status: null }],
+    [{ ...wasi, error: new WebAssembly.RuntimeError("out of bounds") }, native],
+    [wasi, { ...native, error: new Error("spawn failed") }],
+    [wasi, { ...native, signal: "SIGSEGV" }],
+    [{ ...wasi, stderr: "" }, native],
+    [{ ...wasi, stderr: `${stderr}ERROR: unrelated failure\n` }, native],
+    [{ ...wasi, stderr: "ERROR: unrelated failure\n" }, { ...native, stderr: "ERROR: unrelated failure\n" }],
+  ]) assert.throws(() => isCapacityExceeded(badWasi, badNative, resources), assert.AssertionError);
+});
+
+test("BEL exhaustion requires matching diagnostics and overflow of the named resource", () => {
+  const resources = { LUT4: { used: 1153, total: 1152 }, DFF: { used: 10, total: 864 } };
+  const stderr = "ERROR: Unable to place cell 'cpu.DPTR_DFFE_Q_1_D_LUT4_F', no BELs remaining to implement cell type 'LUT4'\n";
+  const wasi = { status: 1, stderr };
+  const native = { status: 125, stderr, signal: null };
+  assert.equal(isCapacityExceeded(wasi, native, resources), true);
+  for (const broken of [stderr.replace("'LUT4'", "'DFF'"), stderr.replace("'LUT4'", "'UNKNOWN'"),
+    stderr.replace("'LUT4'", "'__proto__'"), stderr.replace("no BELs remaining", "unrelated failure"),
+    `${stderr.trimEnd()} unexpected text\n`]) {
+    assert.throws(() => isCapacityExceeded({ ...wasi, stderr: broken }, { ...native, stderr: broken }, resources), assert.AssertionError);
+  }
+  assert.throws(() => isCapacityExceeded(wasi, { ...native, stderr: stderr.replace("cpu.DPTR", "cpu.other") }, resources), /diagnostics differ/);
+});
+
+test("mapped CPU inspection rejects missing CPU state, RAM, and constant outputs", () => {
+  const cells = Object.fromEntries([
+    ...Array.from({ length: 32 }, (_, index) => [`cpu.state.${index}`, { type: "DFF" }]),
+    ...Array.from({ length: 16 }, (_, index) => [`cpu.logic.${index}`, { type: "LUT4" }]),
+    ["memory.ram.0.0", { type: "RAM16SDP4" }],
+  ]);
+  const netlist = { modules: { top: { cells, ports: { led: { bits: [3] } } } } };
+  assert.deepEqual(inspectCpuStructure(netlist), {
+    cpu_cells: 48, cpu_state_cells: 32, cpu_logic_cells: 16, ram_state_cells: 1, led_bits: [3],
+  });
+  for (const [name, type] of [["memory.ram[0]_DFFE_Q_0", "DFFE"], ["memory.ram.0.0", "SDPX9B"], ["memory.ram", "DPB"]]) {
+    const changed = structuredClone(netlist);
+    delete changed.modules.top.cells["memory.ram.0.0"];
+    changed.modules.top.cells[name] = { type };
+    assert.equal(inspectCpuStructure(changed).ram_state_cells, 1);
+  }
+  for (const [name, type] of [["memory.ram_backup.0", "DFF"], ["memory.ramification[0]", "RAM16SDP4"], ["memory.ram[0]", "LUT4"]]) {
+    const broken = structuredClone(netlist);
+    delete broken.modules.top.cells["memory.ram.0.0"];
+    broken.modules.top.cells[name] = { type };
+    assert.throws(() => inspectCpuStructure(broken), /RAM was optimized away/);
+  }
+  for (const name of ["cpu.state.0", "cpu.logic.0", "memory.ram.0.0"]) {
+    const broken = structuredClone(netlist);
+    delete broken.modules.top.cells[name];
+    assert.throws(() => inspectCpuStructure(broken), assert.AssertionError);
+  }
+  const broken = structuredClone(netlist);
+  broken.modules.top.ports.led.bits = ["0"];
+  assert.throws(() => inspectCpuStructure(broken), assert.AssertionError);
 });

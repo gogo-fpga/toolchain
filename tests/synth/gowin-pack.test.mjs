@@ -18,7 +18,7 @@ import { after, before, test } from "node:test";
 import { performance } from "node:perf_hooks";
 import { pathToFileURL } from "node:url";
 import { loadPyodide } from "pyodide";
-import { BOARDS } from "../../web/lib/boards.mjs";
+import { BOARDS, gowinSynthesisCommand } from "../../web/lib/boards.mjs";
 import { createBlinkTemplate, generateCst } from "../../web/lib/templates.mjs";
 import { prepareLibrarySelection, verilogReadCommand } from "../../web/lib/libraries.mjs";
 import { changeProjectLibraries, prepareProjectInputs } from "../../web/lib/project.mjs";
@@ -26,8 +26,12 @@ import { exportProjectZip, importProjectZip } from "../../web/lib/project-zip.mj
 import { runGhdlSynth } from "../../web/lib/ghdl-host.mjs";
 import { orderVhdlFiles } from "../../web/lib/vhdl-order.mjs";
 import { HDL_LIBRARY_CASES } from "../fixtures/libraries/cases.mjs";
+import { CPU_CASES } from "../fixtures/cpus/cases.mjs";
+import { cpuBench } from "../fixtures/cpus/bench.mjs";
+import { assertCpuFrontendFailure, nativeSimulation } from "./iverilog-helpers.mjs";
+import { runIverilog } from "../../web/lib/iverilog-host.mjs";
 import { assertYosysParity, runNativeYosys } from "./yosys-parity.mjs";
-import { parseDeviceUtilization } from "./library-measurements.mjs";
+import { cpuLoweringCommand, executionErrorDetails, inspectCpuStructure, isCapacityExceeded, parseDeviceUtilization } from "./library-measurements.mjs";
 import { fsIdcode, fsIdcodeMatchesBoard } from "../../web/lib/fs-idcode.mjs";
 import {
   prepareGowinPackRuntime,
@@ -210,26 +214,73 @@ function loadLibraryTree(directory) {
   }));
 }
 
-test("pinned HDL libraries build from portable ZIP into all four board bitstreams", async (t) => {
-  const keepEvidence = process.env.HDL_MATRIX_EVIDENCE !== undefined;
-  const directory = keepEvidence ? path.resolve(root, process.env.HDL_MATRIX_EVIDENCE) : mkdtempSync(path.join(root, "build/t5-library-flow-"));
+const simulatedCpus = new Map();
+
+function assertCpuLoweredExecution(id, workdir, netlistHash) {
+  if (simulatedCpus.has(id)) {
+    assert.equal(simulatedCpus.get(id).netlistHash, netlistHash, "The CPU netlist differs between boards");
+    return simulatedCpus.get(id);
+  }
+  const wasmDir = path.resolve(root, process.env.IVERILOG_WASM_DIR ?? "build/iverilog-wasm/output");
+  const modules = Object.fromEntries(["ivlpp", "ivl", "vvp"].map((name) =>
+    [name, new WebAssembly.Module(readFileSync(path.join(wasmDir, `${name}.wasm`)))]));
+  for (const broken of [false, true]) {
+    const directory = path.join(workdir, broken ? "lowered-led-stuck" : "lowered-positive");
+    mkdirSync(directory);
+    const files = [
+      { path: "src/top.v", content: readFileSync(path.join(workdir, "src/lowered.v")) },
+      { path: "src/tb.v", content: cpuBench({ ledHeld: broken }) },
+    ];
+    const native = nativeSimulation(directory, files, { includeDirectories: ["src"], defines: {} });
+    const wasm = runIverilog({ modules, files, top: "tb" });
+    writeFileSync(path.join(directory, "results.json"), JSON.stringify({
+      native: { status: native.status, stdout: native.stdout, stderr: native.stderr },
+      wasm: { status: wasm.status, stdout: wasm.stdout, stderr: wasm.stderr },
+    }, null, 2));
+    if (wasm.tree?.work?.["wave.vcd"]) writeFileSync(path.join(directory, "wasm.vcd"), wasm.tree.work["wave.vcd"]);
+    assert.equal(native.status, broken ? 1 : 0, `${native.stdout}\n${native.stderr}`);
+    assert.equal(wasm.status, native.status, `${wasm.stdout}\n${wasm.stderr}`);
+    assert.equal(wasm.stdout, native.stdout);
+    assert.match(wasm.stdout, broken ? /CPU_GPIO_OUTPUT/ : /CPU_FUNCTION_OK/);
+    assert.ok(native.vcd, "The lowered-RTL simulation produced no VCD");
+    assert.deepEqual(Buffer.from(wasm.tree.work["wave.vcd"]), native.vcd);
+  }
+  const result = { netlistHash, positive: "passed", led_stuck: "rejected" };
+  simulatedCpus.set(id, result);
+  return result;
+}
+
+async function libraryBuildMatrix(t, { cpu = false } = {}) {
+  const evidenceVariable = cpu ? "CPU_MATRIX_EVIDENCE" : "HDL_MATRIX_EVIDENCE";
+  const keepEvidence = process.env[evidenceVariable] !== undefined;
+  const directory = keepEvidence ? path.resolve(root, process.env[evidenceVariable]) : mkdtempSync(path.join(root, "build/t5-library-flow-"));
   if (keepEvidence) mkdirSync(directory);
-  const assets = path.join(directory, "assets");
+  const suppliedAssets = cpu && process.env.CPU_LIBRARY_ASSETS;
+  const assets = suppliedAssets ? path.resolve(root, suppliedAssets) : path.join(directory, "assets");
+  const preflight = cpu && process.env.CPU_MATRIX_PREFLIGHT === "1";
+  const requested = cpu && process.env.CPU_MATRIX_IDS?.split(",");
+  const samples = cpu ? CPU_CASES.filter(({ id }) => !requested || requested.includes(id)) : HDL_LIBRARY_CASES;
+  assert.ok(samples.length && (!requested || new Set(requested).size === samples.length), "Unknown CPU case");
+  const fixtureDirectory = path.join(root, cpu ? "tests/fixtures/cpus" : "tests/fixtures/libraries");
   let passedBoards = 0;
+  let capacityExceeded = 0;
+  let frontendUnsupported = 0;
   try {
     const ghdlRoot = path.resolve(root, process.env.GHDL_WASM_BUILD_ROOT ?? "build");
     const ghdlModule = new WebAssembly.Module(readFileSync(path.join(ghdlRoot, "ghdl-wasm/ghdl-synth.wasm")));
     const librariesTree = loadLibraryTree(path.join(ghdlRoot, "ghdl-native/lib/ghdl"));
+    if (!suppliedAssets) {
     const built = spawnSync("python3", ["scripts/build-library-assets.py", "--output", assets], {
       cwd: root, encoding: "utf8", maxBuffer: 16 * 1024 * 1024,
     });
     assert.equal(built.status, 0, `${built.stderr}\n${built.error ?? ""}`);
+    }
     const catalog = JSON.parse(readFileSync(path.join(assets, "catalog.json"), "utf8"));
-    const matrix = HDL_LIBRARY_CASES.flatMap((sample) => BOARDS.map((board) => ({ ...sample, board })));
-    for (const { id, component, language, fixture, board } of matrix) {
+    const matrix = samples.flatMap((sample) => BOARDS.map((board) => ({ ...sample, board })));
+    for (const { id, component, language, fixture, board, frontendFailure } of matrix) {
       const added = await prepareLibrarySelection(
         catalog, { id, component },
-        (asset) => readFileSync(path.join(assets, asset.asset)), { board: board.id },
+        (asset) => readFileSync(path.join(assets, asset.asset)), { board: board.id, requireConfirmed: !preflight && !frontendFailure },
       );
       await t.test(`${id}/${board.id}`, async () => {
         const workdir = path.join(directory, id, board.id);
@@ -237,9 +288,18 @@ test("pinned HDL libraries build from portable ZIP into all four board bitstream
         const measurement = { id, component, board: board.id, status: "failed", timings: {}, hashes: {} };
         const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
         try {
-        const template = createBlinkTemplate(board.id, language);
-        const sourcePath = language === "vhdl" ? "src/top.vhd" : "src/top.v";
-        template.files.set(sourcePath, readFileSync(path.join(root, "tests/fixtures/libraries", fixture)));
+        const template = createBlinkTemplate(board.id, cpu ? "verilog" : language);
+        const sourcePath = !cpu && language === "vhdl" ? "src/top.vhd" : "src/top.v";
+        template.files.set(sourcePath, readFileSync(path.join(fixtureDirectory, fixture)));
+        if (cpu) {
+          template.files.set("src/top_tb.v", cpuBench());
+          template.project.simulation.top = "tb";
+          template.project.simulation.files = null;
+          for (const name of ["memory.v", "bus.vh", "program.hex", ...(language === "vhdl" ? ["neorv32.vhd"] : [])]) {
+            template.files.set(`src/${name}`, readFileSync(path.join(fixtureDirectory, name)));
+          }
+          template.project.files = [...template.files.keys()].map((path) => ({ path }));
+        }
         const installed = await changeProjectLibraries(template.project, template.files, { add: added });
         const zip = await exportProjectZip(installed.project, installed.files);
         writeFileSync(path.join(workdir, "project.zip"), zip);
@@ -252,45 +312,94 @@ test("pinned HDL libraries build from portable ZIP into all four board bitstream
           mkdirSync(path.dirname(target), { recursive: true });
           writeFileSync(target, file.content);
         }
-        let sources = input.files.filter((file) => file.role !== "data" && /\.vh?$/i.test(file.path));
+        if (frontendFailure) {
+          const componentRecipe = catalog.entries.find((entry) => entry.id === id).components.find((entry) => entry.id === component);
+          assert.ok(preflight || componentRecipe.boards[board.id] === "frontend-unsupported", "Unrecorded CPU frontend failure");
+          const wasmDir = path.resolve(root, process.env.IVERILOG_WASM_DIR ?? "build/iverilog-wasm/output");
+          const modules = Object.fromEntries(["ivlpp", "ivl", "vvp"].map((name) =>
+            [name, new WebAssembly.Module(readFileSync(path.join(wasmDir, `${name}.wasm`)))]));
+          const started = performance.now();
+          measurement.frontend_failure = assertCpuFrontendFailure(workdir, [
+            ...input.files.filter((file) => /\.(?:v|vh|hex)$/i.test(file.path)), { path: "src/tb.v", content: cpuBench() },
+          ], input, modules, frontendFailure);
+          measurement.timings.frontend_check_ms = performance.now() - started;
+          measurement.status = "frontend-unsupported";
+          frontendUnsupported += 1;
+          return;
+        }
+        let sources = input.files.filter((file) => file.role !== "data" && /\.v$/i.test(file.path));
         if (language === "vhdl") {
           const ordered = orderVhdlFiles(input.files.filter((file) => file.role !== "data" && /\.(?:vhd|vhdl)$/i.test(file.path)));
           assert.equal(ordered.ok, true, JSON.stringify(ordered));
           const started = performance.now();
-          const generated = runGhdlSynth({ module: ghdlModule, librariesTree, files: ordered.order, top: "top", standard: "2008" });
+          const generated = runGhdlSynth({ module: ghdlModule, librariesTree, files: ordered.order, top: cpu ? "neorv32_bridge" : "top", standard: "2008" });
           measurement.timings.ghdl_wasm_ms = performance.now() - started;
           writeFileSync(path.join(workdir, "ghdl.log"), generated.log);
           assert.equal(generated.status, 0, generated.log);
-          sources = [{ path: "src/top.v", content: generated.verilog }, ...sources];
+          const generatedPath = cpu ? "src/neorv32-generated.v" : "src/top.v";
+          writeFileSync(path.join(workdir, generatedPath), generated.verilog);
+          sources = [{ path: generatedPath, content: generated.verilog }, ...sources];
+          measurement.ghdl_memory_bytes = generated.memoryBytes;
         }
         const source = sources.find((file) => file.path === "src/top.v");
         const command = verilogReadCommand(sources.map((file) => file.path), input);
+        if (cpu) {
+          const loweringStarted = performance.now();
+          runYosysWasi(workdir, source.content, cpuLoweringCommand(command));
+          const loweredNets = JSON.parse(readFileSync(path.join(workdir, "top.json"), "utf8")).modules.top.netnames;
+          for (const name of ["i_req", "i_ack"]) {
+            assert.ok(Object.hasOwn(loweredNets, name) && loweredNets[name].bits.length === 1 &&
+              Number.isSafeInteger(loweredNets[name].bits[0]), `The lowered CPU observation ${name} is missing or constant`);
+          }
+          measurement.timings.yosys_lowering_ms = performance.now() - loweringStarted;
+          for (const file of ["top.json", "yosys.stdout", "yosys.stderr"]) copyFileSync(path.join(workdir, file), path.join(workdir, `lowered-${file}`));
+        }
         const synthStarted = performance.now();
-        runYosysWasi(workdir, source.content, `${command}; synth_gowin -top top -json top.json`);
+        const synthesized = runYosysWasi(workdir, source.content, `${command}; ${gowinSynthesisCommand(board.id, "top", "top.json")}`);
         measurement.timings.yosys_wasi_ms = performance.now() - synthStarted;
+        measurement.yosys_memory_bytes = synthesized.memoryBytes;
         const netlist = JSON.parse(readFileSync(path.join(workdir, "top.json"), "utf8"));
-        measurement.timings.yosys_native_ms = runNativeYosys(workdir, `${command}; synth_gowin -top top -json native-top.json`);
+        measurement.timings.yosys_native_ms = runNativeYosys(workdir, `${command}; ${gowinSynthesisCommand(board.id, "top", "native-top.json")}`);
         assertYosysParity(JSON.parse(readFileSync(path.join(workdir, "native-top.json"), "utf8")), netlist);
         measurement.hashes.yosys_wasi = hash(readFileSync(path.join(workdir, "top.json")));
         measurement.hashes.yosys_native = hash(readFileSync(path.join(workdir, "native-top.json")));
         assert.ok(Object.keys(netlist.modules.top.cells).length > 0, "The library design was optimized away");
         assert.ok(Object.values(netlist.modules.top.cells).some((cell) => cell.type.startsWith("DFF")), "The library design has no retained state");
+        if (cpu) {
+          measurement.mapped_cpu_structure = inspectCpuStructure(netlist);
+          measurement.lowered_execution = assertCpuLoweredExecution(id, workdir, hash(readFileSync(path.join(workdir, "lowered-top.json"))));
+        }
         writeFileSync(path.join(workdir, "constraints/board.cst"), generateCst(board.id));
         const pnr = runWasi(workdir, pnrArgs(board));
-        assert.equal(pnr.status, 0, `${pnr.stderr}\n${pnr.error ?? ""}`);
         measurement.timings.pnr_wasi_ms = pnr.elapsed;
-        measurement.resources = parseDeviceUtilization(pnr.stderr);
-        const routedJson = readFileSync(path.join(workdir, "pnr.json"));
+        measurement.pnr_memory_bytes = pnr.memoryBytes;
         const nativeArgs = pnrArgs(board);
         nativeArgs[nativeArgs.indexOf("--write") + 1] = "native-pnr.json";
         const nativePnr = runNative(workdir, nativeArgs);
         writeFileSync(path.join(workdir, "native-pnr.stdout"), nativePnr.stdout);
         writeFileSync(path.join(workdir, "native-pnr.stderr"), nativePnr.stderr);
-        assert.equal(nativePnr.status, 0, `${nativePnr.stderr}\n${nativePnr.error ?? ""}`);
         measurement.timings.pnr_native_ms = nativePnr.elapsed;
+        measurement.pnr_exit_status = { wasi: pnr.status, native: nativePnr.status };
+        measurement.pnr_errors = {
+          wasi: executionErrorDetails(pnr.error),
+          native: executionErrorDetails(nativePnr.error),
+          native_signal: nativePnr.signal,
+        };
+        measurement.resources = parseDeviceUtilization(pnr.stderr, { allowExceeded: cpu });
+        assert.deepEqual(parseDeviceUtilization(nativePnr.stderr, { allowExceeded: cpu }), measurement.resources);
+        if (cpu && isCapacityExceeded(pnr, nativePnr, measurement.resources)) {
+          const componentRecipe = catalog.entries.find((entry) => entry.id === id).components.find((entry) => entry.id === component);
+          assert.ok(preflight || componentRecipe.boards[board.id] === "capacity-exceeded", "Unrecorded CPU capacity failure");
+          measurement.status = "capacity-exceeded";
+          capacityExceeded += 1;
+          return;
+        }
+        assert.equal(pnr.status, 0, `${pnr.stderr}\n${pnr.error ?? ""}`);
+        assert.equal(nativePnr.status, 0, `${nativePnr.stderr}\n${nativePnr.error ?? ""}`);
         assert.deepEqual(parseDeviceUtilization(nativePnr.stderr), measurement.resources);
+        const routedJson = readFileSync(path.join(workdir, "pnr.json"));
         const nativeRouted = readFileSync(path.join(workdir, "native-pnr.json"));
-        assert.equal(JSON.stringify(JSON.parse(nativeRouted)), JSON.stringify(JSON.parse(routedJson)), "Native/WASI PNR JSON differs (including key order)");
+        assert.equal(hash(JSON.stringify(JSON.parse(nativeRouted))), hash(JSON.stringify(JSON.parse(routedJson))), "Native/WASI PNR JSON differs (including key order)");
         measurement.hashes.pnr_wasi = hash(routedJson);
         measurement.hashes.pnr_native = hash(nativeRouted);
         const nativeWorkdir = path.join(workdir, "native");
@@ -309,6 +418,7 @@ test("pinned HDL libraries build from portable ZIP into all four board bitstream
         assert.deepEqual(Buffer.from(packed.fs), native.output, createDiffSummary(native.output, packed.fs));
         measurement.hashes.fs = hash(packed.fs);
         measurement.fs_bytes = packed.fs.length;
+        measurement.pack_memory_bytes = packed.memoryBytes;
         measurement.peak_rss_so_far_kib = process.resourceUsage().maxRSS;
         measurement.status = "passed";
         passedBoards += 1;
@@ -321,12 +431,15 @@ test("pinned HDL libraries build from portable ZIP into all four board bitstream
       });
     }
   } finally {
-    const expectedBoards = BOARDS.length * HDL_LIBRARY_CASES.length;
-    writeFileSync(path.join(directory, "summary.json"), JSON.stringify({ passed: passedBoards, expected: expectedBoards, pyodideSetupMs }, null, 2), { flag: "wx" });
-    if (passedBoards === expectedBoards && !keepEvidence) rmSync(directory, { recursive: true, force: true });
+    const expectedBoards = BOARDS.length * samples.length;
+    writeFileSync(path.join(directory, "summary.json"), JSON.stringify({ passed: passedBoards, capacity_exceeded: capacityExceeded, frontend_unsupported: frontendUnsupported, expected: expectedBoards, pyodideSetupMs }, null, 2), { flag: "wx" });
+    if (passedBoards + capacityExceeded + frontendUnsupported === expectedBoards && !keepEvidence) rmSync(directory, { recursive: true, force: true });
     else console.error(`Retained library-flow evidence: ${directory}`);
   }
-});
+}
+
+test("pinned HDL libraries build from portable ZIP into all four board bitstreams", (t) => libraryBuildMatrix(t));
+test("pinned CPU libraries retain execution and classify all four board builds", (t) => libraryBuildMatrix(t, { cpu: true }));
 
 test("invalid routed JSON and a missing Apicula wheel fail closed", async () => {
   await assert.rejects(

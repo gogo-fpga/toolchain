@@ -160,11 +160,15 @@ test("synthesis and simulation use the same verified closure without compiling l
   assert.equal(simulation.files.some(({ path }) => path === "src/top_tb.v"), true);
 });
 
-test("compiler flags remain individual quoted arguments and reject command or path injection", () => {
+test("Yosys option tokens remain unquoted while source paths are quoted and injection is rejected", () => {
   const options = { includeDirectories: ["libraries/primary/sources/rtl"], defines: { FLAG: "4'hc" } };
   const command = verilogReadCommand(["src/top.v"], options);
-  assert.equal(command, `read_verilog ${["-Ilibraries/primary/sources/rtl", "-DFLAG=4'hc", "src/top.v"].map(JSON.stringify).join(" ")}`);
-  for (const invalid of [{ defines: { FLAG: "1; shell" } }, { defines: { FLAG: Infinity } }, { includeDirectories: ["../escape"] }]) {
+  assert.equal(command, `read_verilog -Ilibraries/primary/sources/rtl -DFLAG=4'hc "src/top.v"`);
+  assert.equal(verilogReadCommand(["src/top.v"], { defines: { MESSAGE: '"A"' } }), 'read_verilog -DMESSAGE="A" "src/top.v"');
+  for (const invalid of [
+    { defines: { FLAG: "1; shell" } }, { defines: { FLAG: '"; shell' } }, { defines: { FLAG: "1\nshell" } },
+    { defines: { FLAG: "1\\nshell" } }, { defines: { FLAG: Infinity } }, { includeDirectories: ["../escape"] },
+  ]) {
     assert.throws(() => validateCompileOptions(invalid));
   }
   assert.throws(() => verilogReadCommand(["src/top.v; shell"]));

@@ -35,9 +35,9 @@ export function verilogReadCommand(paths, options = {}) {
   const args = [
     ...includeDirectories.map((path) => `-I${path}`),
     ...Object.entries(defines).map(([name, value]) => `-D${name}=${value}`),
-    ...paths,
+    ...paths.map((path) => JSON.stringify(path)),
   ];
-  return `read_verilog ${args.map((arg) => JSON.stringify(arg)).join(" ")}`;
+  return `read_verilog ${args.join(" ")}`;
 }
 
 export function isLibraryPath(path) {

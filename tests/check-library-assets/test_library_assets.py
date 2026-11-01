@@ -58,6 +58,26 @@ class LibraryAssetsTests(unittest.TestCase):
     def build(self):
         return library_assets.build_catalog(self.root, self.catalog, self.root / "assets")
 
+    def nested_license(self):
+        nested = self.source / "deps/core"
+        nested.mkdir(parents=True)
+        self.git(nested, "init", "-q")
+        (nested / "LICENSE").write_text("Copyright test upstream contributors\n", encoding="utf-8")
+        self.git(nested, "add", "LICENSE")
+        self.git(nested, "commit", "-q", "-m", "検証用の生成元ライセンス")
+        revision = self.git(nested, "rev-parse", "HEAD").strip()
+        (self.source / ".gitmodules").write_text(
+            '[submodule "deps/core"]\npath = deps/core\nurl = https://example.invalid/core.git\n',
+            encoding="utf-8",
+        )
+        self.git(self.source, "add", ".gitmodules")
+        self.git(self.source, "update-index", "--add", "--cacheinfo", f"160000,{revision},deps/core")
+        self.git(self.source, "commit", "-q", "-m", "検証用の入れ子の固定版")
+        self.revision = self.git(self.source, "rev-parse", "HEAD").strip()
+        self.git(self.root, "update-index", "--cacheinfo", f"160000,{self.revision},third_party/probe")
+        self.entry["license"]["files"].append("deps/core/LICENSE")
+        return nested, revision
+
     def test_approved_catalog_covers_all_22_candidates_without_duplicate_pins(self):
         catalog = json.loads((ROOT / "libraries/catalog.json").read_text(encoding="utf-8"))
         entries = library_assets.validate_catalog(catalog)
@@ -87,6 +107,39 @@ class LibraryAssetsTests(unittest.TestCase):
         (self.source / "probe.v").write_text("modified source\n", encoding="utf-8")
         self.build()
         self.assertEqual((self.root / "assets/probe/probe.v").read_text(), "module probe; endmodule\n")
+
+    def test_nested_license_keeps_pinned_bytes_and_provenance(self):
+        nested, revision = self.nested_license()
+        (nested / "LICENSE").write_text("modified checkout\n")
+        manifest = self.build()
+        record = manifest["entries"][0]["license"]["files"][1]
+        self.assertEqual(record["provenance"], [{
+            "path": "deps/core", "url": "https://example.invalid/core.git", "revision": revision,
+        }])
+        self.assertEqual((self.root / "assets" / record["asset"]).read_text(), "Copyright test upstream contributors\n")
+
+    def test_nested_license_rejects_missing_or_wrong_checkout_and_symlinks(self):
+        nested, _ = self.nested_license()
+        saved = nested.with_name("saved-core")
+        nested.rename(saved)
+        with self.assertRaisesRegex(ValueError, "Missing initialized nested"):
+            self.build()
+        nested.symlink_to(saved, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "submodule symlink"):
+            self.build()
+        nested.unlink()
+        saved.rename(nested)
+        self.git(nested, "commit", "--allow-empty", "-q", "-m", "検証用の別の生成元")
+        with self.assertRaisesRegex(ValueError, "nested checkout differs"):
+            self.build()
+        self.assertFalse((self.root / "assets").exists())
+
+    def test_nested_license_ignores_unpinned_worktree_url(self):
+        self.nested_license()
+        config = self.source / ".gitmodules"
+        config.write_text('[submodule "deps/core"]\npath = deps/core\nurl = file:///wrong\n')
+        self.assertEqual(self.build()["entries"][0]["license"]["files"][1]["provenance"][0]["url"],
+                         "https://example.invalid/core.git")
 
     def test_parameter_metadata_is_preserved_and_invalid_shapes_are_rejected(self):
         self.component["parameters"] = {"WIDTH": "8"}
@@ -182,11 +235,14 @@ class LibraryAssetsTests(unittest.TestCase):
             library_assets.validate_catalog(self.catalog)
 
     def test_release_sources_rebuild_without_git_and_reject_modified_files(self):
+        self.nested_license()
         manifest = self.build()
         archive = self.root / "archive"
         (archive / "libraries").mkdir(parents=True)
         shutil.copyfile(self.root / ".gitmodules", archive / ".gitmodules")
         shutil.copytree(self.source, archive / "third_party/probe", ignore=shutil.ignore_patterns(".git"))
+        (archive / "third_party/probe/deps/core/LICENSE").unlink()
+        library_assets.copy_nested_assets(self.root, manifest, archive)
         (archive / "third_party/probe/.gitcommit").write_text(self.revision + "\n")
         (archive / "libraries/source-manifest.json").write_text(json.dumps(manifest))
         with patch.object(library_assets, "git", side_effect=AssertionError("Git is unavailable")):
@@ -196,6 +252,32 @@ class LibraryAssetsTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "hash mismatch"):
             library_assets.build_catalog(archive, self.catalog, self.root / "corrupt")
         self.assertFalse((self.root / "corrupt").exists())
+
+    def test_nested_archive_export_rejects_provenance_and_hash_corruption(self):
+        self.nested_license()
+        manifest = self.build()
+        output = self.root / "archive"
+        output.mkdir()
+        for key, value in (("sha256", "0" * 64), ("provenance", []), ("size", 1)):
+            changed = copy.deepcopy(manifest)
+            asset = changed["entries"][0]["license"]["files"][1]
+            asset[key] = value if key != "provenance" else [{"path": "deps/core", "url": "https://wrong.invalid/", "revision": "1" * 40}]
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, "provenance or hash mismatch"):
+                library_assets.copy_nested_assets(self.root, changed, output)
+            self.assertEqual(list(output.iterdir()), [])
+
+    def test_nested_archive_rejects_invalid_provenance_shapes(self):
+        _, revision = self.nested_license()
+        entry = self.build()["entries"][0]
+        origin = {"path": "deps/core", "url": "https://example.invalid/core.git", "revision": revision}
+        invalid = [None, {}, [None], [dict(origin, path="../core")], [dict(origin, path="wrong")],
+                   [dict(origin, url=None)], [dict(origin, url="file:///core")],
+                   [dict(origin, revision=None)], [dict(origin, revision="main")], [origin, origin]]
+        for provenance in invalid:
+            changed = copy.deepcopy(entry)
+            changed["license"]["files"][1]["provenance"] = provenance
+            with self.subTest(provenance=provenance), self.assertRaises(ValueError):
+                library_assets.archive_file(self.root, "third_party/probe", changed, "deps/core/LICENSE")
 
 
 if __name__ == "__main__":

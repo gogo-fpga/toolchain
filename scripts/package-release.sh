@@ -297,6 +297,19 @@ while IFS=$'\t' read -r metadata path; do
     printf '%s\n' "$sha" > "$source_root/$path/.gitcommit"
   fi
 done <<< "$submodule_lines"
+python3 - "$root" "$source_root" <<'PY'
+import importlib.util
+import json
+from pathlib import Path
+import sys
+
+root, output = map(Path, sys.argv[1:])
+spec = importlib.util.spec_from_file_location("library_assets", root / "scripts/build-library-assets.py")
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+manifest = json.loads((output / "libraries/source-manifest.json").read_text(encoding="utf-8"))
+module.copy_nested_assets(root, manifest, output)
+PY
 python3 "$source_root/scripts/build-library-assets.py" \
   --root "$source_root" --output "$work/library-rebuild"
 cmp "$root/dist/libraries/catalog.json" "$work/library-rebuild/catalog.json"

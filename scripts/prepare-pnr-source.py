@@ -23,6 +23,8 @@ def main():
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--patch", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--translation-unit", choices=("common/place/placer_heap.cc", "himbaechel/uarch/gowin/globals.cc"),
+                        default="common/place/placer_heap.cc")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     destinations = (args.output.resolve(), args.output.with_suffix(".json").resolve())
@@ -39,7 +41,7 @@ def main():
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="prepare-", dir=args.output.parent) as temporary:
         directory = Path(temporary)
-        target = directory / "common/place/placer_heap.cc"
+        target = directory / args.translation_unit
         target.parent.mkdir(parents=True)
         target.write_bytes(original)
         patch_snapshot = directory / "input.patch"
@@ -57,6 +59,7 @@ def main():
         raise SystemExit("The source or patch changed during patch preparation")
     write_changed(args.output, patched)
     metadata = {
+        "translation_unit": args.translation_unit,
         "source_sha256": digest(original),
         "patch": args.patch.name,
         "patch_sha256": digest(patch),

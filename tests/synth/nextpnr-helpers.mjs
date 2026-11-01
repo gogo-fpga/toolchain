@@ -113,6 +113,7 @@ export function runNative(workdir, args) {
     stderr: result.stderr ?? "",
     elapsed: performance.now() - started,
     error: result.error,
+    signal: result.signal,
   };
 }
 
@@ -135,8 +136,10 @@ export function runYosysWasi(workdir, source, command = "read_verilog src/top.v;
   });
   let status = 1;
   let error;
+  let instance;
   try {
-    status = wasi.start(new WebAssembly.Instance(yosysModule, wasi.getImportObject()));
+    instance = new WebAssembly.Instance(yosysModule, wasi.getImportObject());
+    status = wasi.start(instance);
   } catch (caught) {
     error = caught;
   } finally {
@@ -146,6 +149,7 @@ export function runYosysWasi(workdir, source, command = "read_verilog src/top.v;
   const stderrText = readFileSync(path.join(workdir, "yosys.stderr"), "utf8");
   assert.equal(status, 0, `WASI Yosys synthesis failed:\n${stderrText}\n${error ?? ""}`);
   assert.ok(statSync(path.join(workdir, "top.json")).size > 0, "Yosys produced no JSON");
+  return { memoryBytes: instance.exports.memory.buffer.byteLength };
 }
 
 export function pnrArgs(board, cstPath = "constraints/board.cst") {

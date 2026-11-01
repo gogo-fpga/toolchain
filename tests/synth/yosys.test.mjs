@@ -7,6 +7,7 @@ import test from "node:test";
 import { performance } from "node:perf_hooks";
 import { WASI } from "node:wasi";
 import { createBlinkTemplate, TEMPLATE_PINS } from "../../web/lib/templates.mjs";
+import { verilogReadCommand } from "../../web/lib/libraries.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const wasmPath = path.join(root, "build/wasi/yosys/yosys.wasm");
@@ -96,6 +97,35 @@ function runWasi(workdir, command = synthCommand) {
     error,
   };
 }
+
+test("library include and literal define options reach the real native and WASI Yosys parsers", () => {
+  const workdir = mkdtempSync(path.join(root, "build/t5-yosys-options-"));
+  let passed = false;
+  try {
+    mkdirSync(path.join(workdir, "src/includes"), { recursive: true });
+    writeFileSync(path.join(workdir, "src/includes/probe.vh"), "`define CONSTANT `FLAG\n");
+    writeFileSync(path.join(workdir, "src/top.v"), '`include "probe.vh"\nmodule top(output [3:0] value, output [7:0] message); assign value=`CONSTANT; assign message=`MESSAGE; endmodule\n');
+    const command = `${verilogReadCommand(["src/top.v"], {
+      includeDirectories: ["src/includes"], defines: { FLAG: "4'hc", MESSAGE: '"A"' },
+    })}; hierarchy -check -top top; proc; opt; write_json top.json`;
+    for (const [backend, run] of [["native", runNative], ["wasi", runWasi]]) {
+      const result = run(workdir, command);
+      writeFileSync(path.join(workdir, `${backend}-options.stderr`), result.stderr);
+      assert.equal(result.status, 0, `${result.stderr}\n${result.error ?? ""}`);
+      const netlist = JSON.parse(readFileSync(path.join(workdir, "top.json"), "utf8"));
+      assert.deepEqual(netlist.modules.top.ports.value.bits, ["0", "0", "1", "1"]);
+      assert.deepEqual(netlist.modules.top.ports.message.bits, ["1", "0", "0", "0", "0", "0", "1", "0"]);
+      const broken = run(workdir, 'read_verilog "-Isrc/includes" "src/top.v"');
+      writeFileSync(path.join(workdir, `${backend}-quoted-option.stderr`), broken.stderr);
+      assert.notEqual(broken.status, 0);
+      assert.match(broken.stderr, /File `-Isrc\/includes' not found/);
+    }
+    passed = true;
+  } finally {
+    if (passed) rmSync(workdir, { recursive: true, force: true });
+    else console.error(`Retained Yosys option evidence: ${workdir}`);
+  }
+});
 
 function normalizeSourcePaths(document) {
   let substitutions = 0;
