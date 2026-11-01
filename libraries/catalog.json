@@ -100,7 +100,13 @@
       "deprecated": true,
       "status": "unverified",
       "reason": "代表部品の合成・動作と対応ボードは未検証です。",
-      "components": []
+      "components": [{
+        "id": "register", "label": "AXI Stream レジスター",
+        "sources": [{ "path": "rtl/axis_register.v", "language": "verilog" }],
+        "data": [], "dependencies": [], "includeDirectories": [], "defines": {},
+        "parameters": { "DATA_WIDTH": "8", "REG_TYPE": "2" },
+        "boards": { "tangnano1k": "unverified", "tangnano4k": "unverified", "tangnano9k": "unverified", "tangnano20k": "unverified" }
+      }]
     },
     {
       "id": "verilog-uart",
@@ -117,7 +123,17 @@
       "deprecated": true,
       "status": "unverified",
       "reason": "代表部品の合成・動作と対応ボードは未検証です。",
-      "components": []
+      "components": [{
+        "id": "uart", "label": "UART 送受信",
+        "sources": [
+          { "path": "rtl/uart_tx.v", "language": "verilog" },
+          { "path": "rtl/uart_rx.v", "language": "verilog" },
+          { "path": "rtl/uart.v", "language": "verilog" }
+        ],
+        "data": [], "dependencies": [], "includeDirectories": [], "defines": {},
+        "parameters": { "DATA_WIDTH": "8" },
+        "boards": { "tangnano1k": "unverified", "tangnano4k": "unverified", "tangnano9k": "unverified", "tangnano20k": "unverified" }
+      }]
     },
     {
       "id": "libfpga",
@@ -257,7 +273,13 @@
       "deprecated": true,
       "status": "unverified",
       "reason": "代表部品の合成・動作と対応ボードは未検証です。",
-      "components": []
+      "components": [{
+        "id": "read-register", "label": "AXI Lite 読み出しレジスター",
+        "sources": [{ "path": "rtl/axil_register_rd.v", "language": "verilog" }],
+        "data": [], "dependencies": [], "includeDirectories": [], "defines": {},
+        "parameters": { "DATA_WIDTH": "8", "ADDR_WIDTH": "8", "AR_REG_TYPE": "2", "R_REG_TYPE": "2" },
+        "boards": { "tangnano1k": "unverified", "tangnano4k": "unverified", "tangnano9k": "unverified", "tangnano20k": "unverified" }
+      }]
     },
     {
       "id": "verilog-ethernet",
@@ -274,7 +296,13 @@
       "deprecated": true,
       "status": "unverified",
       "reason": "代表部品の合成・動作と対応ボードは未検証です。",
-      "components": []
+      "components": [{
+        "id": "crc", "label": "CRC-16 計算",
+        "sources": [{ "path": "rtl/lfsr.v", "language": "verilog" }],
+        "data": [], "dependencies": [], "includeDirectories": [], "defines": {},
+        "parameters": { "LFSR_WIDTH": "16", "LFSR_POLY": "16'h1021", "LFSR_CONFIG": "GALOIS", "DATA_WIDTH": "8", "STYLE": "LOOP" },
+        "boards": { "tangnano1k": "unverified", "tangnano4k": "unverified", "tangnano9k": "unverified", "tangnano20k": "unverified" }
+      }]
     },
     {
       "id": "darkriscv",

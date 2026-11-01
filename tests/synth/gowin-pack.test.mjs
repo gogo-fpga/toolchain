@@ -22,6 +22,9 @@ import { createBlinkTemplate, generateCst } from "../../web/lib/templates.mjs";
 import { prepareLibrarySelection, verilogReadCommand } from "../../web/lib/libraries.mjs";
 import { changeProjectLibraries, prepareProjectInputs } from "../../web/lib/project.mjs";
 import { exportProjectZip, importProjectZip } from "../../web/lib/project-zip.mjs";
+import { runGhdlSynth } from "../../web/lib/ghdl-host.mjs";
+import { orderVhdlFiles } from "../../web/lib/vhdl-order.mjs";
+import { HDL_LIBRARY_CASES } from "../fixtures/libraries/cases.mjs";
 import { fsIdcode, fsIdcodeMatchesBoard } from "../../web/lib/fs-idcode.mjs";
 import {
   prepareGowinPackRuntime,
@@ -196,55 +199,64 @@ for (const board of BOARDS) {
   });
 }
 
-test("pinned libfpga builds from portable ZIP into all four board bitstreams", async (t) => {
-  const directory = mkdtempSync(path.join(root, "build/t5-gray-flow-"));
+function loadLibraryTree(directory) {
+  return Object.fromEntries(readdirSync(directory, { withFileTypes: true }).map((entry) => {
+    const pathname = path.join(directory, entry.name);
+    return [entry.name, entry.isDirectory() ? loadLibraryTree(pathname) : new Uint8Array(readFileSync(pathname))];
+  }));
+}
+
+test("pinned HDL libraries build from portable ZIP into all four board bitstreams", async (t) => {
+  const directory = mkdtempSync(path.join(root, "build/t5-library-flow-"));
   const assets = path.join(directory, "assets");
   let passedBoards = 0;
   try {
+    const ghdlRoot = path.resolve(root, process.env.GHDL_WASM_BUILD_ROOT ?? "build");
+    const ghdlModule = new WebAssembly.Module(readFileSync(path.join(ghdlRoot, "ghdl-wasm/ghdl-synth.wasm")));
+    const librariesTree = loadLibraryTree(path.join(ghdlRoot, "ghdl-native/lib/ghdl"));
     const built = spawnSync("python3", ["scripts/build-library-assets.py", "--output", assets], {
       cwd: root, encoding: "utf8", maxBuffer: 16 * 1024 * 1024,
     });
     assert.equal(built.status, 0, `${built.stderr}\n${built.error ?? ""}`);
     const catalog = JSON.parse(readFileSync(path.join(assets, "catalog.json"), "utf8"));
-    const added = await prepareLibrarySelection(
-      catalog, { id: "libfpga", component: "gray" },
-      (asset) => readFileSync(path.join(assets, asset.asset)), { requireConfirmed: false },
-    );
-    for (const board of BOARDS) {
-      await t.test(board.id, async () => {
-        const workdir = path.join(directory, board.id);
+    const matrix = HDL_LIBRARY_CASES.flatMap((sample) => BOARDS.map((board) => ({ ...sample, board })));
+    for (const { id, component, language, fixture, board } of matrix) {
+      const added = await prepareLibrarySelection(
+        catalog, { id, component },
+        (asset) => readFileSync(path.join(assets, asset.asset)), { requireConfirmed: false },
+      );
+      await t.test(`${id}/${board.id}`, async () => {
+        const workdir = path.join(directory, id, board.id);
         for (const part of ["src", "constraints", "tmp"]) mkdirSync(path.join(workdir, part), { recursive: true });
-        const template = createBlinkTemplate(board.id, "verilog");
-        template.files.set("src/top.v", `// SPDX-License-Identifier: BSD-3-Clause
-module top(input wire clk, output wire led);
-  reg [3:0] value = 0;
-  reg [3:0] delayed = 0;
-  wire [3:0] gray, decoded;
-  lfpga_bin2gray #(.WIDTH(4)) encoder (.bin(value), .gray(gray));
-  lfpga_gray2bin #(.WIDTH(4)) decoder (.gray(delayed), .bin(decoded));
-  always @(posedge clk) begin
-    value <= value + 1;
-    delayed <= gray;
-  end
-  assign led = gray[0] ^ decoded[1];
-endmodule
-`);
+        const template = createBlinkTemplate(board.id, language);
+        const sourcePath = language === "vhdl" ? "src/top.vhd" : "src/top.v";
+        template.files.set(sourcePath, readFileSync(path.join(root, "tests/fixtures/libraries", fixture)));
         const installed = await changeProjectLibraries(template.project, template.files, { add: added });
         const zip = await exportProjectZip(installed.project, installed.files);
         writeFileSync(path.join(workdir, "project.zip"), zip);
         const restored = await importProjectZip(zip);
         const input = await prepareProjectInputs(restored.project, restored.files);
-        assert.ok(input.files.some((file) => file.path === "libraries/libfpga/sources/rtl/math/lfpga_gray.v"));
+        assert.ok(input.files.some((file) => file.path.startsWith(`libraries/${id}/sources/`)));
         for (const file of input.files) {
           const target = path.join(workdir, file.path);
           mkdirSync(path.dirname(target), { recursive: true });
           writeFileSync(target, file.content);
         }
-        const source = input.files.find((file) => file.path === "src/top.v");
-        const command = verilogReadCommand(input.files.filter((file) => file.role !== "data" && /\.vh?$/i.test(file.path)).map((file) => file.path), input);
+        let sources = input.files.filter((file) => file.role !== "data" && /\.vh?$/i.test(file.path));
+        if (language === "vhdl") {
+          const ordered = orderVhdlFiles(input.files.filter((file) => file.role !== "data" && /\.(?:vhd|vhdl)$/i.test(file.path)));
+          assert.equal(ordered.ok, true, JSON.stringify(ordered));
+          const generated = runGhdlSynth({ module: ghdlModule, librariesTree, files: ordered.order, top: "top", standard: "2008" });
+          writeFileSync(path.join(workdir, "ghdl.log"), generated.log);
+          assert.equal(generated.status, 0, generated.log);
+          sources = [{ path: "src/top.v", content: generated.verilog }, ...sources];
+        }
+        const source = sources.find((file) => file.path === "src/top.v");
+        const command = verilogReadCommand(sources.map((file) => file.path), input);
         runYosysWasi(workdir, source.content, `${command}; synth_gowin -top top -json top.json`);
         const netlist = JSON.parse(readFileSync(path.join(workdir, "top.json"), "utf8"));
         assert.ok(Object.keys(netlist.modules.top.cells).length > 0, "The library design was optimized away");
+        assert.ok(Object.values(netlist.modules.top.cells).some((cell) => cell.type.startsWith("DFF")), "The library design has no retained state");
         writeFileSync(path.join(workdir, "constraints/board.cst"), generateCst(board.id));
         const pnr = runWasi(workdir, pnrArgs(board));
         assert.equal(pnr.status, 0, `${pnr.stderr}\n${pnr.error ?? ""}`);
@@ -256,6 +268,7 @@ endmodule
           loadPyodide: pyodideLoader, indexURL, apyculaWheelURL,
           netlistJson: routedJson, device: board.packDevice,
         });
+        writeFileSync(path.join(workdir, "pyodide.fs"), packed.fs);
         assertBoardIdcode(native.output, board);
         assertBoardIdcode(packed.fs, board);
         assert.deepEqual(Buffer.from(packed.fs), native.output, createDiffSummary(native.output, packed.fs));
@@ -263,7 +276,7 @@ endmodule
       });
     }
   } finally {
-    if (passedBoards === BOARDS.length) rmSync(directory, { recursive: true, force: true });
+    if (passedBoards === BOARDS.length * HDL_LIBRARY_CASES.length) rmSync(directory, { recursive: true, force: true });
     else console.error(`Retained failing library-flow evidence: ${directory}`);
   }
 });

@@ -22,6 +22,7 @@ import { prepareLibrarySelection } from "../../web/lib/libraries.mjs";
 import { changeProjectLibraries, prepareProjectInputs } from "../../web/lib/project.mjs";
 import { exportProjectZip, importProjectZip } from "../../web/lib/project-zip.mjs";
 import { createBlinkTemplate } from "../../web/lib/templates.mjs";
+import { HDL_LIBRARY_CASES } from "../fixtures/libraries/cases.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const buildRoot = path.resolve(root, process.env.GHDL_WASM_BUILD_ROOT ?? "build");
@@ -36,18 +37,14 @@ test("pinned VHDL libraries preserve their named library after portable ZIP impo
   const directory = mkdtempSync(path.join(root, "build/t5-vhdl-libraries-"));
   const assets = path.join(directory, "assets");
   let passed = 0;
-  const cases = [
-    ["colibri", "counter", "colibri-counter.vhd"],
-    ["open-logic", "gray", "open-logic-gray.vhd"],
-    ["hdl-modules", "handshake-pipeline", "hdl-modules-pipeline.vhd"],
-  ];
+  const cases = HDL_LIBRARY_CASES.filter(({ language }) => language === "vhdl");
   try {
     const built = spawnSync("python3", ["scripts/build-library-assets.py", "--output", assets], {
       cwd: root, encoding: "utf8", maxBuffer: 16 * 1024 * 1024,
     });
     assert.equal(built.status, 0, `${built.stderr}\n${built.error ?? ""}`);
     const catalog = JSON.parse(readFileSync(path.join(assets, "catalog.json"), "utf8"));
-    for (const [id, component, fixture] of cases) {
+    for (const { id, component, fixture } of cases) {
       await t.test(id, async () => {
         const added = await prepareLibrarySelection(
           catalog, { id, component },

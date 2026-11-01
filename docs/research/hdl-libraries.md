@@ -111,6 +111,23 @@ manifest とファイルのサイズ・SHA-256 を検査し、同じ部品の異
 
 `tests/synth/iverilog-wasm.test.mjs` は、固定した `libfpga/gray` を選択し、依存とライセンスを含む ZIP を往復してから native と WASM で動かします。幅8の全256入力について Gray 符号、逆変換、隣接符号の1ビット差を確認し、標準出力と VCD を照合します。期待値を変えた負の対照と、ZIP 内のソースを改変した場合の拒否も含みます。
 
-`tests/synth/gowin-pack.test.mjs` では、幅4の変換器と逆変換器をレジスターで接続し、各ボードのプロジェクトへ組み込みます。ZIP の往復後、共通の依存入力から WASI Yosys、WASI nextpnr、Pyodide の pack まで実行します。Tang Nano 1K・4K・9K・20K のすべてで、同じ配置配線結果を pack した native の `.fs` とバイト単位で一致すること、IDCODE が対象ボードに一致することを検査します。制約ファイルとデータを Verilog の入力に混入させません。失敗した試行の ZIP と工程別の出力は、`build/t5-gray-flow-*` に残します。
+### Verilog の残り4候補
+
+| 候補 / 部品 | 代表構成 |
+|---|---|
+| verilog-axis / register | 幅8、skid buffer。周期的に出力を停止・再開 |
+| verilog-uart / uart | 幅8、prescale 1。送信と受信を直結する loopback |
+| verilog-axi / read-register | 幅8のアドレスとデータ、AR・R とも skid buffer。受け取ったアドレスに対応する値を応答 |
+| verilog-ethernet / crc | 幅16、生成多項式 `0x1021`、Galois 方式。8ビットずつ処理 |
+
+これらは保守終了の候補です。原文の MIT ライセンスと保守状況を残し、Taxi へ自動で置き換えません。UART の3ソースは、送信、受信、接続用の順序を保持します。
+
+### 8候補共通の機能と bitstream の検査
+
+`tests/fixtures/libraries/cases.mjs` は、上記8候補の代表構成を定義します。`tests/synth/library-components.test.mjs` は、それぞれのソースとライセンスを ZIP で往復してから、独立した期待値で機能を検査します。VHDL は実 WASM の GHDL で生成した Verilog を Icarus で実行します。VHDL ソースを直接シミュレーションする検査ではなく、Web 画面の VHDL シミュレーターも追加しません。
+
+Gray 符号と剰余10のカウンターは周期ごとの期待値と照合します。CRC は、上流の並列回路とは別に、1ビットずつ計算する参照式を使います。パイプラインは停止・再開を含む値の順序、AXI Lite は要求したアドレスに対する応答、UART は全256通りの値を通る送受信を確認します。進行しない回路も失敗にします。Icarus の native と WASM で終了状態、標準出力、VCD を照合し、期待値を変える負の対照では双方が失敗することを確認します。ZIP 内のソースを改変した場合は、実行前にハッシュ検査で拒否します。
+
+`tests/synth/gowin-pack.test.mjs` は、同じ8構成を Tang Nano 1K・4K・9K・20K の各プロジェクトへ組み込みます。ZIP の往復後、共通の依存入力から WASI Yosys、WASI nextpnr、Pyodide の pack まで実行します。VHDL の前段には名前付き library を保持する GHDL を使います。同じ配置配線結果を pack した native の `.fs` とバイト単位で一致すること、IDCODE が対象ボードに一致することを検査します。制約ファイルとデータを Verilog の入力に混入させず、状態を持つ回路が残っていることも検査します。失敗した試行の ZIP と工程別の出力は、`build/t5-library-flow-*` に残します。
 
 これは上記の代表構成に対するツールの回帰検証です。ライブラリー全体、すべてのパラメーター、実機の動作を確認したという意味ではありません。実機の Tang Nano は本リポジトリでは試していない状態です。カタログの有効化は、残りの代表部品と測定記録の確認を含む T5 の検証で判断します。
