@@ -3,12 +3,14 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import test from "node:test";
+import test, { before } from "node:test";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const upstream = path.join(root, "vendor/nextpnr/common/place/placer_heap.cc");
 const patchFile = path.join(root, "patches/nextpnr/0002-stabilize-equal-coordinate-cuts.patch");
 const sha256 = (content) => createHash("sha256").update(content).digest("hex");
+
+before(() => mkdirSync(path.join(root, "build"), { recursive: true }));
 
 test("nextpnr numeric metadata requires the actual unique scalar placer compile definition", () => {
   const directory = mkdtempSync(path.join(root, "build/t5-pnr-numerics-check-"));
