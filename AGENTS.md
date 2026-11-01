@@ -71,6 +71,7 @@ Dependabot の PR を含むすべての更新で「vendor-update」スキルの�
 | `vendor-update` | 依存関係の変更履歴、採否、ライセンス、回帰テストの確認 |
 | `experiment-record` | 実験・測定・比較の計画、実行、再現できる記録 |
 | `fake-usb` | 仮想の FT2232・GOWIN TAP・NOR フラッシュの拡張と、負の対照 |
+| `document-structure` | 文書の意味単位による分割、索引・旧リンク・証拠の保持、サイズと例外の検査 |
 
 ## 8. yomiyasu（日本語推敲スキル）
 
@@ -86,7 +87,8 @@ Dependabot の PR を含むすべての更新で「vendor-update」スキルの�
 
 - 自明でない作業は、調査して深い計画を立ててから着手します。計画はリポジトリにコミットせず、チャットで共有します。
 - 調査の結果は `RESEARCH.md` にまとめ、大きな主題は `docs/research/<topic>.md` に分けて置き、`RESEARCH.md` の 7 章からリンクします。実験・測定・比較は「experiment-record」スキルに従って `docs/experiments/` に残します。結果を PR 本文だけに書きません。
-- `RESEARCH.md` が 40 KB を超えそうなときは、主題ごとに `docs/research/` へ分け、`RESEARCH.md` の 7 章の表に加えます。
+- 文書は目的・読者・主題・手順・証拠の意味単位で分け、索引と旧リンク、条件、失敗記録、ライセンス、原典を保持します。行数による切断や、上限を避けるだけの細分化はしません。手順は「document-structure」スキルに従います。
+- 追跡した Markdown は UTF-8 で20,000バイトを超えたら分割を検討し、40,000バイトを超えたら分割または理由付き例外を必須にします。上流原文・法的文書・生成証拠・一体性を保つ記録に限る例外は、`.github/document-size-allowlist.tsv` に正確なパス・種別・上限・理由を記録し、不要になったら削除します。
 - 文書の根拠に、VM や個人環境のパスを書きません。リポジトリ内のファイル、upstream のファイルと行番号、CI の成果物、公開 URL を示します。
 - 画面を変えたら、4 ボードのスクリーンショットを撮って目で確かめ、PR 本文に確かめた範囲を書きます。
 - 変更は小さく、主題ごとにまとめます。
@@ -130,6 +132,8 @@ python3 .github/scripts/check-pins.py consistency
 sh tests/check-pins/run.sh
 sh tests/check-jisx0213/run.sh
 sh tests/check-links/run.sh
+python3 .github/scripts/check-document-size.py
+sh tests/check-document-size/run.sh
 python3 -m venv "$HOME/.cache/toolchain-zizmor"
 "$HOME/.cache/toolchain-zizmor/bin/pip" install --require-hashes -r .github/zizmor-requirements.txt
 "$HOME/.cache/toolchain-zizmor/bin/zizmor" --offline --format=github .github/workflows/
