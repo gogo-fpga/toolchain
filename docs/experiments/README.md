@@ -47,4 +47,4 @@
 | [S15 P1 SAT反例の独立再実行](S15-formal-replay.md) | 元のVerilogをIcarusのnative/WASMで再実行し、壊した出力・resetを拒否 | 清浄なbf042daで210件成功。生CSV38行15列を監査。正式5回反復と画面統合は未完了 |
 | [S15 P1 VHDL・PSL property保持](S15-vhdl-formal.md) | 上流GHDLの解析とmonitorを再利用し、明示した形式出力をYosysへ渡す | 清浄な72080beで33件成功、生CSV44行11列を監査。PSL解析の失敗も記録。独立再実行と正式反復は未完了 |
 | [S15 P1 元VHDLの独立再実行](S15-vhdl-native-replay.md) | GHDL標準VPI・PSLレポートと独立VCDで反例を照合 | 清浄な同一commitで55件×5回とA/Aの2回成功。CSV全280行19列を監査。下位化後比較・追加fixtureは未完了 |
-| [S15 P1 VHDLと下位化Verilog](S15-vhdl-lowered-replay.md) | 上流Yosysで下位化し、元VHDLとIcarus native/WASMを比較 | 10成功fixtureと5境界fixture、全60行20列の監査を予備確認。正式反復は未完了 |
+| [S15 P1 VHDLと下位化Verilog](S15-vhdl-lowered-replay.md) | 上流Yosysで下位化し、元VHDLとIcarus native/WASMを比較 | 69件の5回反復とA/Aが成功。[生CSV](S15-vhdl-lowered-results.csv)全420行20列を[監査](S15-vhdl-lowered-audit.json)。失敗試行も保持 |
