@@ -189,6 +189,7 @@ test("GHDL synthesis reads project ROM data without analyzing data assets as VHD
   assert.equal(native.status, 0, native.output);
   const wasm = runWasm("rom_data", names);
   assert.equal(wasm.status, 0, wasm.log);
+  assert.match(wasm.log, /note: found ROM/);
   assert.equal(wasm.verilog, native.output, differenceSummary(native.output, wasm.verilog));
   assert.notEqual(runWasm("rom_data", ["rom-data.vhd"]).status, 0);
 });

@@ -2,7 +2,7 @@
 library ieee;
 use ieee.std_logic_1164.all;
 
-package shared is
+package shared_pkg is
   constant mask : std_logic_vector(3 downto 0) := x"5";
   function mix(value : std_logic_vector(3 downto 0)) return std_logic_vector;
 end package;

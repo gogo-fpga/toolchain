@@ -62,6 +62,7 @@ export function runGhdlSynth({
   const descriptors = new Map();
   let nextDescriptor = 100;
   const chunks = [];
+  const stdoutChunks = [];
   let instance;
   let memory;
   const bytes = () => new Uint8Array(memory.buffer);
@@ -91,8 +92,10 @@ export function runGhdlSynth({
     descriptor.position += count;
     return count;
   };
-  const emit = (value) => {
-    chunks.push(typeof value === "string" ? latin1Bytes(value) : new Uint8Array(value));
+  const emit = (value, fd = 1) => {
+    const content = typeof value === "string" ? latin1Bytes(value) : new Uint8Array(value);
+    chunks.push(content);
+    if (fd === 1) stdoutChunks.push(content);
   };
   const cString = (pointer) => {
     const content = bytes();
@@ -164,13 +167,13 @@ export function runGhdlSynth({
       const result = read(fd, bytes().subarray(pointer, pointer + size * count), size * count);
       return result < 0 ? 0 : Math.floor(result / size);
     },
-    fwrite: (pointer, size, count) => {
-      emit(bytes().subarray(pointer, pointer + size * count));
+    fwrite: (pointer, size, count, fd) => {
+      emit(bytes().subarray(pointer, pointer + size * count), fd);
       return count;
     },
-    fputs: (pointer) => {
+    fputs: (pointer, fd) => {
       const value = cString(pointer);
-      emit(value);
+      emit(value, fd);
       return value.length;
     },
     fgets: (pointer, size, fd) => {
@@ -195,8 +198,8 @@ export function runGhdlSynth({
       const value = new Uint8Array(1);
       return read(fd, value, 1) <= 0 ? -1 : value[0];
     },
-    putc: (value) => {
-      emit(Uint8Array.of(value & 0xff));
+    putc: (value, fd) => {
+      emit(Uint8Array.of(value & 0xff), fd);
       return value;
     },
     ungetc: (value, fd) => {
@@ -211,8 +214,8 @@ export function runGhdlSynth({
     __ghdl_get_stdout: () => 1,
     __ghdl_get_stderr: () => 2,
     __ghdl_get_stdin: () => 0,
-    putc_unlocked: (value) => {
-      emit(Uint8Array.of(value & 0xff));
+    putc_unlocked: (value, fd) => {
+      emit(Uint8Array.of(value & 0xff), fd);
       return value;
     },
     getc_unlocked: (fd) => {
@@ -223,7 +226,7 @@ export function runGhdlSynth({
       const descriptor = descriptors.get(fd);
       return !descriptor || descriptor.position >= descriptor.data.length ? 1 : 0;
     },
-    __ghdl_fprintf_g: (_fd, value) => emit(String(value)),
+    __ghdl_fprintf_g: (fd, value) => emit(String(value), fd),
     __ghdl_snprintf_fmtf: (pointer, length, _format, value) => {
       const text = String(value).slice(0, length - 1);
       for (let index = 0; index < text.length; index += 1) {
@@ -255,8 +258,8 @@ export function runGhdlSynth({
     gnat__os_lib__file_length: (fd) => descriptors.get(fd)?.data.length ?? -1,
     gnat__os_lib__read: (fd, pointer, length) =>
       read(fd, bytes().subarray(pointer, pointer + length), length),
-    gnat__os_lib__write: (_fd, pointer, length) => {
-      emit(bytes().subarray(pointer, pointer + length));
+    gnat__os_lib__write: (fd, pointer, length) => {
+      emit(bytes().subarray(pointer, pointer + length), fd);
       return length;
     },
     gnat__os_lib__spawn: () => -1,
@@ -352,7 +355,7 @@ export function runGhdlSynth({
     env: {},
     preopens: { "/": filesystem },
     stdout: emit,
-    stderr: emit,
+    stderr: (value) => emit(value, 2),
   });
   instance = new WebAssembly.Instance(module, { env, ...wasi.importObject });
   wasi.initialize(instance);
@@ -460,6 +463,7 @@ export function runGhdlSynth({
   chunks.length = 0;
   const selected = selectLibrary("work");
   if (selected !== 0) return libraryFailure(selected);
+  stdoutChunks.length = 0;
   stage = "synthesize";
   const [topPointer, topLength] = pushString(top.toLowerCase());
   let result;
@@ -472,7 +476,7 @@ export function runGhdlSynth({
   const output = log();
   return {
     status: result || 0,
-    verilog: result === 0 ? output : "",
+    verilog: result === 0 ? stdoutChunks.map(latin1String).join("") : "",
     log: output,
     stage,
     durationMs: performance.now() - started,
