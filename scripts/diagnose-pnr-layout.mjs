@@ -15,6 +15,7 @@ const root = path.resolve(import.meta.dirname, "..");
 const { values } = parseArgs({ options: {
   "case-dir": { type: "string" }, out: { type: "string" }, board: { type: "string" },
   repeats: { type: "string", default: "5" }, "native-binary": { type: "string" }, "wasm-binary": { type: "string" },
+  "native-share": { type: "string" }, "wasi-share": { type: "string" },
   router: { type: "string" },
   "expect-capacity": { type: "boolean", default: false },
 } });
@@ -28,6 +29,10 @@ const source = path.resolve(root, values["case-dir"]);
 const out = path.resolve(root, values.out);
 const executable = values["native-binary"] ? path.resolve(root, values["native-binary"]) : nativePath;
 const wasmExecutable = values["wasm-binary"] ? path.resolve(root, values["wasm-binary"]) : wasmPath;
+const nativeShare = values["native-share"] ? path.resolve(root, values["native-share"]) : nativeSharePath;
+const wasiShare = values["wasi-share"] ? path.resolve(root, values["wasi-share"]) : wasiSharePath;
+const nativeArgs = values["native-share"]
+  ? [...args, "--chipdb", path.join(nativeShare, `himbaechel/gowin/chipdb-${board.nextpnrFamily}.bin`)] : args;
 const wasm = new WebAssembly.Module(readFileSync(wasmExecutable));
 const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const input = readFileSync(path.join(source, "top.json"));
@@ -38,11 +43,11 @@ assert.equal(version.status, 0, version.stderr);
 const versionDirectory = path.join(out, "version-probe");
 mkdirSync(versionDirectory);
 mkdirSync(path.join(versionDirectory, "tmp"));
-const wasiVersion = runWasi(versionDirectory, ["--version"], wasiSharePath, wasm);
+const wasiVersion = runWasi(versionDirectory, ["--version"], wasiShare, wasm);
 assert.equal(wasiVersion.status, 0, `${wasiVersion.stderr}\n${wasiVersion.error ?? ""}`);
 const chipdbName = `himbaechel/gowin/chipdb-${board.nextpnrFamily}.bin`;
-const nativeChipdb = readFileSync(path.join(nativeSharePath, chipdbName));
-const wasiChipdb = readFileSync(path.join(wasiSharePath, chipdbName));
+const nativeChipdb = readFileSync(path.join(nativeShare, chipdbName));
+const wasiChipdb = readFileSync(path.join(wasiShare, chipdbName));
 assert.deepEqual(nativeChipdb, wasiChipdb, "Native/WASI chipdb inputs differ");
 const buildInfoHash = (binary) => {
   const file = path.join(path.dirname(binary), "build-info.json");
@@ -55,7 +60,8 @@ const metadata = {
     ? "Both backends must reject numeric overflow with matching placement-exhaustion diagnostics, not traps or signals; utilization must agree across all repeats. No routed-layout or performance success claim."
     : "All executions must succeed; each backend must be self-reproducible; utilization must agree. Cross-backend identity is recorded, not assumed.",
   expected_result: values["expect-capacity"] ? "capacity-exceeded" : "routed",
-  board: board.id, repeats, args,
+  board: board.id, repeats, args, native_args: nativeArgs,
+  shares: { native: path.relative(root, nativeShare), wasi: path.relative(root, wasiShare) },
   head: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(),
   submodules: execFileSync("git", ["submodule", "status"], { cwd: root, encoding: "utf8" }),
   working_tree: execFileSync("git", ["status", "--short"], { cwd: root, encoding: "utf8" }),
@@ -87,10 +93,10 @@ for (let repeat = 1; repeat <= repeats; repeat += 1) {
     mkdirSync(path.join(directory, "tmp"));
     writeFileSync(path.join(directory, "top.json"), input, { flag: "wx" });
     writeFileSync(path.join(directory, "constraints/board.cst"), cst, { flag: "wx" });
-    const native = values["native-binary"] ? (directory, args) => spawnSync(executable, args, {
+    const native = values["native-binary"] || values["native-share"] ? (directory) => spawnSync(executable, nativeArgs, {
       cwd: directory, encoding: "utf8", env: { ...process.env, TMPDIR: path.join(directory, "tmp") }, maxBuffer: 16 * 1024 * 1024,
     }) : runNative;
-    const run = backend === "native" ? native : (directory, args) => runWasi(directory, args, wasiSharePath, wasm);
+    const run = backend === "native" ? native : (directory, args) => runWasi(directory, args, wasiShare, wasm);
     const started = performance.now();
     const result = run(directory, args);
     runs[backend] = result;

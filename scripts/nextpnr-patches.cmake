@@ -50,6 +50,8 @@ function(toolchain_prepare_nextpnr_source)
   set_property(TARGET nextpnr_place PROPERTY INTERFACE_SOURCES "${patched_sources}")
   set_property(SOURCE "${patched_source}" TARGET_DIRECTORY nextpnr-himbaechel-gowin
     APPEND PROPERTY COMPILE_DEFINITIONS EIGEN_DONT_VECTORIZE)
+  set_property(SOURCE "${patched_source}" TARGET_DIRECTORY nextpnr-himbaechel-gowin
+    APPEND PROPERTY COMPILE_OPTIONS -ffp-contract=off)
   get_target_property(original_sources nextpnr-himbaechel-gowin-core INTERFACE_SOURCES)
   set(patched_sources)
   set(replacements 0)

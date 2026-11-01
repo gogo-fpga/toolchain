@@ -20,6 +20,8 @@ def main():
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--patch", type=Path)
     parser.add_argument("--keep-vectorization", action="store_true")
+    parser.add_argument("--fp-contract", choices=("off", "fast"))
+    parser.add_argument("--march", choices=("x86-64", "x86-64-v3"))
     parser.add_argument("--translation-unit", choices=("common/place/placer_heap.cc", "common/route/router1.cc", "himbaechel/uarch/gowin/globals.cc"),
                         default="common/place/placer_heap.cc")
     args = parser.parse_args()
@@ -63,12 +65,18 @@ def main():
             subprocess.run(["patch", "--batch", "--fuzz=0", "-p1", "-d", str(out / "source"),
                             "-i", str(args.patch.resolve())], stdout=log, stderr=log, check=True)
     options = [] if args.keep_vectorization else ["-DEIGEN_DONT_VECTORIZE"]
+    if args.fp_contract:
+        options.append(f"-ffp-contract={args.fp_contract}")
+    if args.march:
+        options.append(f"-march={args.march}")
     target_flags = [token for token in link if token.startswith("--target=")]
     command = [link[0], *target_flags, *flags["CXX_DEFINES"], *flags["CXX_INCLUDES"], *flags["CXX_FLAGS"],
                *options, "-iquote", str(source.parent), "-o", str(out / f"{unit.stem}.o"), "-c", str(patched)]
     link[objects[0]] = str(out / f"{unit.stem}.o")
     executable = out / original.name
     link[link.index("-o") + 1] = str(executable)
+    link = [f"-Wl,--dependency-file={out / 'link.d'}" if token.startswith("-Wl,--dependency-file=")
+            else token for token in link]
     metadata = {"purpose": __doc__, "translation_unit": str(unit), "compile": command, "link": link,
                 "source_sha256": sha256(source), "original_sha256": original_hash,
                 "original_object_sha256": sha256(original_object),

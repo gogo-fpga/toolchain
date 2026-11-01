@@ -85,6 +85,8 @@ python3 dist/serve.py --port 8000
 
 ネイティブ版は比較テストの参照用で、製品として配布するものではありません。比較には Yosys、nextpnr、Icarus Verilog の `--native` ビルドも必要です。
 
+nextpnrのheap placerは、Eigenのベクトル化と浮動小数点演算の縮約を無効にしてビルドします。[SERV / 20Kの固定条件の比較](docs/experiments/S14A-pnr-fp-contract.md)に根拠と制約を記録しました。native / WASIの配置JSONは、キー順やcreatorを置き換えずに比較します。
+
 ```sh
 scripts/build-synth-wasm.sh --native
 scripts/build-pnr-wasm.sh --native
