@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync, readdirSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { parseArgs } from "node:util";
+import { parseArgs, stripVTControlCharacters } from "node:util";
 import { pathToFileURL } from "node:url";
 import { createSatReplay, verifySatReplay } from "../web/lib/formal-replay.mjs";
 import { verifyGhdlReplay } from "../tests/synth/ghdl-replay-helpers.mjs";
@@ -80,7 +80,7 @@ export function inspectLoweredReplay(directory) {
         for (const observation of sat.observations) assert.ok(Number.isInteger(observation.exitCode) && observation.exitCode >= 0 && observation.exitCode <= 255, "Invalid Yosys process exit");
         if (name === "combinational-loop") {
           assert.equal(sat.observations[0].exitCode, 1);
-          assert.match(sat.observations[0].stdout, /Warning: Wire top\.\\ring is used but has no driver\./);
+          assert.match(stripVTControlCharacters(sat.observations[0].stdout), /Warning: Wire top\.\\ring is used but has no driver\./);
         }
         if (name.endsWith("initial")) {
           const doc = load(runtime === "native" ? `${base}/native/__formal/before.json` : `${base}/wasm-before.json`);
