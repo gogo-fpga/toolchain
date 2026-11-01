@@ -80,7 +80,7 @@ export function inspectLoweredReplay(directory) {
         for (const observation of sat.observations) assert.ok(Number.isInteger(observation.exitCode) && observation.exitCode >= 0 && observation.exitCode <= 255, "Invalid Yosys process exit");
         if (name === "combinational-loop") {
           assert.equal(sat.observations[0].exitCode, 1);
-          assert.match(sat.observations[0].stdout, /logic loop/i);
+          assert.match(sat.observations[0].stdout, /Warning: Wire top\.\\ring is used but has no driver\./);
         }
         if (name.endsWith("initial")) {
           const doc = load(runtime === "native" ? `${base}/native/__formal/before.json` : `${base}/wasm-before.json`);
