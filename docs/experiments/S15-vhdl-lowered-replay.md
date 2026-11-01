@@ -62,7 +62,29 @@ node scripts/audit-lowered-replay.mjs --sample build/S15/p1-vhdl-lowered-SAMPLE 
 
 監査はCSVを再解析し、全ての値を元のログ・JSON・Verilog・VCDと照合します。GHDL/Icarusの検査とpropertyの結び付けも再実行します。manifestにはrevision、作業tree、実行環境・ツールの版、binary/source hash、submodule一覧、GHDL build manifestと全証拠ファイルのhashを保存します。元の通常合成用GHDL資材と形式出力用資材を取り違えた場合も停止します。
 
-現時点では未コミットの予備検査69件が成功しています。正式な同一commit反復、A/A、提出commitの回帰と生CSVの記録は未完了です。T6 P2以降のソルバー、SBY/SMTBMC transport、形式検証のworker/UI、製品版の反復と配布閉包は別の残件です。Tang Nano実機は本リポジトリでは試していません。
+T6 P2以降のソルバー、SBY/SMTBMC transport、形式検証のworker/UI、製品版の反復と配布閉包は別の残件です。Tang Nano実機は本リポジトリでは試していません。
+
+## 正式反復とA/A
+
+正式反復の基準は`6c502038eaf71554f8a2da68efb1e7a9bf3bf901`です。各回のmanifestと監査器で未コミット差分がないことを確認しました。固定済みのGHDL・Yosys・Icarusを作り直さず再利用し、VPIプラグインだけを作り直しました。69件の検査を5回とA/Aの2回実行し、全7回が成功しました。
+
+各回60行20列のCSVを監査器で生ログから作り直して照合し、合計420行・8,400値を確認しました。[統合した生CSV](S15-vhdl-lowered-results.csv)は、元の20列に試行名の`sample`列を付けた21列です。[監査結果](S15-vhdl-lowered-audit.json)には各CSV、manifest、ソース、バイナリーのhashと実際の版、ホスト情報を残しています。
+
+| 試行 | 検査 | 比較成功 | 初期値を理由に再実行拒否 | 準備・memory非対応 | 有界内に違反なし | 所要時間の中央値 / 最小 / 最大（ms） |
+|---|---:|---:|---:|---:|---:|---|
+| repeat1 | 69/69 | 40 | 8 | 8 | 4 | 70.21 / 62.64 / 153.69 |
+| repeat2 | 69/69 | 40 | 8 | 8 | 4 | 70.62 / 62.82 / 117.35 |
+| repeat3 | 69/69 | 40 | 8 | 8 | 4 | 69.49 / 60.64 / 121.32 |
+| repeat4 | 69/69 | 40 | 8 | 8 | 4 | 71.15 / 64.57 / 145.39 |
+| repeat5 | 69/69 | 40 | 8 | 8 | 4 | 77.16 / 63.04 / 136.92 |
+| aa1 | 69/69 | 40 | 8 | 8 | 4 | 74.82 / 65.59 / 142.96 |
+| aa2 | 69/69 | 40 | 8 | 8 | 4 | 69.47 / 61.95 / 130.36 |
+
+時間は比較成功40行のGHDL、Icarus native/WASMの実行時間を行ごとに足した値です。ホストは2論理CPUのIntel Xeon、メモリー8,327,749,632バイト、Docker内のOS表示はUbuntu 26.04.1 LTSです。Node.js v24.21.0、GHDL 6.0.0（GNAT 14.3.0、mcode）、GCC 15.2.0、Yosys 0.70、Icarus 13.0を実際の出力で確認しました。速度設定の比較実験ではありません。
+
+A/Aを含む7回の全列を比較し、所要時間とGHDL VCDの日時を含むhash以外は一致しました。GHDLの生VCDは書き換えず保持し、各回の独立したVCD検査で値・時刻・ポートを照合しています。Icarus native/WASMのstdout・stderr・VCDは、各行の実行系間と反復間で全バイト一致しました。GHDLとIcarusの診断回数は上記の理由で別に保持し、最初の違反を比べます。
+
+生CSVのSHA-256は`740c6b9296134ed714ac99b110f579c4995a64d504b5f0bd25128f423ca7970d`です。予備・失敗試行も含む62,590ファイルの[hash目録](S15-vhdl-lowered-evidence.sha256)を保存しました。証拠ZIPは56,226,639バイト、SHA-256は`7afc0638d9349a591fdbeb30f027dcab2738a96ec527f4e6a86abb5c2e1eeeb1`です。大きなログとバイナリーはコミットせず、ZIPをセッションで共有します。
 
 ## ライセンスと配布
 
