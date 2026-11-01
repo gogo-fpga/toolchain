@@ -64,7 +64,7 @@ test("capacity classification requires matching diagnostics and rejects traps, s
   ]) assert.throws(() => isCapacityExceeded(badWasi, badNative, resources), assert.AssertionError);
 });
 
-test("BEL exhaustion requires matching diagnostics and overflow of the named resource", () => {
+test("BEL exhaustion requires matching diagnostics and overflow of the named resource bucket", () => {
   const resources = { LUT4: { used: 1153, total: 1152 }, DFF: { used: 10, total: 864 } };
   const stderr = "ERROR: Unable to place cell 'cpu.DPTR_DFFE_Q_1_D_LUT4_F', no BELs remaining to implement cell type 'LUT4'\n";
   const wasi = { status: 1, stderr };
@@ -76,6 +76,24 @@ test("BEL exhaustion requires matching diagnostics and overflow of the named res
     assert.throws(() => isCapacityExceeded({ ...wasi, stderr: broken }, { ...native, stderr: broken }, resources), assert.AssertionError);
   }
   assert.throws(() => isCapacityExceeded(wasi, { ...native, stderr: stderr.replace("cpu.DPTR", "cpu.other") }, resources), /diagnostics differ/);
+});
+
+test("LUT1 through LUT4 exhaustion requires overflow of the upstream Gowin LUT4 BEL bucket", () => {
+  const resources = { LUT4: { used: 2604, total: 1152 }, DFF: { used: 639, total: 864 } };
+  const run = (type, counts = resources) => {
+    const stderr = `ERROR: Unable to place cell 'cpu.cell', no BELs remaining to implement cell type '${type}'\n`;
+    return isCapacityExceeded({ status: 1, stderr }, { status: 125, stderr, signal: null }, counts);
+  };
+  for (const type of ["LUT1", "LUT2", "LUT3", "LUT4"]) {
+    assert.equal(run(type), true);
+    assert.throws(() => run(type, { LUT4: { used: 1, total: 1152 }, DFF: { used: 865, total: 864 } }), /bucket/);
+    assert.throws(() => run(type, { LUT3: resources.LUT4, DFF: resources.DFF }), /bucket/);
+    assert.throws(() => run(type, { LUT3: resources.LUT4, LUT4: { used: 1, total: 1152 } }), /bucket/);
+    assert.equal(run(type, { LUT4: { used: 1152, total: 1152 } }), false);
+  }
+  for (const type of ["LUT0", "LUT5", "LUT04", "lut3", "LUT4_extra", "DFF", "UNKNOWN", "__proto__", "constructor"]) {
+    assert.throws(() => run(type), assert.AssertionError);
+  }
 });
 
 test("mapped CPU inspection rejects missing CPU state, RAM, and constant outputs", () => {

@@ -115,6 +115,16 @@ router1 の arc hash に使うポインターと `size_t` を、名前の hash �
 
 この2件の修正後も、初回の失敗ログと測定行は変更しません。清浄な commit に固定した全体回帰を、別の出力先でやり直します。
 
+## 2回目の回帰で分かった LUT の資源名
+
+commit `fc82c688b5ae75c624dfa7677976363c8d1c7c4a` の2回目の全体回帰では、HDL の32組が全て成功しました。CPU の28組は、bitstream まで成功した18組、容量超過5組、frontend 非対応4組、検査の失敗1組でした。失敗したのは Hazard3・1K の容量分類だけで、下位化後の実行と LED 固定の負の対照は通りました。全体の検査は終了状態1であり、正式測定の入力には使いません。
+
+Hazard3・1K は LUT4 が2604/1152、DFF が639/864で、両系は同じセルについて `no BELs remaining to implement cell type 'LUT3'` と診断しました。終了状態は native が125、WASI が1で、native の signal はなく、WASI は `WebAssembly.Exception` でした。配置配線の出力はありません。同名の資源だけを調べる前回の条件では、資源表にない `LUT3` を数値超過へ対応させられませんでした。
+
+上流 nextpnr の固定版 `62e659ed6748e9f60b2a4aa25dd4fe79a9605881` では、`himbaechel/uarch/gowin/gowin.h` の `type_is_lut` が `LUT1` から `LUT4` を列挙し、`gowin.cc` の `GowinImpl::getBelBucketForCellType` が全てを物理資源 `LUT4` に割り当てています。検査器もこの4種類を `LUT4` の資源枠へ対応させ、対応先の数値超過を必須にします。診断そのものや測定行は書き換えません。他の種類は従来どおり同名の資源を使い、未知の種類や別資源だけの超過は拒否します。両系の診断、終了状態、例外と signal の条件も維持します。
+
+単体検査では4種類全ての対応を確かめ、`LUT0`、`LUT5`、`LUT04`、小文字、余分な接尾辞、prototype 名、`DFF` だけの超過、偽の `LUT3` 資源だけの超過を拒否します。実際の Hazard3 の両系の診断と資源表も再入力して確かめます。2回目の失敗ログと測定行は残し、修正を含む清浄な commit で3回目の回帰を別の出力先へ実行します。
+
 ## 正式な反復測定の手順
 
 `scripts/verify-pnr-library-matrix.mjs` は既存の HDL モードを維持し、`--kind cpu` で28組の分類を検査します。前提となる行、ZIP、netlist、配置配線、bitstream の hash と状態を読み、成功・容量超過・frontend 非対応で全組が埋まらなければ開始しません。清浄な commit、製品用バイナリー、ビルド情報、パッチ、chipdb、helper の hash を固定します。CPU モードでは実際の native / WASM Icarus の版とバイナリーも照合します。

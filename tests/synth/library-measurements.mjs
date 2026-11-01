@@ -24,9 +24,10 @@ export function isCapacityExceeded(wasi, native, resources) {
   assert.equal(diagnostics.length, 1, "Expected one capacity diagnostic");
   const exhausted = /^ERROR: Unable to place cell '[^'\r\n]+', no BELs remaining to implement cell type '(\w+)'$/.exec(diagnostics[0]);
   if (exhausted) {
-    const resource = resources[exhausted[1]];
-    assert.ok(Object.hasOwn(resources, exhausted[1]) && resource.used > resource.total,
-      "The exhausted BEL type has no numeric capacity overflow");
+    const bucket = /^LUT[1-4]$/.test(exhausted[1]) ? "LUT4" : exhausted[1];
+    const resource = resources[bucket];
+    assert.ok(Object.hasOwn(resources, bucket) && resource.used > resource.total,
+      "The exhausted BEL bucket has no numeric capacity overflow");
   } else {
     assert.match(diagnostics[0], /^ERROR: Unable to find legal placement for cell \S/);
   }
