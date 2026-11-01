@@ -37,6 +37,12 @@ jobs:
           shellcheck --version
           git ls-files -z -- '*.sh' | xargs -0 shellcheck
 
+      - name: 形式検証ソースの原文ライセンスを取得
+        run: |
+          git submodule update --init --depth 1 -- \
+            vendor/sby vendor/yices2 vendor/z3 \
+            vendor/boolector vendor/bitwuzla vendor/click
+
       - name: 固定値の整合性を検査
         run: python3 .github/scripts/check-pins.py consistency
 
