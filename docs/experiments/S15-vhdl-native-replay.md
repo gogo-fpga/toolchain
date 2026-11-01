@@ -73,6 +73,8 @@ node --test tests/web/formal-replay.test.mjs
 
 実装前後のWeb・SAT・元Verilog再実行の回帰205件も成功しました。作業コピーの初回は配布資材とsubmoduleの欠落、次はemsdkのtag未取得で失敗しました。固定版submoduleと配布資材を用意し、文書どおりemsdkのtagを取得して成功しています。製品のpinや判定条件は変更していません。
 
+結果を記録したcommitの最終検査では、VHDLの55件と全列監査は成功しましたが、同時に未取得のsubmoduleを初期化していたため、終了時の清浄状態の確認が失敗しました。Web回帰も未取得のColibriを検出して204件成功・1件失敗となりました。途中の成功だけで完了とはせず、全22候補と形式検証の6依存の固定版を取得し、初期化を終えてから同一commit検証をやり直します。この失敗ログも上書きせず保持します。
+
 ## 全列監査の再実行
 
 `scripts/audit-ghdl-replay.mjs`はCSVの全19列を元ファイル、再計算した判定、実行command・flags・終了状態、SATのproperty一覧と反例へ結び付けます。全40行の組合せ、ソースとbinaryのhash、ポート入力、stdout/stderr、VCD、PSLレポートと所要時間を調べます。CSVの各列の改変、行の欠落・重複、不完全なCSVを拒否する負の対照も統合検査に含めます。元の測定ファイルは変更せず、別ディレクトリーの入力で検査器を試します。`--preliminary`を指定した監査は清浄なcommitの正式結果と区別します。
