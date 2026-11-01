@@ -18,12 +18,19 @@
 | 出力先 | `build/t5-hdl-production-scalar-formal-2`。新規ディレクトリーとし、既存出力は上書きしない |
 | ホスト | Linux 6.8.0-1061-aws x64、Intel(R) Xeon(R) Processor、論理CPU 2、メモリー8,327,749,632バイト |
 | Node.js | 実際の実行版 `v24.21.0` |
+| 実nextpnr | 全35caseのnative / WASIの実行版が `nextpnr-0.11.1` で一致 |
 | 負荷 | CPU側の正式反復を並行実行。開始時load averageは0.22 / 0.80 / 1.24、終了時は2.52 / 1.52 / 1.45 |
 | 計時範囲 | 配置配線の実行だけ。WASM moduleのコンパイル、前提回帰の合成・下位化・packは繰り返しの計時に含めない |
 
 前提の全体回帰と今回の反復は、別のcommitの記録です。前提の各入力、ZIP、netlist、制約、出力と状態を読んで照合しましたが、前提の合成やpackを新しいcommitで再実行したとは書きません。CSVの `matrix_` 列も前提回帰の値で、各5回の再測定ではありません。
 
 測定スクリプトのSHA-256は `2076e35088fc4eb4f235ac9c2883b66fbcbd77d7fa937e244a33db277d63e669` です。helperのhash、全submoduleの固定版、chipdbとパッチのhashは[metadata](S14-production-hdl-metadata.json)に保存しました。実行中のスクリプト、バイナリー、入力、HEADを変更せず、終了後にも固定値を照合しました。
+
+nextpnrの版はタグだけから推定せず、対照を含む全35caseのmetadataに保存した両backendの `--version` の出力を読み、一致を確認しました。
+
+```text
+"nextpnr-himbaechel-gowin" -- Next Generation Place and Route (Version nextpnr-0.11.1)
+```
 
 ### 再利用した製品用バイナリー
 
