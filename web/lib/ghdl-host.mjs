@@ -50,7 +50,12 @@ export function runGhdlSynth({
   files,
   top,
   standard = "2008",
+  formal = false,
+  psl = false,
 }) {
+  if (typeof formal !== "boolean" || typeof psl !== "boolean" || psl && !formal) {
+    throw new TypeError("Invalid GHDL formal or PSL setting");
+  }
   const standardCode = standard === "2008" ? 8 : standard === "2019" ? 19 : 0;
   if (!standardCode) throw new TypeError(`Unsupported VHDL standard: ${standard}`);
   const tree = { ghdl: { lib: { ghdl: librariesTree } }, tmp: {} };
@@ -407,6 +412,20 @@ export function runGhdlSynth({
       stage,
       durationMs: performance.now() - started,
       memoryBytes: memoryBytes(),
+    };
+  }
+
+  if (typeof exports.synth_api__synth_set_formal === "function") {
+    if (exports.synth_api__synth_set_formal(Number(formal), Number(psl)) !== 0) {
+      return {
+        status: -1, verilog: "", log: "GHDL rejected formal or PSL settings", stage,
+        durationMs: performance.now() - started, memoryBytes: memoryBytes(),
+      };
+    }
+  } else if (formal || psl) {
+    return {
+      status: -1, verilog: "", log: "GHDL WASM does not support formal or PSL settings", stage,
+      durationMs: performance.now() - started, memoryBytes: memoryBytes(),
     };
   }
 

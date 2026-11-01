@@ -1436,6 +1436,20 @@ jobs:
         run: |
           chmod +x build/iverilog-native/output/ivlpp build/iverilog-native/output/ivl build/iverilog-native/output/vvp
           chmod +x build/native/yosys build/native/yosys-abc build/native/nextpnr/nextpnr-himbaechel-gowin
+          chmod +x build/ghdl-native/bin/ghdl
+
+      - id: formal-vhdl
+        name: VHDLとPSLの性質をGHDLとYosysで照合
+        run: node --test --test-concurrency=1 tests/synth/formal-vhdl.test.mjs
+
+      - name: VHDL形式検証の入力・一覧・反例・CSVを保存
+        if: always() && steps.formal-vhdl.outcome != 'skipped'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ci-formal-vhdl-${{ github.run_id }}
+          path: build/S15/p1-vhdl-*/
+          if-no-files-found: error
+          retention-days: 7
 
       - id: formal-replay
         name: 元のVerilogでSAT反例を独立に再実行

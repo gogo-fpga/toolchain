@@ -39,7 +39,13 @@ P0でソースの静的調査と依存確認を行い、S15の事前基準をコ
 
 GHDLでは [synth-flags.ads](https://github.com/ghdl/ghdl/blob/e589c698c351369ac5bcfe7abe1f1152ac5d4727/src/synth/synth-flags.ads) の `Flag_Formal` の初期値がTrueです。当初は [netlists-disp_verilog.adb](https://github.com/ghdl/ghdl/blob/e589c698c351369ac5bcfe7abe1f1152ac5d4727/src/synth/netlists-disp_verilog.adb) に `Id_Assert`、`Id_Assume`、`Id_Cover` があることから、plain assertionの保持候補としました。P1で各出力を読むと、assertは `$fatal`、assumeとcoverはVHDL風の文を出しており、そのままYosysの形式propertyへ渡せる出力ではありません。この点を未確認のまま対応済みにはしません。
 
-PSLコメントの解析は [vhdl-scanner.ads](https://github.com/ghdl/ghdl/blob/e589c698c351369ac5bcfe7abe1f1152ac5d4727/src/vhdl/vhdl-scanner.ads) の `Flag_Psl_Comment` が既定でFalseです。既存のWASM APIにはこれを選ぶ引数がありません。plain assertionとPSLを分け、上流の解析・合成を維持しながら、明示的な形式出力と解析フラグを接続する必要があります。通常の合成出力を黙って変更せず、変更が必要なら `patches/` へ記録します。現在のWASMでの保持とPSLの対応範囲は、引き続き未確認です。
+PSLコメントの解析は [vhdl-scanner.ads](https://github.com/ghdl/ghdl/blob/e589c698c351369ac5bcfe7abe1f1152ac5d4727/src/vhdl/vhdl-scanner.ads) の `Flag_Psl_Comment` が既定でFalseです。当初のWASM APIにはこれを選ぶ引数がありませんでした。P1では`runGhdlSynth({ formal: true, psl: true })`を追加し、上流[options.adbの`-fpsl`](https://github.com/ghdl/ghdl/blob/e589c698c351369ac5bcfe7abe1f1152ac5d4727/src/options.adb#L250-L252)と同じ`Flag_Psl_Comment`・`Flag_Comment_Keyword`を設定します。前者だけを設定した初回のWASMではPSLが消えたため、失敗記録を残して両方を接続し直しました。PSLだけの選択、非boolean設定、形式設定APIのない旧WASMでの形式出力は拒否します。旧WASMの通常合成は維持します。
+
+GHDLの解析とmonitor生成は変更せず、`patches/ghdl/formal-verilog.patch`で明示した形式出力だけを追加します。`Build_Assert`・`Build_Assume`・`Build_Cover`・`Build_Assert_Cover`のgateを`$assert`・`$assume`・`$cover`へ渡し、activation coverをassertとして数えません。nativeの比較用CLIは`formal-verilog-driver.patch`の`--formal-verilog`、Yosysは明示した`internalCells: true`で`read_verilog -formal -icells`を使います。通常合成と通常のVerilog入力は変えません。
+
+labelは上流GHDLが生成した小文字のinstance名として保持します。sourceは元のファイル名・開始行・列で、完全な原文範囲ではありません。位置がないgateは出力を止めます。上流[synth-vhdl_stmts.adb](https://github.com/ghdl/ghdl/blob/e589c698c351369ac5bcfe7abe1f1152ac5d4727/src/synth/synth-vhdl_stmts.adb#L4835-L4880)はactive stateがあるPSL assertionだけにactivation coverを追加します。単純な`always`へcoverを必須とした検査は誤りでした。期待数を直すとともに、`a = '1' -> next (count < 3)`を別に加え、`p_bound_cover`がcoverとして残ることを確認します。
+
+`tests/synth/formal-vhdl.test.mjs`は、native/WASMのGHDL出力全バイトとproperty一覧、元のlabel・source・種類、N-1/N/N+1、両clock極性、矛盾するassume、PSL無効・不正入力と旧APIの拒否を検査します。manifestのpatch・API source hash、native binary hash、WASMのSHA-256を実ファイルと照合します。結果と失敗は[S15の診断記録](../experiments/S15-vhdl-formal.md)へ保存します。一般の階層・library・memory・X・複数clock、VHDL原文による反例の独立再実行、正式5回反復はこの層では未確認です。
 
 比較にはproperty数とID、0件、途中で消えたassertion、矛盾したassume、clock/reset、初期状態、X、ROM初期化、メモリー、組合せループ、ライブラリーのソース依存を含めます。最初に違反する深さがNの入力で、N-1・N・N+1の境界を調べます。反例は元の回路で独立に再実行し、VCDとpropertyを照合します。複数の正しいモデルがあり得るため、反例の全バイト一致だけを正しさの条件にはしません。
 

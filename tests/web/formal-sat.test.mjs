@@ -29,13 +29,15 @@ test("SAT scripts fix command and input boundaries without overriding initial st
   assert.match(scripts.proof, /-prove-asserts -verify/);
   assert.doesNotMatch(Object.values(scripts).join("\n"), /-set-init-zero|-ignore-unknown-cells|-sv|exec|plugin/);
   assert.match(createSatScripts({ ...config, mode: "prove" }).proof, /-tempinduct -maxsteps 4/);
+  assert.doesNotMatch(scripts.prepare, /-icells/);
+  assert.match(createSatScripts({ ...config, internalCells: true }).prepare, /read_verilog -formal -icells/);
   for (const change of [
     { sources: [] }, { sources: ["src/top.v", "src/top.v"] }, { sources: ["src/top.sv"] },
     { sources: ["../top.v"] }, { sources: ["/top.v"] }, { sources: ["a; shell.v"] },
     { sources: ["__formal/injected.v"] }, { includeDirs: ["../escape"] },
     { includeDirs: ["src\nexec"] }, { includeDirs: [null] }, { top: "top; shell" },
     { top: "-top" }, { mode: "cover" }, { depth: 0 }, { depth: 1001 }, { depth: "4" },
-    { timeout: 0 }, { timeout: 301 },
+    { timeout: 0 }, { timeout: 301 }, { internalCells: 1 }, { internalCells: "true" },
   ]) assert.throws(() => createSatScripts({ ...config, ...change }));
 });
 

@@ -16,7 +16,8 @@ function sourcePath(value) {
   return value;
 }
 
-export function createSatScripts({ sources, includeDirs = [], top, mode = "bmc", depth = 20, timeout = 30 }) {
+export function createSatScripts({ sources, includeDirs = [], top, mode = "bmc", depth = 20, timeout = 30, internalCells = false }) {
+  if (typeof internalCells !== "boolean") throw new TypeError("Invalid internal formal cell setting");
   if (typeof top !== "string" || !/^[A-Za-z_][A-Za-z0-9_$]*$/.test(top)) {
     throw new Error("Invalid formal top identifier");
   }
@@ -39,7 +40,7 @@ export function createSatScripts({ sources, includeDirs = [], top, mode = "bmc",
     }
     return `-I${directory}`;
   });
-  const read = paths.map((pathname) => `read_verilog -formal ${includes.join(" ")} "${pathname}"`);
+  const read = paths.map((pathname) => `read_verilog -formal ${internalCells ? "-icells " : ""}${includes.join(" ")} "${pathname}"`);
   const prepared = `read_rtlil ${prefix}prepared.il; chformal -cover -remove; delete t:$print`;
   const common = `-set-assumes -show-ports -show-regs -timeout ${timeout}`;
   return {
