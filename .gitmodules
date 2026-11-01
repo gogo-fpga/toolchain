@@ -160,3 +160,28 @@
 	url = https://github.com/fpganinja/taxi.git
 	shallow = true
 	branch = master
+[submodule "vendor/sby"]
+	path = vendor/sby
+	url = https://github.com/YosysHQ/sby.git
+	branch = main
+	shallow = true
+[submodule "vendor/yices2"]
+	path = vendor/yices2
+	url = https://github.com/SRI-CSL/yices2.git
+	shallow = true
+[submodule "vendor/z3"]
+	path = vendor/z3
+	url = https://github.com/Z3Prover/z3.git
+	shallow = true
+[submodule "vendor/boolector"]
+	path = vendor/boolector
+	url = https://github.com/Boolector/boolector.git
+	shallow = true
+[submodule "vendor/bitwuzla"]
+	path = vendor/bitwuzla
+	url = https://github.com/bitwuzla/bitwuzla.git
+	shallow = true
+[submodule "vendor/click"]
+	path = vendor/click
+	url = https://github.com/pallets/click.git
+	shallow = true

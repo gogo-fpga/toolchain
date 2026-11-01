@@ -2,6 +2,24 @@
 
 本リポジトリー自体は BSD-3-Clause です。以下に、配布物に含める第三者のライセンスを記録します。
 
+## 形式検証の候補ソース
+
+以下はT6の調査・ビルド候補のソース登録です。形式検証バイナリーはまだ含めません。採用commitはRESEARCHとgitlink、GMPの版とSHA-256はRESEARCHのarchive表を正とします。[固定ソース・依存・配布条件](docs/research/formal-sources.md)に、取得失敗、署名鍵の期限切れ、未採用の補助依存も記録しています。
+
+| ソース | 原本の著作権表示とライセンス | Web ZIPの原文 |
+|---|---|---|
+| SBY | Claire Xenia Wolf、ISC | `licenses/sby-COPYING` |
+| Yices2 | SRI International、GPL-3.0-or-later | `licenses/yices2-LICENSE.txt` |
+| Z3 | Microsoft Corporation、MIT | `licenses/z3-LICENSE.txt` |
+| Boolector | authors and contributors and their institutional affiliations、MIT | `licenses/boolector-COPYING` |
+| Bitwuzla | authors and contributors and their institutional affiliations、MIT | `licenses/bitwuzla-COPYING` |
+| Click | Pallets、BSD-3-Clause | `licenses/click-LICENSE.txt` |
+| GMP | Free Software Foundation、LGPL-3.0-or-later OR GPL-2.0-or-later。ファイル別の条件も原archiveで保持 | `licenses/gmp-COPYING`、`gmp-COPYINGv2`、`gmp-COPYINGv3`、`gmp-COPYING.LESSERv3`（いずれも同じlicensesディレクトリー） |
+
+ソース6件は各vendorディレクトリー、GMPはsource archive内の `vendor/formal-archives/` に原archiveを収めます。MPFR、SymFPU、libpoly、CUDD、SAT backendは、この段階では追加配布せず、有効化もしません。実際に有効にするprofileごとにソースとライセンスを確認して追加します。
+
+## 既存の実行資材と開発依存
+
 以下の固定版を使用しています。コミットは `vendor/` の gitlink に記録した値です。
 
 | 部品 | 固定版 / commit | ライセンス | WASM への静的リンク / 開発用 | web zip 内のライセンスファイル |

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 from pathlib import Path, PurePosixPath
 import posixpath
@@ -83,6 +84,19 @@ def audit(root: Path, source: Path, generated: Path, version: str, revision: str
     require(bool(re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._+-]*", version)), "Invalid release version")
     require(bool(re.fullmatch(r"[0-9a-f]{40}", revision)), "Expected full source revision")
     require(not (source / ".git").exists(), "Source must not contain Git metadata")
+    formal_licenses = {}
+    formal_source_licenses = {}
+    gitmodules = subprocess.check_output(["git", "-C", str(root), "ls-tree", revision, ".gitmodules"])
+    if gitmodules and b"path = vendor/sby" in git_bytes(root, revision, ".gitmodules"):
+        spec = importlib.util.spec_from_file_location("formal_sources", root / "scripts/prepare-formal-sources.py")
+        formal = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(formal)
+        formal_archive = formal.archive_pin(root)
+        archive_root = source / "vendor/formal-archives"
+        formal_licenses = formal.verify_archive(archive_root / formal_archive["asset"], formal_archive)
+        formal_source_licenses = formal.pin_checker(root).FORMAL_SOURCES
+        require(json.loads((archive_root / "manifest.json").read_text()) == {"gmp": formal_archive},
+                "Formal source manifest mismatch")
     metadata = json.loads((source / "RELEASE-SOURCE.json").read_text())
     require(metadata["commit"] == revision and metadata["version"] == version, "Release metadata mismatch")
     catalog_bytes = (root / "dist/libraries/catalog.json").read_bytes()
@@ -124,6 +138,12 @@ def audit(root: Path, source: Path, generated: Path, version: str, revision: str
             expected = git_bytes(root, revision, name)
             require((source / name).read_bytes() == expected, f"Source notice mismatch: {name}")
             require(web.read(web_prefix + name) == expected, f"Web ZIP notice mismatch: {name}")
+        for name, contents in formal_licenses.items():
+            require(web.read(web_prefix + "licenses/gmp-" + name) == contents, "GMP ZIP license mismatch")
+        for name, license_path in formal_source_licenses.items():
+            expected = (source / "vendor" / name / license_path).read_bytes()
+            require(bool(expected) and web.read(web_prefix + f"licenses/{name}-{license_path}") == expected,
+                    "Formal source ZIP license mismatch")
         for location, prefix in [(root / "dist/surfer/licenses", "surfer/licenses/"), (root / "licenses", "licenses/")]:
             require(location.is_dir() and bool(files(location)), f"Missing license directory: {prefix}")
             for relative in files(location):
