@@ -1,6 +1,7 @@
 import {
   createMemoryTree,
   runWasiP1,
+  setTreeEntry,
   treeToObject,
 } from "./wasi-p1.mjs";
 
@@ -20,15 +21,19 @@ function insertFile(tree, path, content) {
   if (!parts.length) throw new TypeError("A file path is required");
   let directory = tree;
   for (const part of parts.slice(0, -1)) {
-    directory[part] ??= {};
-    if (typeof directory[part] !== "object" || directory[part] instanceof Uint8Array) {
+    if (!Object.hasOwn(directory, part)) setTreeEntry(directory, part, {});
+    if (
+      directory[part] === null ||
+      typeof directory[part] !== "object" ||
+      directory[part] instanceof Uint8Array
+    ) {
       throw new TypeError(`Path component is not a directory: ${part}`);
     }
     directory = directory[part];
   }
   const name = parts.at(-1);
-  if (directory[name] !== undefined) throw new TypeError(`Duplicate in-memory path: ${path}`);
-  directory[name] = content;
+  if (Object.hasOwn(directory, name)) throw new TypeError(`Duplicate in-memory path: ${path}`);
+  setTreeEntry(directory, name, content);
 }
 
 function writeFile(root, path, content) {

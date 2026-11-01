@@ -1,7 +1,7 @@
-const locationPattern = /^(.+\.(?:v|sv|vhd|vhdl|cst)):(\d+)(?::(\d+))?:\s*(.*)$/i;
+const locationPattern = /^((?:\/?work\/)?[^:]+\.(?:v|vh|sv|vhd|vhdl|cst)):(\d+)(?::(\d+))?:\s*(.*)$/i;
 
 export function parseToolDiagnostics(tool, text) {
-  if (!["ghdl", "yosys", "nextpnr", "gowin_pack"].includes(tool)) {
+  if (!["ghdl", "yosys", "nextpnr", "gowin_pack", "ivlpp", "ivl", "vvp"].includes(tool)) {
     throw new TypeError(`Unsupported diagnostic tool: ${tool}`);
   }
   const diagnostics = [];
@@ -9,6 +9,7 @@ export function parseToolDiagnostics(tool, text) {
     const line = rawLine.replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "").trim();
     if (!line) continue;
     const location = line.match(locationPattern);
+    const file = location?.[1].replace(/^\/?work\//, "");
     const severity = /\b(?:warning|warn)\b/i.test(line)
       ? "warning"
       : /\b(?:info|note)\b/i.test(line)
@@ -16,7 +17,7 @@ export function parseToolDiagnostics(tool, text) {
         : "error";
     if (location) {
       diagnostics.push({
-        file: location[1],
+        file,
         line: Number(location[2]),
         ...(location[3] ? { column: Number(location[3]) } : {}),
         severity,

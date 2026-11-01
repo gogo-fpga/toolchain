@@ -121,6 +121,8 @@ WASI SDK 34.0 の [C++ exception documentation](https://raw.githubusercontent.co
 
 WASI では `dlopen` / `dlsym` を使えないため、`IVL_STATIC_TARGET` で vvp target を静的に解決し、`IVL_STATIC_SYSTEM_VPI` で `system.vpi` の startup table を静的に組み込みます。`system` 以外の VPI module は拒否します。driver `iverilog` と動的 VPI はこの段階では提供しません。`vvp/schedule.cc` の POSIX signal handler は WASI では無効にし、no-op の capture/revert を使います。`$finish` での終了は試験しましたが、signal による中断は未対応です。
 
+`ivlpp -L` が出力する line directive により、WASI `ivl` の構文エラーも `work/src/<file>.v:<line>` として元の Verilog ファイルと行を示します。構文エラー fixture でこの出力を確認し、Worker 側で `work/` prefix を除いて問題一覧とエディター診断へ渡します。
+
 native build で zlib が検出された場合だけ static `system.vpi` の link に `-lz` を渡します。WASI configure は zlib を検出せず、WASI artifact は zlib API に依存しません。WASI Preview 1 shim の `poll_oneoff` は `NOSYS` を返しますが、host callback による計測で7 fixture と4 board template の positive simulation path から呼ばれないことを確認しました。VCD の `$date` は `SOURCE_DATE_EPOCH` があるとき固定 epoch を使う patch を加え、native/WASI の stdout と VCD を再現可能に比較します。各 patch の理由と結果は [S10 Icarus Verilog WASM 記録](docs/experiments/S10-iverilog-wasm.md)、artifact の raw hash とサイズは [S10 results.csv](docs/experiments/S10/results.csv) に記録しました。
 
 ### Yosys v0.70 と WASI SDK

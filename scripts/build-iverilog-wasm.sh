@@ -183,8 +183,12 @@ fi
 )
 
 ivl_extra_libs=
-if [ "$mode" = native ] && grep -q "^HAVE_LIBZ='yes'$" "$source_dir/config.log"; then
-  ivl_extra_libs=-lz
+if [ "$mode" = native ]; then
+  if ! grep -q '^LIBS = ' "$source_dir/vpi/Makefile"; then
+    printf 'Configured native VPI libraries are missing from vpi/Makefile.\n' >&2
+    exit 1
+  fi
+  ivl_extra_libs=$(sed -n 's/^LIBS = //p' "$source_dir/vpi/Makefile")
 fi
 
 make -C "$source_dir" version_tag.h

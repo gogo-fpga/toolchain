@@ -26,6 +26,16 @@
               </button>
             </div>
             <p id="project-action-status" role="status" aria-live="polite"></p>
+            <details id="licenses" class="license-information">
+              <summary>ライセンス</summary>
+              <p>使用するツールと依存ライブラリーの許諾条件を確認できます。</p>
+              <ul>
+                <li><a href="./THIRD_PARTY_NOTICES.md" target="_blank" rel="noopener">第三者のライセンス一覧</a></li>
+                <li><a href="./licenses/iverilog-COPYING" target="_blank" rel="noopener">Icarus Verilog（GPL-2.0-or-later）</a></li>
+                <li><a href="./licenses/surfer-LICENSE-EUPL-1.2.txt" target="_blank" rel="noopener">Surfer（EUPL-1.2）</a></li>
+                <li><a href="./surfer/licenses/THIRD_PARTY_NOTICES.md" target="_blank" rel="noopener">Surfer の依存ライブラリー</a></li>
+              </ul>
+            </details>
           </div>
           <div class="header-controls">
             <label class="board-picker" for="board-select">
@@ -47,6 +57,11 @@
                 <p id="synthesis-stage" role="status" aria-live="polite"></p>
                 <p id="synthesis-reason" class="synthesis-reason"></p>
                 <p id="synthesis-asset-size"></p>
+              </div>
+              <div class="synthesis-control">
+                <button id="simulation-button" type="button" disabled>シミュレーション</button>
+                <p id="simulation-status" role="status" aria-live="polite" data-outcome=""></p>
+                <p id="simulation-reason" class="simulation-reason"></p>
               </div>
               <button id="program-button" type="submit" disabled>書き込む</button>
               <button
@@ -94,6 +109,21 @@
               <button id="rename-file-button" type="button" class="secondary" disabled>名前変更</button>
               <button id="delete-file-button" type="button" class="secondary danger" disabled>削除</button>
             </div>
+            <section class="simulation-settings" aria-labelledby="simulation-settings-heading">
+              <h3 id="simulation-settings-heading">シミュレーション設定</h3>
+              <label class="field" for="simulation-top">
+                <span>トップモジュール</span>
+                <input id="simulation-top" type="text" value="top_tb" />
+              </label>
+              <fieldset>
+                <legend>対象 Verilog ファイル</legend>
+                <div id="simulation-files"></div>
+              </fieldset>
+              <label class="field" for="simulation-time-limit">
+                <span>時間上限（秒）</span>
+                <input id="simulation-time-limit" type="number" min="1" max="120" value="10" />
+              </label>
+            </section>
             <div class="project-archive-actions">
               <button id="export-project-button" type="button" class="secondary">
                 zip で書き出す
@@ -144,6 +174,15 @@
                   aria-controls="bottom-panel-artifacts"
                   tabindex="-1"
                 >成果物</button>
+                <button
+                  id="bottom-tab-waveform"
+                  type="button"
+                  role="tab"
+                  data-bottom-tab="waveform"
+                  aria-selected="false"
+                  aria-controls="bottom-panel-waveform"
+                  tabindex="-1"
+                >波形</button>
               </div>
               <section
                 id="bottom-panel-log"
@@ -177,6 +216,24 @@
                 <p id="download-result" hidden>
                   <a id="dump-download" download>読み出したデータを保存</a>
                 </p>
+                <p id="wave-download" hidden>
+                  <a id="wave-download-link" download="wave.vcd">wave.vcd を保存</a>
+                </p>
+              </section>
+              <section
+                id="bottom-panel-waveform"
+                class="bottom-panel waveform-panel"
+                role="tabpanel"
+                data-bottom-panel="waveform"
+                aria-labelledby="bottom-tab-waveform"
+                hidden
+              >
+                <label id="waveform-file-field" class="field" for="waveform-file" hidden>
+                  <span>表示・保存する VCD</span>
+                  <select id="waveform-file"></select>
+                </label>
+                <p id="waveform-status" role="status" aria-live="polite"></p>
+                <div id="surfer-mount"></div>
               </section>
             </div>
           </section>

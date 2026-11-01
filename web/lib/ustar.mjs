@@ -1,3 +1,5 @@
+import { setTreeEntry } from "./wasi-p1.mjs";
+
 const BLOCK_SIZE = 512;
 const utf8 = new TextDecoder("utf-8", { fatal: true });
 
@@ -61,10 +63,10 @@ function entryPath(bytes, start) {
 function directoryAt(root, parts, create) {
   let current = root;
   for (const part of parts) {
-    const next = current[part];
+    const next = Object.hasOwn(current, part) ? current[part] : undefined;
     if (next === undefined) {
       if (!create) return null;
-      current[part] = {};
+      setTreeEntry(current, part, {});
     } else if (next === null || typeof next !== "object" || next instanceof Uint8Array) {
       throw new Error("Conflicting ustar entry paths");
     }
@@ -115,11 +117,11 @@ export function readUstar(input) {
     const parent = directoryAt(root, parts.slice(0, -1), true);
     const name = parts.at(-1);
     if (type === 0 || type === 48) {
-      if (parent[name] !== undefined) throw new Error("Conflicting ustar entry paths");
-      parent[name] = bytes.slice(dataStart, dataStart + size);
+      if (Object.hasOwn(parent, name)) throw new Error("Conflicting ustar entry paths");
+      setTreeEntry(parent, name, bytes.slice(dataStart, dataStart + size));
     } else if (type === 53) {
       if (size !== 0) throw new Error("Invalid ustar directory size");
-      if (parent[name] === undefined) parent[name] = {};
+      if (!Object.hasOwn(parent, name)) setTreeEntry(parent, name, {});
       else if (
         parent[name] === null ||
         typeof parent[name] !== "object" ||
