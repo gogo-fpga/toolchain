@@ -1,0 +1,407 @@
+{
+  "formatVersion": 1,
+  "entries": [
+    {
+      "id": "colibri",
+      "label": "Colibri",
+      "kind": "library",
+      "language": "vhdl",
+      "submodule": "third_party/colibri",
+      "license": {
+        "expression": "CERN-OHL-W-2.0",
+        "files": [
+          "LICENSES/CERN-OHL-W-2.0.txt",
+          "LICENSES/Apache-2.0.txt",
+          "LICENSES/CC-BY-SA-4.0.txt"
+        ],
+        "note": "RTL、文書、メタデータはファイルごとに条件が異なります。選択したファイルの SPDX 表記も保持します。"
+      },
+      "deprecated": false,
+      "status": "unverified",
+      "reason": "代表部品の合成・動作と対応ボードは未検証です。",
+      "components": []
+    },
+    {
+      "id": "open-logic",
+      "label": "Open Logic",
+      "kind": "library",
+      "language": "vhdl",
+      "submodule": "third_party/open-logic",
+      "license": {
+        "expression": "LicenseRef-PSI-HDL-1.0",
+        "files": [
+          "License.txt"
+        ],
+        "note": "PSI HDL Library License 1.0。GNU Library GPL v2 以降を基に、FPGA 等の生成物への例外を含みます。"
+      },
+      "deprecated": false,
+      "status": "unverified",
+      "reason": "代表部品の合成・動作と対応ボードは未検証です。",
+      "components": []
+    },
+    {
+      "id": "hdl-modules",
+      "label": "hdl-modules",
+      "kind": "library",
+      "language": "vhdl",
+      "submodule": "third_party/hdl-modules",
+      "license": {
+        "expression": "BSD-3-Clause",
+        "files": [
+          "license.txt"
+        ]
+      },
+      "deprecated": false,
+      "status": "unverified",
+      "reason": "代表部品の合成・動作と対応ボードは未検証です。",
+      "components": []
+    },
+    {
+      "id": "verilog-axis",
+      "label": "verilog-axis",
+      "kind": "library",
+      "language": "verilog",
+      "submodule": "third_party/verilog-axis",
+      "license": {
+        "expression": "MIT",
+        "files": [
+          "COPYING"
+        ]
+      },
+      "deprecated": true,
+      "status": "unverified",
+      "reason": "代表部品の合成・動作と対応ボードは未検証です。",
+      "components": []
+    },
+    {
+      "id": "verilog-uart",
+      "label": "verilog-uart",
+      "kind": "library",
+      "language": "verilog",
+      "submodule": "third_party/verilog-uart",
+      "license": {
+        "expression": "MIT",
+        "files": [
+          "COPYING"
+        ]
+      },
+      "deprecated": true,
+      "status": "unverified",
+      "reason": "代表部品の合成・動作と対応ボードは未検証です。",
+      "components": []
+    },
+    {
+      "id": "libfpga",
+      "label": "libfpga",
+      "kind": "library",
+      "language": "verilog",
+      "submodule": "third_party/libfpga",
+      "license": {
+        "expression": "MIT",
+        "files": [
+          "LICENSE"
+        ]
+      },
+      "deprecated": false,
+      "status": "unverified",
+      "reason": "代表部品の合成・動作と対応ボードは未検証です。",
+      "components": [
+        {
+          "id": "gray",
+          "label": "2進数と Gray 符号の変換",
+          "sources": [
+            {
+              "path": "rtl/math/lfpga_gray.v",
+              "language": "verilog"
+            }
+          ],
+          "data": [],
+          "dependencies": [],
+          "includeDirectories": [],
+          "defines": {},
+          "boards": {
+            "tangnano1k": "unverified",
+            "tangnano4k": "unverified",
+            "tangnano9k": "unverified",
+            "tangnano20k": "unverified"
+          }
+        }
+      ]
+    },
+    {
+      "id": "serv",
+      "label": "SERV",
+      "kind": "cpu",
+      "language": "verilog",
+      "submodule": "third_party/serv",
+      "license": {
+        "expression": "ISC",
+        "files": [
+          "LICENSE"
+        ]
+      },
+      "deprecated": false,
+      "status": "unverified",
+      "reason": "代表部品の合成・動作と対応ボードは未検証です。",
+      "components": []
+    },
+    {
+      "id": "picorv32",
+      "label": "PicoRV32",
+      "kind": "cpu",
+      "language": "verilog",
+      "submodule": "third_party/picorv32",
+      "license": {
+        "expression": "ISC",
+        "files": [
+          "COPYING"
+        ]
+      },
+      "deprecated": false,
+      "status": "unverified",
+      "reason": "代表部品の合成・動作と対応ボードは未検証です。",
+      "components": []
+    },
+    {
+      "id": "neorv32",
+      "label": "NEORV32",
+      "kind": "cpu",
+      "language": "vhdl",
+      "submodule": "third_party/neorv32",
+      "license": {
+        "expression": "BSD-3-Clause",
+        "files": [
+          "LICENSE"
+        ]
+      },
+      "deprecated": false,
+      "status": "unverified",
+      "reason": "代表部品の合成・動作と対応ボードは未検証です。",
+      "components": []
+    },
+    {
+      "id": "hazard3",
+      "label": "Hazard3",
+      "kind": "cpu",
+      "language": "verilog",
+      "submodule": "third_party/hazard3",
+      "license": {
+        "expression": "Apache-2.0",
+        "files": [
+          "LICENSE"
+        ]
+      },
+      "deprecated": false,
+      "status": "unverified",
+      "reason": "代表部品の合成・動作と対応ボードは未検証です。",
+      "components": []
+    },
+    {
+      "id": "vexriscv",
+      "label": "VexRiscv",
+      "kind": "cpu",
+      "language": "verilog",
+      "submodule": "third_party/vexriscv",
+      "license": {
+        "expression": "MIT",
+        "files": [
+          "LICENSE"
+        ]
+      },
+      "deprecated": false,
+      "status": "unverified",
+      "reason": "代表部品の合成・動作と対応ボードは未検証です。",
+      "components": []
+    },
+    {
+      "id": "verilog-axi",
+      "label": "verilog-axi",
+      "kind": "library",
+      "language": "verilog",
+      "submodule": "third_party/verilog-axi",
+      "license": {
+        "expression": "MIT",
+        "files": [
+          "COPYING"
+        ]
+      },
+      "deprecated": true,
+      "status": "unverified",
+      "reason": "代表部品の合成・動作と対応ボードは未検証です。",
+      "components": []
+    },
+    {
+      "id": "verilog-ethernet",
+      "label": "verilog-ethernet",
+      "kind": "library",
+      "language": "verilog",
+      "submodule": "third_party/verilog-ethernet",
+      "license": {
+        "expression": "MIT",
+        "files": [
+          "COPYING"
+        ]
+      },
+      "deprecated": true,
+      "status": "unverified",
+      "reason": "代表部品の合成・動作と対応ボードは未検証です。",
+      "components": []
+    },
+    {
+      "id": "darkriscv",
+      "label": "DarkRISCV",
+      "kind": "cpu",
+      "language": "verilog",
+      "submodule": "third_party/darkriscv",
+      "license": {
+        "expression": "BSD-3-Clause",
+        "files": [
+          "LICENSE"
+        ]
+      },
+      "deprecated": false,
+      "status": "unverified",
+      "reason": "代表部品の合成・動作と対応ボードは未検証です。",
+      "components": []
+    },
+    {
+      "id": "femtorv",
+      "label": "FemtoRV",
+      "kind": "cpu",
+      "language": "verilog",
+      "submodule": "third_party/femtorv",
+      "license": {
+        "expression": "BSD-3-Clause",
+        "files": [
+          "LICENSE"
+        ]
+      },
+      "deprecated": false,
+      "status": "unverified",
+      "reason": "代表部品の合成・動作と対応ボードは未検証です。",
+      "components": []
+    },
+    {
+      "id": "ibex",
+      "label": "Ibex",
+      "kind": "cpu",
+      "language": "systemverilog",
+      "submodule": "third_party/ibex",
+      "license": {
+        "expression": "Apache-2.0",
+        "files": [
+          "LICENSE",
+          "NOTICE"
+        ]
+      },
+      "deprecated": false,
+      "status": "unsupported",
+      "reason": "SystemVerilog は現段階の対象外です。",
+      "components": []
+    },
+    {
+      "id": "cv32e40p",
+      "label": "CV32E40P",
+      "kind": "cpu",
+      "language": "systemverilog",
+      "submodule": "third_party/cv32e40p",
+      "license": {
+        "expression": "SHL-0.51 OR Apache-2.0",
+        "files": [
+          "LICENSE"
+        ]
+      },
+      "deprecated": false,
+      "status": "unsupported",
+      "reason": "SystemVerilog は現段階の対象外です。",
+      "components": []
+    },
+    {
+      "id": "vexiiriscv",
+      "label": "VexiiRiscv",
+      "kind": "cpu",
+      "language": "scala",
+      "submodule": "third_party/vexiiriscv",
+      "license": {
+        "expression": "MIT",
+        "files": [
+          "LICENSE"
+        ]
+      },
+      "deprecated": false,
+      "status": "unsupported",
+      "reason": "Scala からの生成が必要です。固定した生成済み RTL は未提供です。",
+      "components": []
+    },
+    {
+      "id": "osvvm",
+      "label": "OSVVM",
+      "kind": "verification",
+      "language": "vhdl",
+      "submodule": "third_party/osvvm",
+      "license": {
+        "expression": "Apache-2.0",
+        "files": [
+          "LICENSE.md"
+        ]
+      },
+      "deprecated": false,
+      "status": "unsupported",
+      "reason": "VHDL の検証用です。VHDL シミュレーションは未提供です。",
+      "components": []
+    },
+    {
+      "id": "uvvm",
+      "label": "UVVM",
+      "kind": "verification",
+      "language": "vhdl",
+      "submodule": "third_party/uvvm",
+      "license": {
+        "expression": "Apache-2.0",
+        "files": [
+          "LICENSE"
+        ]
+      },
+      "deprecated": false,
+      "status": "unsupported",
+      "reason": "VHDL の検証用です。VHDL シミュレーションは未提供です。",
+      "components": []
+    },
+    {
+      "id": "vunit",
+      "label": "VUnit",
+      "kind": "verification",
+      "language": "vhdl",
+      "submodule": "third_party/vunit",
+      "license": {
+        "expression": "MPL-2.0",
+        "files": [
+          "LICENSE.rst"
+        ],
+        "note": "HDL と Python 等は MPL-2.0 です。図版のフォントは別の条件です。"
+      },
+      "deprecated": false,
+      "status": "unsupported",
+      "reason": "VHDL の検証用です。VHDL シミュレーションは未提供です。",
+      "components": []
+    },
+    {
+      "id": "taxi",
+      "label": "Taxi",
+      "kind": "library",
+      "language": "systemverilog",
+      "submodule": "third_party/taxi",
+      "license": {
+        "expression": "CERN-OHL-S-2.0",
+        "files": [
+          "LICENSE"
+        ],
+        "note": "有償ライセンスもありますが、別途契約が必要です。自動で有償ライセンスを適用しません。"
+      },
+      "deprecated": false,
+      "status": "unsupported",
+      "reason": "SystemVerilog は現段階の対象外です。",
+      "components": []
+    }
+  ]
+}

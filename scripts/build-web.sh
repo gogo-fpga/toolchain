@@ -70,6 +70,7 @@ fi
 rm -rf -- "$dist"
 mkdir -p "$dist"
 cp -R "$root/web/." "$dist/"
+python3 "$root/scripts/build-library-assets.py" --output "$dist/libraries"
 node_modules/.bin/esbuild web/editor/editor.mjs --bundle --minify --format=esm --outfile="$dist/editor/editor.bundle.mjs"
 node_modules/.bin/esbuild web/lib/project-zip.mjs --bundle --minify --format=esm --outfile="$dist/lib/project-zip.bundle.mjs"
 cp "$artifacts/openFPGALoader.mjs" "$dist/openFPGALoader.mjs"

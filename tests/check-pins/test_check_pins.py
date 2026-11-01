@@ -726,6 +726,72 @@ class CheckPinsTests(unittest.TestCase):
         rows = [("Node.js Active LTS", "22", "v24.22.1", "更新あり")]
         self.assertTrue(check_pins.needs_update(rows))
 
+    def register_library_fixture(self):
+        path = "third_party/probe"
+        revision = "a" * 40
+        with (self.root / ".gitmodules").open("a", encoding="utf-8") as output:
+            output.write(
+                f'\n[submodule "{path}"]\npath = {path}\n'
+                "url = https://gitlab.example.invalid/probe.git\n"
+                "shallow = true\nbranch = main\n"
+            )
+        (self.root / "libraries").mkdir(exist_ok=True)
+        (self.root / "libraries/catalog.json").write_text(json.dumps({
+            "formatVersion": 1,
+            "entries": [{"id": "probe", "submodule": path}],
+        }), encoding="utf-8")
+        subprocess.run(
+            ["git", "update-index", "--add", "--cacheinfo", f"160000,{revision},{path}"],
+            cwd=self.root, check=True,
+        )
+        self.commit_fixture("library fixture")
+        return path, revision
+
+    def test_library_gitlinks_and_catalog_are_checked_without_checkouts(self):
+        self.prepare_upstream_fixture()
+        path, revision = self.register_library_fixture()
+        modules = check_pins.parse_gitmodules((self.root / ".gitmodules").read_text())
+        self.assertEqual(revision, check_pins.gitlink_sha(path, self.root))
+        self.assertEqual([], check_pins.library_catalog_errors(self.root, modules))
+
+    def test_library_catalog_cannot_omit_modules_or_duplicate_pins(self):
+        self.prepare_upstream_fixture()
+        self.register_library_fixture()
+        modules = check_pins.parse_gitmodules((self.root / ".gitmodules").read_text())
+        catalog_path = self.root / "libraries/catalog.json"
+        catalog = json.loads(catalog_path.read_text())
+        catalog["entries"][0]["revision"] = "b" * 40
+        catalog_path.write_text(json.dumps(catalog))
+        self.assertTrue(any("gitlink" in error for error in check_pins.library_catalog_errors(self.root, modules)))
+        catalog["entries"] = []
+        catalog_path.write_text(json.dumps(catalog))
+        self.assertTrue(any("一致しません" in error for error in check_pins.library_catalog_errors(self.root, modules)))
+
+    def test_library_missing_branch_is_reported(self):
+        self.prepare_upstream_fixture()
+        self.register_library_fixture()
+        modules = check_pins.parse_gitmodules((self.root / ".gitmodules").read_text())
+        next(module for module in modules if module["path"].startswith("third_party/"))["branch"] = ""
+        self.assertTrue(any("branch" in error for error in check_pins.library_catalog_errors(self.root, modules)))
+
+    def test_library_update_report_keeps_branch_and_tag_checks_distinct(self):
+        tags = self.prepare_upstream_fixture()
+        path, revision = self.register_library_fixture()
+        remote = revision + "\trefs/heads/main\n" + "b" * 40 + "\trefs/tags/v2.0.0\n"
+        rows, refs = self.upstream_report(tags, remote)
+        row = next(row for row in rows if row[0] == f"{path} (branch)")
+        self.assertEqual(row, (f"{path} (branch)", revision[:12], revision[:12] + " / tag v2.0.0", "最新"))
+        self.assertIn("refs/heads/main", refs)
+        rows, _ = self.upstream_report(tags, "c" * 40 + "\trefs/heads/main\n")
+        self.assertEqual(next(row[3] for row in rows if row[0] == f"{path} (branch)"), "更新あり")
+
+    def test_library_update_report_fails_closed_when_remote_is_unavailable(self):
+        tags = self.prepare_upstream_fixture()
+        path, _ = self.register_library_fixture()
+        rows, _ = self.upstream_report(tags, branch_error=True)
+        self.assertEqual(next(row[3] for row in rows if row[0] == f"{path} (branch)"), "要確認")
+        self.assertTrue(check_pins.needs_update(rows))
+
     def test_needs_update_is_true_when_a_row_needs_confirmation(self):
         rows = [("actionlint", "1.7.12", "取得できません", "要確認")]
         self.assertTrue(check_pins.needs_update(rows))

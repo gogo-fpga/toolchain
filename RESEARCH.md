@@ -274,6 +274,8 @@ NVC r1.23.1 の確認元は[configure.ac](https://github.com/nickg/nvc/blob/fab5
 
 ## 5. HDL ライブラリーと CPU コア
 
+T5 の22候補、ライセンス本文、部品の登録と更新監視は、[HDL ライブラリーと CPU コアの調査](docs/research/hdl-libraries.md)にまとめました。現在の取得元は `.gitmodules`、固定版は gitlink が正です。下表は初期調査で転記した記録です。Colibri の取得元と Open Logic のライセンス表記には誤りがあり、分割した調査に訂正内容と原典を記載しました。
+
 次の URL と revision は、[fpga-agent の HDL ライブラリー登録](https://github.com/VibeBB/fpga-agent/blob/76560989bf570fca1e0e3b864dd466251c210117/scripts/hdl_libraries.json)から転記しています。すべて T5 の候補で、T0 では取り込んでいません。
 
 | 名前 | HDL | URL | revision | ライセンス |
@@ -309,6 +311,7 @@ GHDL、NVC、Icarus Verilog など GPL のツールを WASM にビルドして R
 | [OSS の FPGA 開発環境と HDL ライブラリーの広域調査](docs/research/oss-survey.md) | ブラウザーで動く HDL ツールの先行例、HDL のツール、形式検証のソルバー、HDL ライブラリーと CPU コア（2026-10-26） |
 | [エディターと AI 機能の調査](docs/research/editor-and-ai.md) | エディターの候補（CodeMirror 6、Monaco Editor、Ace など）の比較、AI 機能の接続方式（OpenRouter OAuth PKCE など）との相性（2026-10-26） |
 | [Actions.lock の調査結果と導入の採否](docs/research/actions-lock.md) | 現行 CI、保護範囲、既存検査との関係、運用負担と再検討条件（2026-11-01） |
+| [HDL ライブラリーと CPU コアの調査](docs/research/hdl-libraries.md) | T5 の22候補、ライセンスの原典、対応範囲、固定版と更新監視（2026-11-01） |
 
 Actions.lock は今回は導入を見送り、現行の完全長 SHA 固定を維持します。取得元 ID と推移依存の保護という追加価値、導入の制限、未確認の事項は上記の調査に記録しました。
 

@@ -365,7 +365,7 @@ def fixed_stable_tag(commit: str, output: str) -> str | None:
 
 
 def gitlink_sha(name: str, root: Path) -> str:
-    path = f"vendor/{name}"
+    path = name if name.startswith("third_party/") else f"vendor/{name}"
     tree_line = run("git", "ls-tree", "HEAD", path, cwd=root).strip()
     if not tree_line:
         raise RuntimeError(f"{path}: HEAD に gitlink がありません")
@@ -523,6 +523,43 @@ def run(*args: str, cwd: Path = ROOT) -> str:
     return result.stdout
 
 
+def library_catalog_errors(root: Path, modules: list[dict[str, str]]) -> list[str]:
+    paths = [module.get("path", "") for module in modules if module.get("path", "").startswith("third_party/")]
+    catalog_path = root / "libraries/catalog.json"
+    if not paths and not catalog_path.exists():
+        return []
+    errors: list[str] = []
+    try:
+        catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+        if catalog.get("formatVersion") != 1 or not isinstance(catalog.get("entries"), list):
+            raise ValueError("未対応のカタログ形式です")
+        catalog_paths: list[str] = []
+        for entry in catalog["entries"]:
+            if not isinstance(entry, dict) or not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", entry.get("id", "")):
+                raise ValueError("部品の ID が不正です")
+            path = entry.get("submodule", "")
+            if path != f'third_party/{entry["id"]}':
+                raise ValueError("部品の ID と submodule が一致しません")
+            if any(key in entry for key in ("url", "revision", "pin", "commit")):
+                raise ValueError("取得元と固定版は .gitmodules と gitlink から導いてください")
+            catalog_paths.append(path)
+        if len(paths) != len(set(paths)) or len(catalog_paths) != len(set(catalog_paths)) or set(paths) != set(catalog_paths):
+            errors.append("libraries/catalog.json: third_party の登録とカタログが一致しません")
+        for module in modules:
+            path = module.get("path", "")
+            if path not in paths:
+                continue
+            if not module.get("branch", "").strip():
+                errors.append(f"{path}: 更新監視用の branch がありません")
+            try:
+                gitlink_sha(path, root)
+            except (OSError, RuntimeError, subprocess.CalledProcessError) as error:
+                errors.append(f"{path}: {error}")
+    except (OSError, ValueError, TypeError, AttributeError) as error:
+        errors.append(f"libraries/catalog.json: {error}")
+    return errors
+
+
 def consistency(root: Path = ROOT) -> list[str]:
     errors: list[str] = []
     gitmodules_path = root / ".gitmodules"
@@ -533,6 +570,7 @@ def consistency(root: Path = ROOT) -> list[str]:
         path = module.get("path", "")
         if module.get("shallow", "").lower() != "true":
             errors.append(f"{path}: shallow = true が必要です")
+    errors.extend(library_catalog_errors(root, modules))
 
     research = parse_research_commits(read_text(root / "RESEARCH.md"))
     try:
@@ -748,6 +786,24 @@ def upstream_report(root: Path = ROOT) -> str:
         except (KeyError, OSError, RuntimeError, subprocess.CalledProcessError) as error:
             print(f"{name}: upstream を取得できません: {error}", file=sys.stderr)
             add_row(f"{name} (branch)", "取得できません", "取得できません", "要確認")
+
+    for path, module in modules.items():
+        if not path.startswith("third_party/"):
+            continue
+        try:
+            pinned = gitlink_sha(path, root)
+            branch = module["branch"].strip()
+            if not branch:
+                raise RuntimeError("更新監視用の branch がありません")
+            ref = f"refs/heads/{branch}"
+            remote = run("git", "ls-remote", module["url"], ref, "refs/tags/*", cwd=root)
+            latest = remote_ref_sha(remote, ref)
+            latest_tag = latest_stable_tag(remote)
+            label = latest[:12] + (f" / tag {latest_tag}" if latest_tag else " / 安定版タグなし")
+            add_row(f"{path} (branch)", pinned[:12], label, "最新" if pinned == latest else "更新あり")
+        except (KeyError, OSError, RuntimeError, subprocess.CalledProcessError) as error:
+            print(f"{path}: upstream を取得できません: {error}", file=sys.stderr)
+            add_row(f"{path} (branch)", "取得できません", "取得できません", "要確認")
 
     try:
         pin = parse_wasi_sdk_pin(read_text(root / "RESEARCH.md"))
