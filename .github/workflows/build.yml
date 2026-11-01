@@ -1250,15 +1250,6 @@ jobs:
         name: Icarus Verilog WASM/native を比較
         run: node --test tests/synth/iverilog-wasm.test.mjs
 
-      - name: Icarus Verilog build inputs cache を保存
-        if: steps.iverilog-cache-restore.outputs.cache-hit != 'true' && steps.iverilog-build.outcome == 'success' && steps.iverilog-tests.outcome == 'success' && github.event_name != 'schedule' && (github.event_name != 'workflow_dispatch' || inputs.cache)
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            build/cache/wasi-sdk-*
-            build/wasi-sdk-*
-          key: iverilog-wasi-ubuntu-26.04-${{ steps.iverilog-key.outputs.iverilog }}-${{ steps.iverilog-key.outputs.wasi }}-${{ hashFiles('scripts/build-iverilog-wasm.sh', 'scripts/build-iverilog-info.py', 'patches/iverilog/**') }}
-
       - name: Icarus Verilog のブラウザー用資材を保存
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -1276,6 +1267,15 @@ jobs:
             build/iverilog-native/output/
           if-no-files-found: error
           retention-days: 1
+
+      - name: Icarus Verilog build inputs cache を保存
+        if: steps.iverilog-cache-restore.outputs.cache-hit != 'true' && steps.iverilog-build.outcome == 'success' && steps.iverilog-tests.outcome == 'success' && github.event_name != 'schedule' && (github.event_name != 'workflow_dispatch' || inputs.cache)
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            build/cache/wasi-sdk-*
+            build/wasi-sdk-*
+          key: iverilog-wasi-ubuntu-26.04-${{ steps.iverilog-key.outputs.iverilog }}-${{ steps.iverilog-key.outputs.wasi }}-${{ hashFiles('scripts/build-iverilog-wasm.sh', 'scripts/build-iverilog-info.py', 'patches/iverilog/**') }}
 
   surfer:
     name: Surfer WASM build
