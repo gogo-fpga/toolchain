@@ -91,3 +91,5 @@ GMPのREADMEはLGPL-3.0-or-laterまたはGPL-2.0-or-laterを示し、ファイ�
 pin checkerは6ソースの完全長SHA・版の書式・URL・license・NOTICE、GMPのURLとhash書式を検査します。更新監視はSBYのbranch、他の5件の安定版tag、GMPのGNU配布索引を調べます。tagとgitlinkの不一致、取得・解析失敗は要確認です。ソース取得のhash一致だけを、バイナリーの正しい動作や無期限の安全性の証拠にはしません。
 
 残る実行時のABI、SDKの実版、static/shared、thread設定、初期heap・上限、起動と実行の時間、最大入力、license closureは、ビルドして試したprofileごとにS15へ記録します。P0時点ではそれらの実測値はありません。
+
+P0の固定ソースと原archiveは、`c41e5c53d99eff9c604ffe8dec274e49f0189a61` で配布物へ組み立て、[配布ソース・license・Git情報なしの再生成を照合](../experiments/S15-formal-source-closure.md)しました。これを、SBYやソルバーのビルド・形式検証の成功とは扱いません。
