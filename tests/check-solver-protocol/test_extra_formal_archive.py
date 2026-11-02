@@ -84,12 +84,34 @@ class ExtraFormalArchiveTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 ARCHIVE.package(self.campaign, self.zip)
         self.assertEqual(ARCHIVE.safe_path("build/S15/foo").as_posix(), "build/S15/foo")
-        for name in ["../x", "/absolute", "./ambiguous", "x//y", "x\\y", "x/../y"]:
+        for name in ["../x", "/absolute", "./ambiguous", "x//y", "x\\y", "x/../y", "C:/absolute", "x/__pycache__/code.pyc", "x/code.pyc", "x/code.pyo"]:
             with self.subTest(name=name), self.assertRaises(ValueError):
                 ARCHIVE.safe_path(name)
         for raw in [b'{"format":1,"format":1}', b'{"format":NaN}', b'{"format":Infinity}']:
             with self.subTest(raw=raw), self.assertRaises(ValueError):
                 ARCHIVE.strict_json(raw)
+
+    def test_manifest_size_is_checked_before_parsing(self):
+        with zipfile.ZipFile(self.zip, "x") as archive:
+            archive.writestr("manifest.json", b" " * 33)
+        with patch.object(ARCHIVE, "MAX_MANIFEST", 32), self.assertRaisesRegex(ValueError, "oversized archive manifest"):
+            ARCHIVE.validate(self.zip)
+
+    def test_execution_checks_trusted_source_and_ignores_local_imports_and_bytecode(self):
+        self.audit_mock.stop()
+        runner = self.audit / "measure-extra-formal.py"
+        raw = b'import json\nprint(json.dumps({"status":"pass", "commit":"' + b"1" * 40 + b'"}))\n'
+        runner.write_bytes(raw)
+        (self.base / "scripts/measure-extra-formal.py").write_bytes(raw)
+        (self.audit / "json.py").write_text('raise RuntimeError("untrusted local import")\n')
+        cache = self.audit / "__pycache__"
+        cache.mkdir()
+        (cache / "json.cpython-312.pyc").write_bytes(b"untrusted cached bytecode")
+        self.assertEqual(ARCHIVE.audited_campaign(self.campaign)["status"], "pass")
+        runner.write_bytes(raw + b"\n")
+        with patch.object(ARCHIVE.subprocess, "run") as process, self.assertRaisesRegex(ValueError, "before execution"):
+            ARCHIVE.audited_campaign(self.campaign)
+        process.assert_not_called()
 
 
 if __name__ == "__main__":

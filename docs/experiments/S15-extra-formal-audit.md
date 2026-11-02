@@ -48,6 +48,12 @@ commit `cee9eb0` の最初の正式計測は、A/A 2回と正式1回目のBitwuz
 
 [Nodeのtimer](https://nodejs.org/docs/latest-v24.x/api/timers.html#settimeoutcallback-delay-args)は、callbackの正確な実行時刻を保証しません。修正では監査の許容幅を広げず、rootのtimer callbackで単調時計を確認し、残り時間が正なら切り上げた時間だけ再待機します。期限後だけ `timeout` へ遷移し、取消後の古いcallbackでは再待機しません。同じ早着時刻を与える単体検査を追加しました。solverや検証の意味は変えず、新しい清浄commitからA/Aと正式試行をすべてやり直します。
 
+commit `5855050` の再試行は、A/A 2回と正式5回の全14組で個別監査を通過しました。しかし最終集計で、SMTBMCの版名が `pyodide` であるのに `pyodidePackage` を参照して停止しました。出力は `build/S15/p4-extra-formal-campaign-5855050-01` に保存し、正式結果として採用しません。単体fixtureも誤った共通キーを持っていたため、実際の3形式へ修正しました。SMTBMCの正常なJSON行では `error` が省略されることも分かり、独立監査済みの省略・空文字だけを集計の空欄へそろえ、非空のerrorは拒否します。
+
+再試行前に、保存した14組の実行結果とmetadataを使う合成の集計fixtureで、全CSVと5標本の統計まで検査しました。集計用headerだけを新しい監査器に合わせ、個別監査の戻り値を検査済みの原本から与えるため、このfixtureは正式証拠ではありません。初回fixtureでも省略errorによる停止を記録し、修正後は112/84/224行の再構成と読み戻しが通りました。いずれも `build/S15/p4-extra-audit-aggregate-real-fixture-5855050-*` に保持し、正式計測は新しい清浄commitで再び全反復を行います。保存した正式証拠のheaderや監査器は書き換えません。
+
+`negative-extra-formal.py` は、正式campaignの原本を変更せずに別のコピーで20件の改変を検査します。両候補の成果物・本体・hash・輸送のintegrity・欠落・余剰を各6件、3表のCSV status/errorを各2件、保存した監査器と集計結果を各1件変更します。各回の標準出力・標準エラー・終了code・変更前後のhashを保存し、前後の未改変状態がどちらも監査を通ることを要求します。hardlinkを共有していても変更先は別inodeへ置き換え、原本へ変更を伝えません。
+
 ## 再実行
 
 前段で照合した各候補のnative/WASI buildを、診断manifestの `native` と `wasi` へ指定します。solverを指定しない従来のprobe/auditの既定対象はYices2/Z3のままです。次の計測器だけが追加2候補の全条件を要求します。
@@ -60,6 +66,8 @@ python3 scripts/measure-extra-formal.py \
   --out build/S15/extra-formal-campaign
 python3 scripts/measure-extra-formal.py \
   --audit-only --out build/S15/extra-formal-campaign
+python3 scripts/negative-extra-formal.py \
+  --campaign build/S15/extra-formal-campaign --out build/S15/extra-formal-negative
 python3 scripts/package-extra-formal.py \
   --campaign build/S15/extra-formal-campaign --output build/S15/extra-formal-evidence.zip \
   --include licenses --include THIRD_PARTY_NOTICES.md \
@@ -69,6 +77,8 @@ python3 scripts/package-extra-formal.py --restore \
 ```
 
 ZIPは同じ内容をSHA-256のobjectとして一度だけ格納し、元の論理パス・byte数・実行権限の有無を目録へ保存します。nativeの隔離binの参照は、リポジトリー内の実体を検査して通常ファイルへ展開し、復元先にsymlinkを作りません。未知・重複・欠落したobject、不安全なパス、上限超過、異なる監査コードを拒否します。空の場所へ全byteを復元した後、保存した監査器で同じ全列監査を実行します。失敗試行を追加保存する場合は `--include` で指定し、採用したcampaignとは目録でも分けます。
+
+監査器を実行する前にも、6つのPython原本を作業コピーとhash照合します。Pythonは `-I -B` と未使用のbytecode cache先を指定して起動し、復元物や環境変数を通じた通常importの置き換え、同梱cacheの実行を防ぎます。archiveでは `__pycache__`・`.pyc`・`.pyo` とdrive付きパスを拒否し、manifestも解析前に16 MiB以下へ制限します。負の対照の概要、script、各標準streamも `--include` を繰り返して追加できます。未改変へ戻した検査用コピーは正式campaignの代わりにしません。
 
 計測器は全コマンド、submodule、各probeの実際の版・ホスト・資材・source・全snapshotを保存します。出力先が既存なら停止します。単体検査は `python3 -m unittest discover -s tests/check-solver-protocol`、構文検査は `node --check` と `python3 -m py_compile` です。
 

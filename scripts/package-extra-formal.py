@@ -9,6 +9,7 @@ import re
 import stat
 import subprocess
 import sys
+import tempfile
 import zipfile
 
 
@@ -17,6 +18,9 @@ HEX = re.compile(r"[0-9a-f]{64}\Z")
 MAX_OBJECT = 256 * 1024 * 1024
 MAX_ARCHIVE = 2 * 1024 * 1024 * 1024
 MAX_LOGICAL = 16 * 1024 * 1024 * 1024
+MAX_MANIFEST = 16 * 1024 * 1024
+AUDITORS = ("measure-extra-formal.py", "audit-formal-python.py", "audit-formal-sby.py",
+            "audit-formal-controls.py", "sby-artifact-audit.py", "formal-solver-audit.py")
 
 
 def require(value, message):
@@ -40,17 +44,23 @@ def strict_json(raw):
 
 
 def safe_path(name):
-    require(type(name) is str and name and "\\" not in name and "\0" not in name, "invalid archive path")
+    require(type(name) is str and name and "\\" not in name and "\0" not in name and ":" not in name, "invalid archive path")
     path = PurePosixPath(name)
     require(not path.is_absolute() and str(path) == name and ".." not in path.parts and "." not in path.parts, "unsafe archive path")
+    require("__pycache__" not in path.parts and path.suffix not in [".pyc", ".pyo"], "cached bytecode evidence")
     return path
 
 
 def audited_campaign(directory):
     runner = directory / "snapshots/scripts/measure-extra-formal.py"
     require(runner.is_file() and not runner.is_symlink(), "missing captured campaign runner")
-    result = subprocess.run([sys.executable, str(runner), "--audit-only", "--out", str(directory)], cwd=ROOT,
-                            capture_output=True, text=True, timeout=300)
+    for name in AUDITORS:
+        path = directory / "snapshots/scripts" / name
+        require(path.is_file() and not path.is_symlink() and digest(path.read_bytes()) == digest((ROOT / "scripts" / name).read_bytes()),
+                "trusted campaign auditor before execution")
+    with tempfile.TemporaryDirectory(prefix="formal-audit-cache-") as cache:
+        result = subprocess.run([sys.executable, "-I", "-B", "-X", "pycache_prefix=" + cache, str(runner), "--audit-only", "--out", str(directory)], cwd=ROOT,
+                                capture_output=True, text=True, timeout=300)
     require(result.returncode == 0, "campaign audit failed: " + result.stderr[-2000:])
     report = strict_json(result.stdout)
     require(report["status"] == "pass" and report["commit"] == strict_json((directory / "plan.json").read_bytes())["commit"], "campaign report identity")
@@ -116,6 +126,7 @@ def validate(archive):
     with zipfile.ZipFile(archive) as data:
         names = data.namelist()
         require(len(names) == len(set(names)) and "manifest.json" in names, "duplicate or absent archive member")
+        require(data.getinfo("manifest.json").file_size <= MAX_MANIFEST, "oversized archive manifest")
         manifest = strict_json(data.read("manifest.json"))
         require(type(manifest) is dict and set(manifest) == {"format", "campaign", "extraPaths", "measurementCommit", "packageCommit", "files"}
                 and type(manifest.get("format")) is int and manifest["format"] == 1,
@@ -146,8 +157,7 @@ def validate(archive):
         for sha in objects:
             info = data.getinfo("objects/" + sha)
             require(info.file_size <= MAX_OBJECT and digest(data.read(info)) == sha, "archived object bytes")
-        for name in ("measure-extra-formal.py", "audit-formal-python.py", "audit-formal-sby.py",
-                     "audit-formal-controls.py", "sby-artifact-audit.py", "formal-solver-audit.py"):
+        for name in AUDITORS:
             runner = next((item for item in manifest["files"] if item["path"] == str(campaign) + "/snapshots/scripts/" + name), None)
             require(runner is not None and runner["sha256"] == digest((ROOT / "scripts" / name).read_bytes()), "trusted campaign auditor")
         return manifest

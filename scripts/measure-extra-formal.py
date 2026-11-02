@@ -80,7 +80,8 @@ def audit_campaign(directory, saved=True):
                 folder = name + "/"
                 meta = item.data(folder + ("metadata.json" if name == "controls" else "metadata-final.json"))
                 require(meta["snapshots"]["scripts/measure-extra-formal.py"] == plan["runnerSha256"], "executed campaign runner")
-                identity = {key: meta[key] for key in ["sources", "snapshots", "probes", "node", "pyodidePackage"]}
+                identity = {key: meta[key] for key in ["sources", "snapshots", "probes", "node"]}
+                identity["pyodide"] = meta["pyodide" if name == "smtbmc" else "pyodidePackage"]
                 if name == "smtbmc":
                     identity["models"] = meta["models"]
                 else:
@@ -102,6 +103,9 @@ def audit_campaign(directory, saved=True):
                 require(hashes == canonical[key], "A/A or repeated semantic artifacts differ")
                 for raw in sample:
                     row = {"series": phase, "iteration": iteration, **raw}
+                    if name == "smtbmc":
+                        require(raw.get("error") in [None, ""], "SMTBMC execution error")
+                        row["error"] = None
                     if name == "sby":
                         row["nativeElapsedMs"] = item.data(folder + solver + "-" + raw["case"] + "/native.json")["elapsedMs"]
                     rows[name].append(row)
