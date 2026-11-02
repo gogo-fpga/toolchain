@@ -207,12 +207,15 @@ T6は上流SBY・SMTBMCの再利用を選び、固定ソースと[S15の事前�
 | [形式検証の原本とブラウザーの制約](docs/research/formal-verification.md) | SBY・SMTBMC、Z3のWASM先例、property、輸送と非成功判定 |
 | [HDLライブラリーとCPUコアの検証経緯](docs/research/hdl-validation-history.md) | 正式反復と全60組の回帰、失敗と修正、配布ソースの原記録 |
 | [形式検証の固定ソース・依存・配布条件](docs/research/formal-sources.md) | 採用releaseと初期snapshot、依存、SQLite、license、GMP、source closure |
+| [形式検証ソルバーのビルドと実行方式](docs/research/formal-solvers.md) | WASI CLI・C API・公式WASMの比較候補、GMP・timer・丸め・版表示の制約と輸送の境界 |
 
 元VHDLの独立再実行は、GHDL標準のVPIと`--psl-report`を再利用する限定した検査経路を追加しました。清浄な同一commitで55件×5回とA/Aの2回が成功し、元ファイルとCSV全280行19列を照合しています。通常assertionとclocked PSLの評価位相、coverが既定では標準出力に現れないこと、root moduleのVPI列挙、生CSV・全ファイルのhash・失敗試行と未完了の範囲を[元VHDLによる再実行の実験記録](docs/experiments/S15-vhdl-native-replay.md)へ保存します。下位化後のVerilog比較、追加fixtureとT6全体は未完了です。
 
 その後、[下位化Verilog比較](docs/experiments/S15-vhdl-lowered-replay.md)を追加しました。上流YosysでIcarus用モデルを出力し、assertion再実行からだけcoverを除き、元のcoverとPSLレポートを保持します。propertyのkind・A/EN別名と元ソースを対応付け、準備後のstate bit・初期値・clock、全ポートを照合します。通常assertionの診断密度は実行系で異なるため、最初の違反と全違反の包含を比較します。階層・名前付きライブラリーを含む10成功fixtureと5境界fixture、全60行20列の監査が予備検査で通りました。未知の初期値、memory、循環、空虚な条件は成功と区別します。[初回の失敗・process footerの制約](docs/experiments/S15-vhdl-lowered-failures.md)も保存します。その後、清浄な同一commitで69件を5回とA/Aの2回実行し、CSV420行の全20列とソース・実行系のhashを監査しました。GHDL VCDの日時と所要時間以外は反復間で一致しました。SMTソルバー、worker/UIとT6全体は引き続き未完了です。
 
 Actions.lock は今回は導入を見送り、現行の完全長 SHA 固定を維持します。取得元 ID と推移依存の保護という追加価値、導入の制限、未確認の事項は上記の調査に記録しました。
+
+T6 P2では、WASI shimの同期stdin reader、容量を制限した共有buffer、期限・整合性・終了を管理する専用workerを追加しました。予備Yices2 WASMで、Nodeの実workerと既存shimによる双方向SMT通信を確認しました。5 byteに分割した入力と7 byteのbufferで、check-sat、get-value、push/popとEOFを通しています。これは清浄なcommitの正式反復やnative比較ではありません。Yices2とZ3の予備ビルドで見つかったGMP検索先、cross makeのarch、上流alarm、SDKとEmscriptenの丸め処理、C++標準ライブラリー、setjmp/longjmp、版表示の由来は、[ソルバーの調査](docs/research/formal-solvers.md)と[S15 P2](docs/experiments/S15-solver-build-and-transport.md)へ記録します。Z3の未対応hardware丸めを明示的に拒否する候補は、単独ファイルのコンパイル対照までで、solver全体の採用結果ではありません。ソルバーの正式比較・反復、SBYと画面の接続は未完了です。
 
 ## 8. 未確認の事項
 
