@@ -147,9 +147,12 @@ def audit_case(evidence, meta, native_meta, row, csv_row):
         require(xml[0].get("time") == read(runtime + "/result/status").decode().split()[2], "JUnit elapsed seconds")
         wall = re.findall(rb"summary: Elapsed clock time \[H:MM:SS \(secs\)\]: [0-9]+:[0-9]{2}:[0-9]{2} \(([0-9]+)\)", stdout)
         require(wall == [read(runtime + "/result/status").split()[2]], "status/log elapsed seconds")
+    canonical_hash = hashlib.sha256()
     for name in sorted(names):
-        require(canonical(auditor, evidence, label + "/native", name, "native") ==
-                canonical(auditor, evidence, label + "/pyodide", name, "pyodide"), "artifact differs: " + name)
+        value = canonical(auditor, evidence, label + "/native", name, "native")
+        require(value == canonical(auditor, evidence, label + "/pyodide", name, "pyodide"), "artifact differs: " + name)
+        encoded = [name, type(value).__name__, value.hex() if isinstance(value, bytes) else value]
+        canonical_hash.update(json.dumps(encoded, sort_keys=True, ensure_ascii=True, allow_nan=False, separators=(",", ":")).encode() + b"\n")
     database = auditor.database(evidence.path(label + "/pyodide/result/status.sqlite"), "pyodide")
     def table(name):
         info = database["tables"][name]
@@ -198,22 +201,24 @@ def audit_case(evidence, meta, native_meta, row, csv_row):
                     "solverSha256": meta["probes"][solver]["sha256"], "yosysSha256": meta["yosys"]["sha256"], "error": None})
     require(set(row) == set(COLUMNS) and all(type(row[key]) is type(derived[key]) and row[key] == derived[key] for key in COLUMNS), "JSON raw evidence")
     require(csv_row == {key: cell(derived[key]) for key in COLUMNS}, "CSV raw evidence")
-    return {"condition": label, "artifacts": len(names), "columns": len(COLUMNS), "variations": auditor.variations}
+    return {"condition": label, "artifacts": len(names), "columns": len(COLUMNS), "canonicalSha256": canonical_hash.hexdigest(), "variations": auditor.variations}
 
 
 def audit(directory):
     evidence = Evidence(directory)
     meta, start = evidence.data("metadata-final.json"), evidence.data("metadata.json")
-    require(meta["format"] == 1 and meta["preliminary"] is True and meta["worktree"] == "" and re.fullmatch(r"[a-f0-9]{40}", meta["commit"]), "clean comparison provenance")
+    require(meta["format"] == 1 and type(meta["preliminary"]) is bool and meta["worktree"] == "" and re.fullmatch(r"[a-f0-9]{40}", meta["commit"]), "clean comparison provenance")
     require({key: value for key, value in meta.items() if key != "probes"} == {key: value for key, value in start.items() if key != "probes"}, "changed comparison metadata")
     native_meta = evidence.data("native-metadata.json")
     require(digest(evidence.read("native-metadata.json")) == meta["nativeMetadataSha256"], "native metadata hash")
     require(native_meta["worktree"] == "" and native_meta["commit"] == meta["commit"] and native_meta["runtime"] == "native", "clean matching native harness")
+    require(native_meta["preliminary"] is meta["preliminary"], "matching native measurement mode")
     require(set(native_meta["nativeCommands"]) == {"yosys", "yosys-smtbmc", "yosys-witness"}, "native executable metadata")
     require(native_meta["python"] and native_meta["yosys"]["version"] and meta["node"] and meta["pyodidePackage"], "runtime versions")
     for name, sha in {"yosys.wasm": meta["yosys"]["sha256"], "yosys-share.tar": meta["yosys"]["shareSha256"], "yosys-native": native_meta["yosys"]["sha256"]}.items():
         require(digest(evidence.read("inputs/" + name)) == sha, "Yosys binary or share: " + name)
     require(SNAPSHOTS <= set(meta["snapshots"]), "missing harness snapshot")
+    require(meta["preliminary"] or "scripts/measure-formal-sby.py" in meta["snapshots"], "missing measurement runner snapshot")
     for name, sha in meta["snapshots"].items():
         require(digest(evidence.read("snapshots/" + name)) == sha, "snapshot hash: " + name)
     for name, sha in native_meta["sources"].items():
@@ -251,11 +256,11 @@ def audit(directory):
     require(reader.fieldnames == COLUMNS, "CSV columns")
     csv_rows = list(reader)
     results = evidence.data("results.json")
-    require(results["preliminary"] is True and len(results["rows"]) == len(csv_rows) == 12, "complete condition matrix")
+    require(results["preliminary"] is meta["preliminary"] and len(results["rows"]) == len(csv_rows) == 12, "complete condition matrix")
     identities = [(row["solver"], row["case"]) for row in results["rows"]]
     require(set(identities) == {(solver, case) for solver in ["yices2", "z3"] for case in CASES} and len(set(identities)) == len(identities), "unique complete conditions")
     reports = [audit_case(evidence, meta, native_meta, row, csv_row) for row, csv_row in zip(results["rows"], csv_rows, strict=True)]
-    return {"status": "pass", "preliminary": True, "commit": meta["commit"], "rows": len(reports), "columns": len(COLUMNS), "artifacts": sum(report["artifacts"] for report in reports), "conditions": reports}
+    return {"status": "pass", "preliminary": meta["preliminary"], "commit": meta["commit"], "rows": len(reports), "columns": len(COLUMNS), "artifacts": sum(report["artifacts"] for report in reports), "conditions": reports}
 
 
 if __name__ == "__main__":

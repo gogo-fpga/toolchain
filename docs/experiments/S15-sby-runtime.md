@@ -2,7 +2,7 @@
 
 [実験の一覧](README.md) / [形式検証の事前基準](S15-formal-verification.md) / [process境界とSMTBMCの予備記録](S15-sby-process.md)
 
-この記録は接続層と初期試行を保持します。その後の[全268成果物・16列の独立監査器](S15-sby-artifact-audit.md)は、JNY・JUnit・root logの限定した環境差、SQLiteのUNKNOWN最終行不在、再帰的終了と改変の拒否を別に記録します。正式反復と製品統合は引き続き未完了です。
+この記録は接続層と初期試行を保持します。その後の[全268成果物・16列の独立監査器](S15-sby-artifact-audit.md)は、JNY・JUnit・root logの限定した環境差、SQLiteのUNKNOWN最終行不在、再帰的終了と改変の拒否を別に記録します。[正式5回・A/A 2回](S15-sby-repeated.md)も完了しました。以下の残件表現は本接続層を記録した時点のもので、worker異常対照と製品統合は現在も未完了です。
 
 ## 目的と実装範囲
 

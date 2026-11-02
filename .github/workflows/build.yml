@@ -1656,7 +1656,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: zstd と固定した HDL ライブラリーを取得
+      - name: Web 配布物の組立に必要な submodule を取得
         run: |
           git submodule update --init --depth 1 -- vendor/zstd third_party/
           git -C third_party/vexriscv submodule update --init --depth 1 -- pythondata_cpu_vexriscv/verilog/ext/VexRiscv

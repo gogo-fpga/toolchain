@@ -11,7 +11,7 @@ import { sbyCases, sbyConfig } from "../tests/synth/formal-sby-cases.mjs";
 import { readSbyStatus, classifySbyStatus } from "./probe-upstream-formal.mjs";
 
 globalThis.crossOriginIsolated = true;
-const { values } = parseArgs({ options: Object.fromEntries(["sources", "probes", "synth", "baseline", "out", "solver", "case"].map(name => [name, { type: "string" }])) });
+const { values } = parseArgs({ options: { ...Object.fromEntries(["sources", "probes", "synth", "baseline", "out", "solver", "case"].map(name => [name, { type: "string" }])), formal: { type: "boolean", default: false } } });
 assert.ok(values.sources && values.probes && values.synth && values.baseline && values.out,
   "Use --sources ASSETS --probes MANIFEST --synth YOSYS_ASSETS --baseline NATIVE_SBY --out NEW_DIRECTORY");
 assert.ok(!existsSync(values.out), "Refuse to overwrite evidence");
@@ -28,7 +28,9 @@ assert.equal(digest(yosys.wasm), yosys.sha256); assert.equal(digest(yosys.share)
 const baseline = JSON.parse(readFileSync(path.join(values.baseline, "results.json")));
 const nativeMetadata = JSON.parse(readFileSync(path.join(values.baseline, "metadata.json")));
 json("native-metadata.json", nativeMetadata);
-const metadata = { format: 1, preliminary: true, command: process.argv.slice(1), node: process.version,
+assert.equal(nativeMetadata.preliminary, !values.formal, "Matching native measurement mode required");
+assert.equal(baseline.preliminary, !values.formal, "Matching native result mode required");
+const metadata = { format: 1, preliminary: !values.formal, command: process.argv.slice(1), node: process.version,
   commit: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(),
   worktree: execFileSync("git", ["status", "--porcelain"], { cwd: root, encoding: "utf8" }),
   pyodidePackage: JSON.parse(readFileSync(path.join(root, "node_modules/pyodide/package.json"))).version,
@@ -43,6 +45,7 @@ const snapshots = ["scripts/probe-formal-sby.mjs", "scripts/read-sby-status-db.p
     "verified-assets"].map(name => `web/lib/${name}.mjs`), "tests/synth/formal-sby-cases.mjs", "tests/synth/formal-python-helpers.mjs",
   "tests/synth/solver-protocol-helpers.mjs", "tests/web/formal-python-node-worker.mjs", "tests/web/formal-wasi-node-worker.mjs",
   "tests/web/solver-node-worker.mjs", "tests/web/solver-process-helpers.mjs"];
+if (values.formal) snapshots.push("scripts/measure-formal-sby.py");
 for (const name of snapshots) { const bytes = readFileSync(path.join(root, name)); save(`snapshots/${name}`, bytes); metadata.snapshots[name] = digest(bytes); }
 for (const file of sources.sources) save(`assets/${file.path}`, file.bytes);
 save("inputs/yosys.wasm", yosys.wasm); save("inputs/yosys-share.tar", yosys.share);
@@ -112,7 +115,7 @@ for (const solver of ["yices2", "z3"].filter(name => !values.solver || name === 
       row.sqliteSha256 = digest(readFileSync(path.join(out, label, "pyodide/result/status.sqlite")));
       row.modelSha256 = digest(readFileSync(path.join(out, label, "pyodide/result/model/design_smt2.smt2")));
     } catch (error) { row.error = error.message; }
-    json(`${label}/result.json`, row); rows.push(row); json("results.json", { preliminary: true, rows });
+    json(`${label}/result.json`, row); rows.push(row); json("results.json", { preliminary: !values.formal, rows });
     console.log(`${label}: ${row.error ?? `${row.status} (${row.kind}), ${row.comparedCount} artifacts + SQLite matched`}`);
   }
 }

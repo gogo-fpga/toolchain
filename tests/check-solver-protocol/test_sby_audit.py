@@ -26,7 +26,7 @@ class SbyAuditTest(unittest.TestCase):
         self.out = Path(tmp.name)
         sha = AUDIT.digest(b"binary")
         self.commands = {"yosys": "/native/yosys", "yosys-smtbmc": "'/native/python' '/source/smtbmc.py'", "yosys-witness": "'/native/python' '/source/witness.py'"}
-        native = {"worktree": "", "commit": "1" * 40, "runtime": "native", "nativeCommands": self.commands,
+        native = {"worktree": "", "preliminary": True, "commit": "1" * 40, "runtime": "native", "nativeCommands": self.commands,
                   "python": "Python unit", "yosys": {"sha256": sha, "version": "Yosys unit"}, "sources": {},
                   "pins": "".join(f"160000 commit {'1' * 40}\tvendor/{name}\n" for name in ["click", "sby", "yosys"])}
         self.write("native-metadata.json", native)
@@ -137,6 +137,26 @@ class SbyAuditTest(unittest.TestCase):
     def test_complete_matrix_and_all_artifacts(self):
         result = AUDIT.audit(self.out)
         self.assertEqual((result["status"], result["rows"], result["columns"], result["artifacts"]), ("pass", 12, 16, 268))
+        self.assertTrue(all(AUDIT.re.fullmatch(r"[a-f0-9]{64}", row["canonicalSha256"]) for row in result["conditions"]))
+
+    def test_formal_mode_requires_matching_native_metadata_and_runner(self):
+        for name in ["metadata.json", "metadata-final.json", "results.json"]:
+            data = json.loads((self.out / name).read_bytes())
+            data["preliminary"] = False
+            if name.startswith("metadata"):
+                data["snapshots"]["scripts/measure-formal-sby.py"] = AUDIT.digest(b"runner")
+            self.write(name, data)
+        self.write("snapshots/scripts/measure-formal-sby.py", b"runner")
+        with self.assertRaises(ValueError):
+            AUDIT.audit(self.out)
+        native = json.loads((self.out / "native-metadata.json").read_bytes())
+        native["preliminary"] = False
+        self.write("native-metadata.json", native)
+        for name in ["metadata.json", "metadata-final.json"]:
+            data = json.loads((self.out / name).read_bytes())
+            data["nativeMetadataSha256"] = AUDIT.digest((self.out / "native-metadata.json").read_bytes())
+            self.write(name, data)
+        self.assertIs(AUDIT.audit(self.out)["preliminary"], False)
 
     def test_every_csv_column_rejects_corruption(self):
         for column in AUDIT.COLUMNS:

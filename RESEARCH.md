@@ -211,8 +211,9 @@ T6は上流SBY・SMTBMCの再利用を選び、[S15の事前基準](docs/experim
 | [形式検証の固定ソース・依存・配布条件](docs/research/formal-sources.md) | 採用releaseと初期snapshot、依存、SQLite、license、GMP、source closure |
 | [形式検証ソルバーのビルドと実行方式](docs/research/formal-solvers.md) | WASI CLI・C API・公式WASMの比較候補、GMP・timer・丸め・版表示・native ABIの制約、字句境界、終了0の構文エラーと実応答比較 |
 | [原本SBY・SMTBMCのprocess境界](docs/experiments/S15-sby-process.md) | Pyodideの制約、SQLite、native SBY12条件、SMTBMC仮想processの16条件・AST照合、Yosys子workerと安全なファイル差分、初期の失敗記録 |
-| [SBY全体の仮想process接続](docs/experiments/S15-sby-runtime.md) | SbyPopen・virtual select・単一slot、argv制限、子の差分の適用、JsNull・SQLite WALの対処、両solver各6条件の予備比較と残件 |
-| [SBY全成果物・16列の独立監査](docs/experiments/S15-sby-artifact-audit.md) | 限定した環境差、全268成果物、再帰的終了、UNKNOWNのSQLite最終行不在、改変の拒否と予備失敗 |
+| [SBY全体の仮想process接続](docs/experiments/S15-sby-runtime.md) | SbyPopen・単一slot・子差分・両solver各6条件の比較 |
+| [SBY全成果物・16列の独立監査](docs/experiments/S15-sby-artifact-audit.md) | 全268成果物・SQLite・終了・16列の改変拒否 |
+| [SBY正式5回・A/A 2回](docs/experiments/S15-sby-repeated.md) | 同一commitで全84行・19列・1,876成果物が一致 |
 
 元VHDLの独立再実行は、GHDL標準のVPIと`--psl-report`を再利用する限定した検査経路を追加しました。清浄な同一commitで55件×5回とA/Aの2回が成功し、元ファイルとCSV全280行19列を照合しています。通常assertionとclocked PSLの評価位相、coverが既定では標準出力に現れないこと、root moduleのVPI列挙、生CSV・全ファイルのhash・失敗試行と未完了の範囲を[元VHDLによる再実行の実験記録](docs/experiments/S15-vhdl-native-replay.md)へ保存します。下位化後のVerilog比較、追加fixtureとT6全体は未完了です。
 
@@ -222,7 +223,7 @@ Actions.lock は今回は導入を見送り、現行の完全長 SHA 固定を�
 
 T6 P2では、WASI shimの同期stdin reader、容量を制限した共有buffer、期限・整合性・終了を管理する専用workerを追加しました。予備Yices2 WASMでは5 byteの入力chunkと7 byteのbufferで双方向SMT通信を確認しました。この段階は正式反復ではありません。GMP検索先、cross makeのarch、alarm、SDKとEmscriptenの丸め、C++標準ライブラリー、setjmp/longjmp、版表示の由来を[ソルバー調査](docs/research/formal-solvers.md)と[S15 P2](docs/experiments/S15-solver-build-and-transport.md)に残します。hardware丸めの単独compile後、実Z3 WASIでも非対応要求を明示拒否できました。
 
-その後、Z3のclean buildを終え、両solverのnative/WASIを清浄な`3ea717e`の比較器で各5回・A/A 2回実行しました。全329行31列と294負の対照を監査し、正常3条件の全byte一致と異常分類を確認しました。欠測をnullに保つ資源、生CSV、全buildの由来と警告、証拠ZIPは[正式比較](docs/experiments/S15-solver-native-wasi.md)、予備21実行などの履歴は[実応答記録](docs/experiments/S15-solver-protocol.md)へ分けます。Z3 WASIはZstandardで5,246,594 byteとなり、host展開後のhashも元と一致しました。ブラウザーの展開、SBYと製品画面、既定solverの選定は未完了です。
+両solverのnative/WASIは各5回・A/A 2回で全329行31列と294負の対照を監査しました。[正式比較と圧縮配信の制約](docs/research/formal-solvers.md#正式比較と圧縮配信の制約)へ条件・証拠・未完了の範囲を分けます。
 
 ## 8. 未確認の事項
 
