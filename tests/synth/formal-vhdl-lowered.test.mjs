@@ -32,6 +32,7 @@ function loadTree(directory) {
   }));
 }
 const librariesTree = loadTree(path.join(build, "ghdl-native/lib/ghdl"));
+mkdirSync(path.join(root, "build/S15"), { recursive: true });
 const evidence = mkdtempSync(path.join(root, "build/S15/p1-vhdl-lowered-"));
 console.log(`Retained VHDL lowered replay evidence: ${evidence}`);
 const metadata = Object.fromEntries(readFileSync(path.join(build, "ghdl-wasm/build-manifest.tsv"), "utf8").trim().split("\n").map((row) => row.split("\t")));
