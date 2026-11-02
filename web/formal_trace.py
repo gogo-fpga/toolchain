@@ -67,6 +67,8 @@ def recording_writer(original, captures):
             require(self.capture_path != OUTPUT and self.capture_path not in {item.capture_path for item in captures},
                     "Duplicate or reserved captured trace path")
             self.frames = []
+            self.capture_signals = {}
+            self.capture_time = -1
             self.capture_bytes = 0
             super().__init__(stream)
             captures.append(self)
@@ -77,41 +79,44 @@ def recording_writer(original, captures):
 
         def add_net(self, path, width):
             path = net_path(path)
-            require(self.t == -1 and path not in self.nets and type(width) is int and 0 < width <= 4096,
+            require(self.capture_time == -1 and path not in self.capture_signals and type(width) is int and 0 < width <= 4096,
                     "Duplicate captured net or invalid width")
-            require(len(self.nets) < MAX_SIGNALS, "Captured signal count limit")
+            require(len(self.capture_signals) < MAX_SIGNALS, "Captured signal count limit")
             self.reserve(sum(len(part) for part in path) + 64)
+            self.capture_signals[path] = (width, None)
             super().add_net(path, width)
 
         def add_clock(self, path, edge):
             path = net_path(path)
-            require(self.t == -1 and path not in self.nets and type(edge) is str and edge in {"posedge", "negedge", "event"},
+            require(self.capture_time == -1 and path not in self.capture_signals and type(edge) is str and edge in {"posedge", "negedge", "event"},
                     "Duplicate captured clock or invalid edge")
-            require(len(self.nets) < MAX_SIGNALS, "Captured signal count limit")
+            require(len(self.capture_signals) < MAX_SIGNALS, "Captured signal count limit")
             self.reserve(sum(len(part) for part in path) + 64)
+            self.capture_signals[path] = (1, edge)
             super().add_clock(path, edge)
 
         def set_time(self, time):
-            require(type(time) is int and 0 <= time <= MAX_STEPS and time >= self.t, "Invalid captured time")
-            if time != self.t:
+            require(type(time) is int and 0 <= time <= MAX_STEPS and time >= self.capture_time, "Invalid captured time")
+            if time != self.capture_time:
                 self.frames.append({"time": time, "values": {}})
+            self.capture_time = time
             super().set_time(time)
 
         def set_net(self, path, bits):
             path = net_path(path)
-            require(self.frames and path in self.nets and path not in self.frames[-1]["values"],
+            require(self.frames and path in self.capture_signals and path not in self.frames[-1]["values"],
                     "Duplicate or unknown captured value")
-            require(type(bits) is str and len(bits) == self.nets[path][1] and set(bits) <= set("01"),
+            require(type(bits) is str and len(bits) == self.capture_signals[path][0] and set(bits) <= set("01"),
                     "Invalid captured bits")
             self.reserve(len(bits) + sum(len(part) for part in path) + 64)
-            super().set_net(path, bits)
             self.frames[-1]["values"][path] = bits
+            super().set_net(path, bits)
 
         def snapshot(self):
             require(self.f.closed and len(self.frames) >= 2 and not self.frames[-1]["values"],
                     "Incomplete captured trace")
             require(all(frame["values"] for frame in self.frames[:-1]), "Empty captured trace sample")
-            require(all(set(frame["values"]) == set(self.nets) for frame in self.frames[:-1]),
+            require(all(set(frame["values"]) == set(self.capture_signals) for frame in self.frames[:-1]),
                     "Missing captured signal sample")
             file = relative_file(self.capture_path)
             raw = file.read_bytes()
@@ -119,8 +124,8 @@ def recording_writer(original, captures):
             return {
                 "path": self.capture_path,
                 "sha256": hashlib.sha256(raw).hexdigest(),
-                "signals": [{"path": list(path), "width": width, "clock": self.clocks.get(path, (None, None))[1]}
-                            for path, (_, width) in self.nets.items()],
+                "signals": [{"path": list(path), "width": width, "clock": edge}
+                            for path, (width, edge) in self.capture_signals.items()],
                 "steps": [{"time": frame["time"], "values": [{"path": list(path), "bits": bits}
                            for path, bits in frame["values"].items()]} for frame in self.frames[:-1]],
                 "endTime": self.frames[-1]["time"],

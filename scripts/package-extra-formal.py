@@ -21,6 +21,16 @@ MAX_LOGICAL = 16 * 1024 * 1024 * 1024
 MAX_MANIFEST = 16 * 1024 * 1024
 AUDITORS = ("measure-extra-formal.py", "audit-formal-python.py", "audit-formal-sby.py",
             "audit-formal-controls.py", "sby-artifact-audit.py", "formal-solver-audit.py")
+TRACE_AUDITORS = ("measure-formal-trace.py", "audit-formal-trace.py", "audit-formal-sby.py",
+                  "sby-artifact-audit.py", "formal-solver-audit.py", "negative-formal-trace.py")
+
+
+def campaign_sources(plan):
+    kind = plan.get("kind")
+    require(kind in [None, "formal-trace-v1"], "unknown campaign kind")
+    if kind == "formal-trace-v1":
+        return ["scripts/" + name for name in TRACE_AUDITORS] + ["vendor/yosys/backends/smt2/smtio.py"]
+    return ["scripts/" + name for name in AUDITORS]
 
 
 def require(value, message):
@@ -52,11 +62,13 @@ def safe_path(name):
 
 
 def audited_campaign(directory):
-    runner = directory / "snapshots/scripts/measure-extra-formal.py"
+    plan = strict_json((directory / "plan.json").read_bytes())
+    sources = campaign_sources(plan)
+    runner = directory / "snapshots" / sources[0]
     require(runner.is_file() and not runner.is_symlink(), "missing captured campaign runner")
-    for name in AUDITORS:
-        path = directory / "snapshots/scripts" / name
-        require(path.is_file() and not path.is_symlink() and digest(path.read_bytes()) == digest((ROOT / "scripts" / name).read_bytes()),
+    for name in sources:
+        path = directory / "snapshots" / name
+        require(path.is_file() and not path.is_symlink() and digest(path.read_bytes()) == digest((ROOT / name).read_bytes()),
                 "trusted campaign auditor before execution")
     with tempfile.TemporaryDirectory(prefix="formal-audit-cache-") as cache:
         result = subprocess.run([sys.executable, "-I", "-B", "-X", "pycache_prefix=" + cache, str(runner), "--audit-only", "--out", str(directory)], cwd=ROOT,
@@ -157,9 +169,11 @@ def validate(archive):
         for sha in objects:
             info = data.getinfo("objects/" + sha)
             require(info.file_size <= MAX_OBJECT and digest(data.read(info)) == sha, "archived object bytes")
-        for name in AUDITORS:
-            runner = next((item for item in manifest["files"] if item["path"] == str(campaign) + "/snapshots/scripts/" + name), None)
-            require(runner is not None and runner["sha256"] == digest((ROOT / "scripts" / name).read_bytes()), "trusted campaign auditor")
+        plan = next((item for item in manifest["files"] if item["path"] == str(campaign) + "/plan.json"), None)
+        require(plan is not None, "missing campaign plan")
+        for name in campaign_sources(strict_json(data.read("objects/" + plan["sha256"]))):
+            runner = next((item for item in manifest["files"] if item["path"] == str(campaign) + "/snapshots/" + name), None)
+            require(runner is not None and runner["sha256"] == digest((ROOT / name).read_bytes()), "trusted campaign auditor")
         return manifest
 
 

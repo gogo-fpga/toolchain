@@ -14,6 +14,15 @@ SPEC.loader.exec_module(ARCHIVE)
 
 
 class ExtraFormalArchiveTest(unittest.TestCase):
+    def test_trace_campaign_requires_its_auditors_and_original_writer(self):
+        sources = ARCHIVE.campaign_sources({"kind": "formal-trace-v1"})
+        self.assertEqual(sources[0], "scripts/measure-formal-trace.py")
+        self.assertIn("scripts/audit-formal-trace.py", sources)
+        self.assertIn("vendor/yosys/backends/smt2/smtio.py", sources)
+        self.assertEqual(ARCHIVE.campaign_sources({}), ["scripts/" + name for name in ARCHIVE.AUDITORS])
+        with self.assertRaisesRegex(ValueError, "unknown campaign"):
+            ARCHIVE.campaign_sources({"kind": "untrusted"})
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)

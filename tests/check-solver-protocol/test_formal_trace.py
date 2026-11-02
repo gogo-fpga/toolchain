@@ -65,6 +65,30 @@ class FormalTraceTest(unittest.TestCase):
         self.addCleanup(stream.close)
         return TRACE.recording_writer(SMTIO.MkVcd, [])(stream)
 
+    def test_records_independent_metadata_before_every_upstream_call(self):
+        class ObservedWriter(SMTIO.MkVcd):
+            def add_net(writer, path, width):
+                self.assertEqual(writer.capture_signals[tuple(path)], (width, None))
+                super().add_net(path, width)
+
+            def add_clock(writer, path, edge):
+                self.assertEqual(writer.capture_signals[tuple(path)], (1, edge))
+                super().add_clock(path, edge)
+
+            def set_time(writer, time):
+                self.assertEqual(writer.capture_time, time)
+                self.assertEqual(writer.frames[-1]["time"], time)
+                super().set_time(time)
+
+            def set_net(writer, path, bits):
+                self.assertEqual(writer.frames[-1]["values"][tuple(path)], bits)
+                super().set_net(path, bits)
+
+        with open("trace.vcd", "w") as stream:
+            writer = TRACE.recording_writer(ObservedWriter, [])(stream)
+            self.emit(writer)
+        self.assertEqual(writer.snapshot()["endTime"], 3)
+
     def test_rejects_duplicate_nets_clocks_values_and_invalid_widths(self):
         for width in [0, -1, 4097, True, 1.5, "1", None]:
             with self.subTest(width=width), self.assertRaises(ValueError):

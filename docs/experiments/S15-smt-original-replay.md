@@ -81,6 +81,29 @@ hostはLinux `6.8.0-1061-aws`、x86_64、Intel Xeonの2 CPU、memory 8,327,749,6
 
 追加したWeb単体の初回fixtureは、未patchのSMTIO全体をPyodideへ読み込み、host資源設定の初期化で停止しました。最初の276件中1件の失敗を保存しています。fixtureを原本 `MkVcd` クラスだけのAST読込へ改め、負の対照も単に例外が出たことだけでなく、狙ったpath・値・終端の拒否理由まで照合しました。製品側のprocess patchやSMT判定をこのfixtureに合わせて変更していません。
 
+## 独立監査と反復の基準
+
+`scripts/audit-formal-trace.py` は、比較器の `matched` を信用する代わりに、全17列をprocess記録・元成果物・標準streamから計算し直します。未知の条件、行の不足・重複、JSONの重複key・非有限値、CSVの不一致、危険なpath、symlinkを拒否します。Bitwuzlaのhelp/SMT childを分け、Boolectorの実終了code 10/20と許可policyを検査します。
+
+記録JSONのnet・clock・時刻・値から、固定した上流の `MkVcd` クラスを使ってVCDを再生成し、原本VCD全bytesとも照合します。SMT応答の解析を移植するものではありません。上流がclockのsample値をVCDへ出さず、edge定義から波形を生成する点もそのままです。clockのモデル値はnative/Pyodide間で照合する記録であり、原HDLで独立に検証した値とは扱いません。
+
+監査の過程で、記録器の信号定義が上流writerの内部辞書に依存していた点を改めました。独立した定義・時刻・値を各 `super()` 呼出し前に保存し、先に記録されたことを単体で検査します。上流の全method呼出しは残します。
+
+提出済みcommit `3b6eba147b8989d27cb9f23c439fcc758d027bd5` の予備128行は、新しい監査器でも全17列が一致しました。初回監査では既定entrypointのJSONで空のcapture hashが省略される点と、英語localeによる成果物名の順序を見落として停止しました。失敗ログを保持し、旧予備記録だけを明示的に読めるようにしました。新しい比較器は空のhashも `null` として保存し、hashの対象名はcodepoint順に固定します。正式modeは旧形式を許可しません。
+
+正式modeは清浄な同一commitのnative基準を要求し、source pin・元Pythonとpatchのhash・staged資材・native/WASI build metadata・実binary全bytesと起動先を照合します。`scripts/measure-formal-trace.py` は既定2候補、Bitwuzla、Boolectorを順にA/A 2回・正式5回測り、全896行19列、反復間の意味的hashと条件ごとの最小・中央値・最大を監査します。正式結果はまだありません。
+
+```sh
+python3 scripts/build-formal-python.py --out build/S15/smt-trace-python-assets-formal-01
+python3 scripts/measure-formal-trace.py --sources build/S15/smt-trace-python-assets-formal-01 \
+  --probes build/S15/smt-trace-all-probes.json --out build/S15/smt-trace-formal-01
+python3 scripts/measure-formal-trace.py --audit-only --out build/S15/smt-trace-formal-01
+```
+
+probe一覧は前段でhash認定した4候補のnative/WASI build出力を指定します。前段のbinaryを再利用し、今回の記録境界からsolverを再ビルドしたとは扱いません。`scripts/negative-formal-trace.py` は全17列のCSV/JSON、child、欠落・重複、VCDと記録値などを個別に変え、拒否理由と復元後の正常監査を保存します。測定中のscriptは変更しません。
+
+正式測定前の実証拠改変対照は、既定2候補56件、Bitwuzla 57件、Boolector 57件の計170件を拒否し、原状へ戻した後の監査も通りました。既定2候補は独立metadataへの修正を含む新しい予備比較を使い、追加2候補は提出済みの予備証拠を使っています。これは正式反復の結果ではありません。Python回帰138件とWeb回帰276件も成功しました。
+
 ## 未完了
 
 元Verilog・元VHDL/PSL・下位化Verilogへの値の接続、負の対照、全列独立監査、正式反復、証拠復元と画面接続は未完了です。原本SMTBMC/SBYの成果物一致と、原回路による反例検証を分けて進めます。
