@@ -75,3 +75,13 @@ python3 scripts/audit-extra-solver-cli.py --input <restore>/build/S15/bitwuzla-c
 ```
 
 集計器は全7回を再監査し、元の14列にrun名だけを加えて公開CSVを作ります。`--check` は書き込みをせず、公開CSVの全byteとrun名を照合します。証拠作成には清浄なcommitが必要です。`--extra` を繰り返し指定すると、正式結果とは別に予備試行・失敗ログ・実行用shellなどを追加できます。復元後の再監査では、元のGit commitを参照できるリポジトリを明示します。
+
+## 証拠ZIPと復元後の監査
+
+`bitwuzla-cli-d8fdbc6-evidence-01.zip` は30,278,979 byte、SHA-256は `41e5f2a2a305408bde3f7b44773e7d8d03c0eb538cd3c09dbfc9a94a3abb2d55` です。作成器は清浄な `bd20f27a64f799a3280edc9711fd6196a11f4b20` を記録し、[全1,443ファイルの目録](S15-bitwuzla-cli-files.csv)を保持しています。archive内のmanifestはSHA-256 `1a48d85531ac37aa4d57dfceed38023ed79c043c3ba778ef6cf7e22b37ae4a07` です。7回の入力・生出力・JSON・CSV・setupとsource snapshot、両修正版と旧WASIのbinary・静的library・header・metadata・build log・patch・依存archiveと原license・overlay、予備試行と監査失敗の記録、集計器・証拠作成器を含みます。Gitの履歴と全SDKの配布archiveを内包するZIPではありません。
+
+ZIPの全entryの名前・個数・サイズ・SHA-256を検査してから、一時領域ではない未使用の `build/S15/bitwuzla-cli-d8fdbc6-restored-01` へ復元しました。展開した全1,443ファイルも目録と照合し、復元したPython監査器で全7回の29行14列、復元した集計器でA/A 58行・正式145行の全15列を再監査しました。元のbuildディレクトリーへのfallbackは使わず、`--evidence-root` で復元先へ写像しています。参照するGit commitの原文だけは `--git-repo` で指定した本リポジトリから取得しました。これらの監査は成功しています。
+
+## 残る認定
+
+今回の通過範囲はCLIとbuild由来の独立監査です。原本の `yosys-smtbmc` とSBYによるBMC・prove・cover、実行中の取消・外部期限、元のVerilog/VHDLでの反例再実行、製品資材のclosure・配布と画面接続は未完了です。browser UIやTang Nanoの実機では試していません。BitwuzlaとBoolectorは製品catalogで無効のままです。
