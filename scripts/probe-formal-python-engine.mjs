@@ -18,6 +18,7 @@ const normalizeLog = text => text.replace(/^##\s+\d+:\d\d:\d\d\s+/gm, "## TIME "
 const { values } = parseArgs({ options: {
   sources: { type: "string" }, probes: { type: "string" }, baseline: { type: "string" },
   out: { type: "string" }, solver: { type: "string" }, case: { type: "string" },
+  formal: { type: "boolean", default: false },
 } });
 assert.ok(values.sources && values.probes && values.baseline && values.out,
   "Use --sources ASSETS --probes MANIFEST --baseline NATIVE_SBY --out NEW_DIRECTORY");
@@ -27,21 +28,28 @@ mkdirSync(out);
 const sources = readFormalSources(values.sources);
 const probes = JSON.parse(readFileSync(values.probes));
 const reference = JSON.parse(readFileSync(path.join(values.baseline, "results.json")));
+const nativeMetadata = readFileSync(path.join(values.baseline, "metadata.json"));
+assert.equal(reference.preliminary, !values.formal, "Matching native result mode required");
+assert.equal(JSON.parse(nativeMetadata).preliminary, !values.formal, "Matching native metadata mode required");
+writeFileSync(path.join(out, "native-metadata.json"), nativeMetadata);
 const python = process.env.PYTHON ?? "python3";
 const binaryDir = path.join(out, "bin"); mkdirSync(binaryDir);
 const metadata = {
-  format: 1, preliminary: true, baseCommit: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(),
+  format: 1, preliminary: !values.formal, baseCommit: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(),
   worktreeStatus: execFileSync("git", ["status", "--porcelain=v1"], { cwd: root, encoding: "utf8" }),
   node: process.version, python: execFileSync(python, ["--version"], { encoding: "utf8" }).trim(),
   pyodide: JSON.parse(readFileSync(path.join(root, "node_modules/pyodide/package.json"))).version,
-  scriptSha256: digest(readFileSync(import.meta.filename)), sources: sources.manifest, snapshots: {}, probes: {}, models: {},
+  scriptSha256: digest(readFileSync(import.meta.filename)), nativeMetadataSha256: digest(nativeMetadata),
+  sources: sources.manifest, snapshots: {}, probes: {}, models: {}, solverCommands: {},
 };
 const snapshotNames = [".gitmodules", "package-lock.json", "scripts/probe-formal-python-engine.mjs", "scripts/build-formal-python.py",
   "scripts/audit-formal-python.py", "patches/yosys-smtio-process.patch", "web/formal_process.py",
   "web/lib/formal-python-process.mjs", "web/lib/formal-python-job.mjs", "web/lib/formal-process-client.mjs",
   "web/lib/solver-process.mjs", "web/lib/solver-job.mjs", "web/lib/byte-pipe.mjs", "web/lib/wasi-p1.mjs",
   "tests/web/formal-python-node-worker.mjs", "tests/web/solver-node-worker.mjs", "tests/web/solver-process-helpers.mjs",
-  "tests/synth/formal-python-helpers.mjs", "tests/synth/formal-sby-cases.mjs", "tests/synth/solver-protocol-helpers.mjs"];
+  "tests/synth/formal-python-helpers.mjs", "tests/synth/formal-sby-cases.mjs", "tests/synth/solver-protocol-helpers.mjs",
+  "scripts/formal-solver-audit.py", "scripts/probe-upstream-formal.mjs"];
+if (values.formal) snapshotNames.push("scripts/measure-extra-formal.py");
 for (const name of snapshotNames) {
   const bytes = readFileSync(path.join(root, name));
   const target = path.join(out, "snapshots", name); mkdirSync(path.dirname(target), { recursive: true });
@@ -59,8 +67,11 @@ for (const solver of selectFormalSolvers(values.solver)) {
   const wasiProbe = loadSolverProbe(probes[solver].wasi, solver, "wasi");
   const executable = solver === "yices2" ? "yices-smt2" : solver;
   symlinkSync(nativeProbe.binaryPath, path.join(binaryDir, executable));
-  verifyNativeSolver(executable, binaryDir, nativeProbe.info.artifact.sha256,
+  metadata.solverCommands[solver] = verifyNativeSolver(executable, binaryDir, nativeProbe.info.artifact.sha256,
     { ...process.env, PATH: `${binaryDir}${path.delimiter}${process.env.PATH}` });
+  mkdirSync(path.join(out, "inputs"), { recursive: true });
+  writeFileSync(path.join(out, "inputs", `${solver}-native`), nativeProbe.binary);
+  writeFileSync(path.join(out, "inputs", `${solver}.wasm`), wasiProbe.binary);
   for (const [runtime, probe] of [["native", nativeProbe], ["wasi", wasiProbe]]) {
     writeFileSync(path.join(out, `${solver}-${runtime}-build.json`), probe.metadata);
     let version;
@@ -163,7 +174,7 @@ for (const solver of selectFormalSolvers(values.solver)) {
 }
 assert.ok(rows.length > 0, "No formal engine conditions selected");
 writeFileSync(path.join(out, "metadata-final.json"), JSON.stringify(metadata, null, 2) + "\n");
-writeFileSync(path.join(out, "results.json"), JSON.stringify({ preliminary: true, rows }, null, 2) + "\n");
+writeFileSync(path.join(out, "results.json"), JSON.stringify({ preliminary: !values.formal, rows }, null, 2) + "\n");
 const columns = ["solver", "case", "phase", "nativeElapsedMs", "pyodideElapsedMs", "nativeExitCode", "pyodideExitCode",
   "status", "modelSha256", "solverSha256", "nativeStdoutSha256", "pyodideStdoutSha256", "error"];
 const cell = value => `"${String(value ?? "").replaceAll('"', '""')}"`;

@@ -7,9 +7,9 @@ import { parseArgs } from "node:util";
 import { startFormalPython } from "../web/lib/formal-python-process.mjs";
 import { readFormalSources } from "../tests/synth/formal-python-helpers.mjs";
 import { createFormalControlWorkers } from "../tests/synth/formal-control-workers.mjs";
-import { formalControls, formalRestrictions } from "../tests/synth/formal-control-cases.mjs";
+import { formalControls, formalRestrictions, extraFormalControls } from "../tests/synth/formal-control-cases.mjs";
 import { loadSolverProbe, digest, root } from "../tests/synth/solver-protocol-helpers.mjs";
-import { sbyCases, sbyConfig } from "../tests/synth/formal-sby-cases.mjs";
+import { sbyCases, sbyConfig, selectFormalSolvers } from "../tests/synth/formal-sby-cases.mjs";
 import { readSbyStatus } from "./probe-upstream-formal.mjs";
 
 globalThis.crossOriginIsolated = true;
@@ -20,8 +20,10 @@ const { values } = parseArgs({ options: {
 assert.ok(values.sources && values.probes && values.synth && values.out,
   "Use --sources ASSETS --probes MANIFEST --synth YOSYS_ASSETS --out NEW_DIRECTORY");
 assert.ok(!existsSync(values.out), "Refuse to overwrite evidence");
-if (values.solver) assert.ok(["yices2", "z3"].includes(values.solver));
-if (values.case) assert.ok([...formalControls, ...formalRestrictions].some(item => item.name === values.case));
+const selected = selectFormalSolvers(values.solver);
+const extra = selected.every(name => ["bitwuzla", "boolector"].includes(name));
+const controls = [...formalControls, ...(extra ? extraFormalControls : [])];
+if (values.case) assert.ok([...controls, ...formalRestrictions].some(item => item.name === values.case));
 const git = args => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
 const commit = git(["rev-parse", "HEAD"]);
 const worktree = git(["status", "--porcelain"]);
@@ -46,15 +48,17 @@ const metadata = { format: 1, preliminary: !values.formal, commit, worktree, com
   sources: sources.manifest, yosys: { sha256: yosys.sha256, shareSha256: yosys.shareSha256 }, snapshots: {}, probes: {},
   deadlineMs: 15_000, cleanupDeadlineMs: 5000 };
 const snapshots = ["scripts/probe-formal-controls.mjs", "scripts/audit-formal-controls.py", "scripts/audit-formal-sby.py", "scripts/sby-artifact-audit.py",
+  "scripts/formal-solver-audit.py",
   "scripts/build-formal-python.py", "scripts/probe-upstream-formal.mjs", "scripts/measure-formal-controls.py",
   "web/formal_process.py", "patches/sby-process.patch", "patches/yosys-smtio-process.patch", "package-lock.json", ".gitmodules",
   ...["formal-python-process", "formal-python-job", "formal-tool-client", "formal-process-client", "formal-tool-process", "formal-tool-command",
     "formal-workspace", "formal-wasi-job", "solver-job", "solver-process", "wasi-p1", "byte-pipe", "verified-assets"].map(name => `web/lib/${name}.mjs`),
   ...["formal-control-workers", "formal-control-cases", "formal-controlled-python-worker", "formal-controlled-solver-worker",
     "formal-sby-cases", "formal-python-helpers", "solver-protocol-helpers"].map(name => `tests/synth/${name}.mjs`), "tests/web/formal-wasi-node-worker.mjs"];
+if (values.formal && extra) snapshots.push("scripts/measure-extra-formal.py");
 for (const name of snapshots) { const bytes = readFileSync(path.join(root, name)); save(`snapshots/${name}`, bytes); metadata.snapshots[name] = digest(bytes); }
 const binaries = new Map();
-for (const solver of ["yices2", "z3"].filter(name => !values.solver || name === values.solver)) {
+for (const solver of selected) {
   const probe = loadSolverProbe(probes[solver].wasi, solver, "wasi"); binaries.set(solver, probe);
   metadata.probes[solver] = { sha256: probe.info.artifact.sha256, metadataSha256: probe.metadataSha256 };
   save(`inputs/${solver}.wasm`, probe.binary); save(`build/${solver}.json`, probe.metadata);
@@ -62,7 +66,7 @@ for (const solver of ["yices2", "z3"].filter(name => !values.solver || name === 
 json("metadata.json", metadata);
 const encoder = new TextEncoder();
 const rows = [];
-const matrix = [...binaries.keys()].flatMap(solver => formalControls.map(condition => ({ solver, condition })));
+const matrix = [...binaries.keys()].flatMap(solver => controls.map(condition => ({ solver, condition })));
 matrix.push(...formalRestrictions.map(condition => ({ solver: binaries.keys().next().value, condition })));
 for (const { solver, condition } of matrix.filter(item => !values.case || item.condition.name === values.case)) {
   const label = `${condition.restriction ? "restriction" : solver}-${condition.name}`;
@@ -76,7 +80,8 @@ for (const { solver, condition } of matrix.filter(item => !values.case || item.c
     ...(condition.args ?? []), "job.sby"];
   json(`${label}/request.json`, { solver, condition: condition.name, fixture: fixture.name, args });
   const job = startFormalPython({ ...sources, entrypoint: "sby", args, files,
-    solvers: { [solver === "yices2" ? "yices-smt2" : "z3"]: { wasm: probe.binary, sha256: probe.info.artifact.sha256 } }, yosys,
+    solvers: { [solver === "yices2" ? "yices-smt2" : solver]: { wasm: probe.binary, sha256: probe.info.artifact.sha256,
+      exitCodes: solver === "boolector" ? [0, 10, 20] : [0] } }, yosys,
     timeoutMs: metadata.deadlineMs, ...workers, onStdout: line => stdout.push(line), onStderr: line => stderr.push(line) });
   workers.setJob(job);
   const result = await job.completion;

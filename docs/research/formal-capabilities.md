@@ -44,6 +44,8 @@ AIGER・BTORの[witness変換試験](../experiments/S15-sby-witness.md)は形式
 
 [原本SMTBMC/SBYの追加候補接続](../experiments/S15-extra-solver-smtbmc.md)では、help取得と実際の終了codeを仮想processへ接続しています。予備比較は正式な適合性認定ではなく、両候補は無効のままです。PATH上の別のnative solverへ到達した初期試行は除外し、解決先とhashの検査を必須にしました。
 
+[独立監査と反復](../experiments/S15-extra-formal-audit.md)は、追加候補を明示したときだけ条件集合を切り替え、従来のYices2/Z3の行数・全列検査を維持します。予備28条件の監査と、正式反復・証拠復元・製品認定は別に扱います。
+
 [BitwuzlaのMeson診断](../experiments/S15-bitwuzla-build.md)は、上流wrapの固定依存とWASI境界を記録します。整数幅と終了境界を修正し、清浄なnative/WASIで[CLI正式5回・A/A 2回の全203行14列](../experiments/S15-bitwuzla-cli-qualification.md)を独立に監査しました。診断だけでは製品catalogの状態を変更しません。原本SMTBMC/SBYの認定は残件です。
 
 Bitwuzla本体の固定版[COPYING](https://github.com/bitwuzla/bitwuzla/blob/8d1eb01093ae54d9b4586456b69c3bf31000a4c2/COPYING)とBoolector本体の固定版[COPYING](https://github.com/Boolector/boolector/blob/393cdfba3735d334bb4e6525500b8a0280dd41e6/COPYING)はMITです。本体の条件だけで、依存を含むバイナリーを配布可能とは判定しません。

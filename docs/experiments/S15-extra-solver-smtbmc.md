@@ -17,6 +17,8 @@
 
 ## 接続の実装と予備試行
 
+この接続層に続く全列監査、process対照、正式反復の基準と結果は[追加solverの独立監査](S15-extra-formal-audit.md)へ分けています。接続層の予備一致だけでは正式認定になりません。
+
 変更はprocess境界に限ります。`patches/yosys-smtio-process.patch` はnativeで `subprocess.check_output`、browserで `formal_process.check_output` を参照する別名を追加します。helpの読み方、版別の引数選択、unroll、SMT応答の解析は原本のままです。仮想processはstdinをEOFにし、stdoutだけを捕捉してstderrを親へ転送します。bytes/text、UTF-8、改行、非ゼロ時の `CalledProcessError` を保持し、未対応のkeywordは拒否します。
 
 `Popen.wait()` と仮想readerのjoinは実際の終了codeを返す境界へ接続します。code 10/20を0へ書き換えません。brokerは資材の明示的な `exitCodes` を検査し、既定は `[0]`、Boolectorの診断だけは `[0, 10, 20]` です。空・重複・範囲外・不正な型は拒否し、各子processの証拠に実際のcodeと一覧を保存します。異常なtransportはこの一覧では成功になりません。

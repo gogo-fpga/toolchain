@@ -189,6 +189,7 @@ T6は上流SBY・SMTBMCの再利用を選び、[S15の事前基準](docs/experim
 | [追加ソルバーの固定依存と診断](docs/experiments/S15-extra-solver-builds.md) | MPFRの固定archiveと署名、依存license、CaDiCaLのWASI patchと失敗試行。BoolectorのCLI 5条件は一致。[IDとtraceの境界](docs/experiments/S15-solver-portability.md)も正式5回・A/A 2回の全56行21列を監査。SMTBMC認定・Bitwuzla・製品配布は未完了 |
 | [BitwuzlaのMeson診断](docs/experiments/S15-bitwuzla-build.md) | 固定依存とWASI境界。[CLI正式5回・A/A 2回](docs/experiments/S15-bitwuzla-cli-qualification.md)の全203行14列を独立監査。SMTBMC認定は残件 |
 | [追加候補と原本SMTBMC/SBYの接続](docs/experiments/S15-extra-solver-smtbmc.md) | Bitwuzlaの実help取得、Boolectorの終了10/20、native解決先とhash検査。予備比較と失敗の除外を保持。正式認定・製品有効化は未完了 |
+| [追加候補の独立監査と反復](docs/experiments/S15-extra-formal-audit.md) | SMTBMC/SBY全列の明示的solver選択、実parserエラーと未許可code、固定commitでの5回・A/Aの基準。正式結果と製品認定は未完了 |
 | [形式検証の候補と有効化条件](docs/research/formal-capabilities.md) | SMT全9選択肢・SBY全6エンジンと内蔵SAT。反復検証と製品資材を分離し、未対応候補は理由付きで無効。追加solverの製品認定は残件 |
 | [原本SBY・SMTBMCのprocess境界](docs/experiments/S15-sby-process.md) | Pyodideの制約、SQLite、native SBY12条件、SMTBMC仮想processの16条件・AST照合、Yosys子workerと安全なファイル差分、初期の失敗記録 |
 | [SBY全体の仮想process接続](docs/experiments/S15-sby-runtime.md) | SbyPopen・単一slot・子差分・両solver各6条件の比較 |

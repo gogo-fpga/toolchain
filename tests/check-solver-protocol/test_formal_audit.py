@@ -78,7 +78,7 @@ class FormalAuditTest(unittest.TestCase):
             writer.writerows(self.csv_rows)
 
     def test_complete_matrix(self):
-        self.assertEqual(AUDIT.audit(self.out), {"status": "pass", "preliminary": True, "rows": 16, "columns": 13})
+        self.assertEqual(AUDIT.audit(self.out), {"status": "pass", "preliminary": True, "commit": "1" * 40, "rows": 16, "columns": 13})
 
     def test_each_csv_column_rejects_an_altered_cell(self):
         for column in AUDIT.COLUMNS:

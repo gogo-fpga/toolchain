@@ -7,6 +7,7 @@
 | 記録 | 内容 | 状態 |
 |---|---|---|
 | [S15 追加候補と原本SMTBMC/SBYの接続](S15-extra-solver-smtbmc.md) | Bitwuzlaの実help、Boolectorの終了10/20、native起動先の検査 | 両候補でSMTBMC各8条件・SBY各6条件の予備比較。初期の別native起動は除外。正式反復と製品認定は残件 |
+| [S15 追加候補の独立監査と反復](S15-extra-formal-audit.md) | SMTBMC/SBY全列とhelp・実code・実構文エラーの監査 | 予備28条件の全列監査。正式5回・A/Aと証拠復元は未完了 |
 | [S15 SBY子workerの停止と輸送の対照](S15-sby-controls.md) | 実ソルバーのstdin待機、全worker停止、delta改変とroot競合、非対応オプション | 正式5回・A/A 2回、全161行14列・966出力・707 workerを独立監査。ZIPからの全件復元も成功 |
 | [S15 SbyPopenのwitness変換](S15-sby-witness.md) | AIGER・BTORの形式境界、原本の子worker、nativeとの全byte比較 | 正式5回・A/A 2回、全14行9列・42出力・21 workerを監査。回路の反例検証とは別 |
 | [S3A Pyodide gowin_pack のビットストリーム比較](S3A-pyodide-gowin-pack.md) | native と Pyodide の `.fs` 出力、実行時間、配布 asset の比較 | 完了 |
