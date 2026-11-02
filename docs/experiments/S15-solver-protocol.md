@@ -1,6 +1,6 @@
 # S15 P2 実ソルバーの応答と終了の比較
 
-- 状態: 予備検査。正式反復は未開始
+- 状態: この文書は事前基準と予備検査の履歴。正式反復は[別記録](S15-solver-native-wasi.md)で329行・全31列を監査済み
 - 関連: [実験索引](README.md)、[buildと輸送の記録](S15-solver-build-and-transport.md)、[ソルバー調査](../research/formal-solvers.md)
 
 Z3 WASIのlink失敗後、SDKの例外library、fork登録と単一threadのyieldを切り分けた手動診断18条件は成功しました。[link診断とclean buildの再実行](S15-z3-wasi-link.md)へ詳細を残します。これは未コミットのshimと手動linkによる予備結果であり、正式なnative/WASI比較の結果ではありません。
@@ -75,7 +75,7 @@ python3 scripts/audit-solver-protocol.py \
 
 ## 再実行の入口
 
-buildの記録に従って同じ固定版とprofileを生成し、出力先の`metadata.json`があるdirectoryをmanifestへ指定します。相対パスは実行時の作業directoryを基準にします。次はYices2の予備比較の例です。Z3も同じ形式の`z3`項目で指定できますが、実buildの完了と結果の確認は残っています。
+buildの記録に従って同じ固定版とprofileを生成し、出力先の`metadata.json`があるdirectoryをmanifestへ指定します。相対パスは実行時の作業directoryを基準にします。次はYices2の予備比較の例です。この予備時点ではZ3の実buildと確認が残っていましたが、その後は両solverの[正式なnative/WASI比較](S15-solver-native-wasi.md)を実施しました。
 
 ```json
 {
@@ -112,4 +112,4 @@ Yices2の計算中停止を含む予備21実行は、全31列と7種類ずつ計
 
 ## 未確認の点
 
-Z3 WASIのbuild・実比較、正式5回反復、A/A、正式データの全列監査、上流yosys-smtbmc/SBYとの接続、配布と画面統合は未完了です。Tang Nanoの実機とブラウザー画面は、この記録では試していません。
+その後、Z3 WASIのclean buildと両solverの各5回・A/A 2回、全329行31列と294負の対照の監査を実施しました。条件・生CSV・資源・失敗の保持と証拠は[正式反復の記録](S15-solver-native-wasi.md)へ分けます。上流yosys-smtbmc/SBYとの接続、配布と画面統合は未完了です。Tang Nanoの実機とブラウザー画面は、この記録では試していません。

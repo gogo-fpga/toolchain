@@ -2,6 +2,8 @@
 
 [実験索引](README.md) / [buildと輸送](S15-solver-build-and-transport.md) / [実応答比較](S15-solver-protocol.md)
 
+その後、`3ea717e965a24b9d5738301b0c1a49c7e83fdf6b`からのclean buildが完了しました。Z3 native/WASIを含む各5回・A/A 2回、全329行31列・294負の対照の監査と、警告・圧縮サイズ・再実行・証拠を[正式比較の記録](S15-solver-native-wasi.md)へ分けています。以下の失敗や手動診断を正式結果へ置き換えずに保持します。
+
 ## 目的と事前基準
 
 固定Z3 `430d19e697e2ec9bad79ff210d41b4a7a5fcfa3e`をWASI SDKの実装でlinkし、既存のworker・WASI Preview 1 shim・字句framerへ接続します。solverの意味、丸め、例外を模倣しません。正常応答、異常分類、nativeとの全byte比較の基準は[S15の実応答比較](S15-solver-protocol.md)を維持します。正式採用には清浄なcommitからのbuild、5回反復、A/A 2回と独立監査が必要です。以下の手動診断はその代わりになりません。

@@ -2,6 +2,8 @@
 
 [形式検証の索引](S15-formal-verification.md) / [実験の索引](README.md)
 
+現在の結果は[両solverのnative/WASI正式比較](S15-solver-native-wasi.md)へ記録しています。clean buildと各5回・A/A 2回の全329行31列を監査済みです。以下は当初の事前基準・失敗と予備試行の履歴を保持したものです。SBYと製品画面の接続は未完了です。
+
 ## 目的と事前基準
 
 承認済みT6 P2として、上流のYices2とZ3を固定ソースからビルドし、SMT-LIBの解釈を移植せずにnativeとWASMの双方向通信を比較します。以下は実行前に定めた基準です。まだ成功結果ではありません。
