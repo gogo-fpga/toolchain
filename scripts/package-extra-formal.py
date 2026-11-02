@@ -6,6 +6,7 @@ import hashlib
 import json
 from pathlib import Path, PurePosixPath
 import re
+import shutil
 import stat
 import subprocess
 import sys
@@ -134,6 +135,42 @@ def package(directory, output, extras=()):
             "sha256": digest(output.read_bytes()), "manifestSha256": digest(json.dumps(manifest, sort_keys=True, ensure_ascii=True).encode() + b"\n")}
 
 
+def stage(sources, output):
+    output = Path(output).absolute()
+    output.relative_to(ROOT)
+    require(sources and not output.exists(), "missing sources or existing staging destination")
+    entries, links = [], []
+    for source in sources:
+        source = Path(source).absolute()
+        source.relative_to(ROOT)
+        require(source.exists() and not source.is_symlink() and source not in output.parents and source != output, "unsafe staging source")
+        for path in source.rglob("*") if source.is_dir() else [source]:
+            if path.is_dir() and not path.is_symlink():
+                continue
+            require(path.is_file(), "unsupported staging entry")
+            name = path.relative_to(ROOT).as_posix()
+            safe_path(name)
+            if path.is_symlink():
+                meta = strict_json((path.parent.parent / "metadata.json").read_bytes())
+                commands = meta.get("solverCommands")
+                if commands is None:
+                    commands = {solver: probe["command"] for solver, probe in meta["probes"].items()}
+                sha = digest(path.read_bytes())
+                require(any(path.parent.name == solver + "-bin" and command["path"] == str(path)
+                            and command["sha256"] == sha for solver, command in commands.items()), "unverified launcher symlink")
+                links.append({"path": name, "sha256": sha})
+            entries.append((path, name))
+    require(len(entries) == len({name for _, name in entries}), "overlapping staging sources")
+    output.mkdir()
+    for path, name in entries:
+        target = output / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, target, follow_symlinks=True)
+    report = {"sources": [str(Path(source).absolute().relative_to(ROOT)) for source in sources], "files": len(entries), "materializedLaunchers": links}
+    (output / "staging.json").write_text(json.dumps(report, sort_keys=True) + "\n")
+    return report
+
+
 def validate(archive):
     with zipfile.ZipFile(archive) as data:
         names = data.namelist()
@@ -200,6 +237,8 @@ if __name__ == "__main__":
     parser.add_argument("--output", required=True)
     parser.add_argument("--include", action="append", default=[])
     parser.add_argument("--restore", action="store_true")
+    parser.add_argument("--stage", action="store_true")
     options = parser.parse_args()
-    result = restore(options.output, options.campaign) if options.restore else package(options.campaign, options.output, options.include)
+    require(not (options.restore and options.stage), "conflicting archive operations")
+    result = stage(options.include, options.output) if options.stage else restore(options.output, options.campaign) if options.restore else package(options.campaign, options.output, options.include)
     print(json.dumps(result, sort_keys=True, allow_nan=False))
