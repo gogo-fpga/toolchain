@@ -42,9 +42,9 @@
 
 仮想デバイスによる測定値は、実機の値として扱いません。
 
-追加ソルバーの固定依存・取得原文と診断の事前基準は [S15 P4](S15-extra-solver-builds.md) に記録します。Boolector native/WASIのCLI 5条件と失敗試行を確認しましたが、IDの切り詰め・traceの警告が残るため採用は保留します。正式反復・Bitwuzlaのビルド・製品配布は未完了です。
+追加ソルバーの固定依存・取得原文と診断の事前基準は [S15 P4](S15-extra-solver-builds.md) に記録します。Boolector native/WASIのCLI 5条件と失敗試行を確認しました。ID幅とtraceの境界は修正後の正式反復が通りましたが、別の警告とSMTBMC認定・Bitwuzlaのビルド・製品配布は未完了です。
 
-型幅と未対応processの追加対照は [S15 P4 可搬性](S15-solver-portability.md) に分け、原本のID検索による負の対照、gzip API trace拒否、予備診断と全21列監査を記録します。
+型幅と未対応processの追加対照は [S15 P4 可搬性](S15-solver-portability.md) に分け、原本IDの負の対照とgzip API trace拒否を正式5回・A/A 2回で確認しました。生CSV全56行21列とZIP復元後の独立監査を記録しています。
 
 | 実験 | 目的 | 状態 |
 |---|---|---|
