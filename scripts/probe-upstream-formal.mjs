@@ -38,7 +38,7 @@ export function readSbyStatus(text, exitCode, stdout) {
   return status;
 }
 
-export function probeNative({ manifestFile, out }) {
+export function probeNative({ manifestFile, out, formal = false }) {
   const directory = path.resolve(out);
   assert.ok(!/[\s;'"`$\\]/.test(directory), "The upstream native shell requires an unambiguous workdir");
   mkdirSync(directory);
@@ -55,7 +55,7 @@ export function probeNative({ manifestFile, out }) {
     sourceFiles.push(...filesBelow(path.join(root, prefix)).filter(p => p.endsWith(".py")).map(p => `${prefix}/${p}`));
   }
   const metadata = {
-    format: 1, preliminary: true, runtime: "native", command: process.argv.slice(1), node: process.version, nativeCommands,
+    format: 1, preliminary: !formal, runtime: "native", command: process.argv.slice(1), node: process.version, nativeCommands,
     python: execFileSync(python, ["--version"], { encoding: "utf8" }).trim(),
     commit: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(),
     worktree: execFileSync("git", ["status", "--porcelain"], { cwd: root, encoding: "utf8" }),
@@ -112,13 +112,13 @@ export function probeNative({ manifestFile, out }) {
       console.log(`${solver} ${fixture.name}: ${row.status} (rc=${row.exitCode}) ${row.error ?? row.kind}`);
     }
   }
-  writeFileSync(path.join(directory, "results.json"), JSON.stringify({ preliminary: true, rows }, null, 2) + "\n");
+  writeFileSync(path.join(directory, "results.json"), JSON.stringify({ preliminary: !formal, rows }, null, 2) + "\n");
   return rows;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const { values } = parseArgs({ options: { probes: { type: "string" }, out: { type: "string" } } });
+  const { values } = parseArgs({ options: { probes: { type: "string" }, out: { type: "string" }, formal: { type: "boolean", default: false } } });
   assert.ok(values.probes && values.out, "Use --probes MANIFEST --out NEW_DIRECTORY");
-  const rows = probeNative({ manifestFile: values.probes, out: values.out });
+  const rows = probeNative({ manifestFile: values.probes, out: values.out, formal: values.formal });
   if (rows.some(row => row.error)) process.exitCode = 1;
 }
