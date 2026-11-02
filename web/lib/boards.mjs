@@ -17,6 +17,7 @@ export const BOARDS = Object.freeze([
     nextpnrDevice: "GW1NSR-LV4CQN48PC7/I6",
     packDevice: "GW1NSR-LV4CQN48PC7/I6",
     nextpnrFamily: "GW1NS-4",
+    synthNoLutram: true,
     idcode: 0x0100981b,
     flashBytes: 4 * 1024 * 1024,
     writeTargets: ["SRAM", "内蔵フラッシュ"],
@@ -47,4 +48,13 @@ export const BOARDS = Object.freeze([
 
 export function getBoard(id) {
   return BOARDS.find((board) => board.id === id) ?? null;
+}
+
+export function gowinSynthesisCommand(boardId, top, output) {
+  const board = getBoard(boardId);
+  if (!board || !/^[A-Za-z_][A-Za-z0-9_$]*$/.test(top) ||
+      !/^[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*\.json$/.test(output)) {
+    throw new Error("Invalid Gowin synthesis arguments");
+  }
+  return `synth_gowin${board.synthNoLutram ? " -nolutram" : ""} -top ${top} -json ${output}`;
 }

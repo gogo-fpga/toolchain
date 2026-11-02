@@ -9,6 +9,7 @@ import os
 import re
 import subprocess
 import sys
+import tomllib
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -317,7 +318,9 @@ def parse_version(value: str) -> tuple[int, ...] | None:
     return tuple(int(part) for part in match.group(1).split("."))
 
 
-def is_stable_tag(tag: str) -> bool:
+def is_stable_tag(tag: str, dependency: str | None = None) -> bool:
+    if dependency == "ghdl":
+        return re.fullmatch(r"v\d+\.\d+\.\d+", tag) is not None
     return not re.search(r"(?i)(?:rc|alpha|beta|pre)", tag)
 
 
@@ -342,10 +345,10 @@ def remote_tag_targets(output: str) -> dict[str, str]:
     return targets
 
 
-def latest_stable_tag(output: str) -> str | None:
+def latest_stable_tag(output: str, dependency: str | None = None) -> str | None:
     stable: list[tuple[tuple[int, ...], str]] = []
     for tag in remote_tag_targets(output):
-        if not is_stable_tag(tag):
+        if not is_stable_tag(tag, dependency):
             continue
         version = parse_version(tag)
         if version is not None:
@@ -353,19 +356,19 @@ def latest_stable_tag(output: str) -> str | None:
     return max(stable, default=((), None), key=lambda entry: entry[0])[1]
 
 
-def fixed_stable_tag(commit: str, output: str) -> str | None:
+def fixed_stable_tag(commit: str, output: str, dependency: str | None = None) -> str | None:
     matches = [
         (version, tag)
         for tag, target in remote_tag_targets(output).items()
         if target == commit.lower()
-        and is_stable_tag(tag)
+        and is_stable_tag(tag, dependency)
         and (version := parse_version(tag)) is not None
     ]
     return max(matches, default=((), None), key=lambda entry: entry[0])[1]
 
 
 def gitlink_sha(name: str, root: Path) -> str:
-    path = f"vendor/{name}"
+    path = name if name.startswith("third_party/") else f"vendor/{name}"
     tree_line = run("git", "ls-tree", "HEAD", path, cwd=root).strip()
     if not tree_line:
         raise RuntimeError(f"{path}: HEAD に gitlink がありません")
@@ -523,6 +526,43 @@ def run(*args: str, cwd: Path = ROOT) -> str:
     return result.stdout
 
 
+def library_catalog_errors(root: Path, modules: list[dict[str, str]]) -> list[str]:
+    paths = [module.get("path", "") for module in modules if module.get("path", "").startswith("third_party/")]
+    catalog_path = root / "libraries/catalog.json"
+    if not paths and not catalog_path.exists():
+        return []
+    errors: list[str] = []
+    try:
+        catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+        if catalog.get("formatVersion") != 1 or not isinstance(catalog.get("entries"), list):
+            raise ValueError("未対応のカタログ形式です")
+        catalog_paths: list[str] = []
+        for entry in catalog["entries"]:
+            if not isinstance(entry, dict) or not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", entry.get("id", "")):
+                raise ValueError("部品の ID が不正です")
+            path = entry.get("submodule", "")
+            if path != f'third_party/{entry["id"]}':
+                raise ValueError("部品の ID と submodule が一致しません")
+            if any(key in entry for key in ("url", "revision", "pin", "commit")):
+                raise ValueError("取得元と固定版は .gitmodules と gitlink から導いてください")
+            catalog_paths.append(path)
+        if len(paths) != len(set(paths)) or len(catalog_paths) != len(set(catalog_paths)) or set(paths) != set(catalog_paths):
+            errors.append("libraries/catalog.json: third_party の登録とカタログが一致しません")
+        for module in modules:
+            path = module.get("path", "")
+            if path not in paths:
+                continue
+            if not module.get("branch", "").strip():
+                errors.append(f"{path}: 更新監視用の branch がありません")
+            try:
+                gitlink_sha(path, root)
+            except (OSError, RuntimeError, subprocess.CalledProcessError) as error:
+                errors.append(f"{path}: {error}")
+    except (OSError, ValueError, TypeError, AttributeError) as error:
+        errors.append(f"libraries/catalog.json: {error}")
+    return errors
+
+
 def consistency(root: Path = ROOT) -> list[str]:
     errors: list[str] = []
     gitmodules_path = root / ".gitmodules"
@@ -533,6 +573,7 @@ def consistency(root: Path = ROOT) -> list[str]:
         path = module.get("path", "")
         if module.get("shallow", "").lower() != "true":
             errors.append(f"{path}: shallow = true が必要です")
+    errors.extend(library_catalog_errors(root, modules))
 
     research = parse_research_commits(read_text(root / "RESEARCH.md"))
     try:
@@ -706,6 +747,19 @@ def compare_status(fixed: str, latest: str) -> str:
     return "最新" if fixed_version == latest_version else "更新あり"
 
 
+def rust_stable_version(text: str) -> str:
+    try:
+        version = tomllib.loads(text)["pkg"]["rust"]["version"]
+    except (tomllib.TOMLDecodeError, KeyError, TypeError) as error:
+        raise RuntimeError("Rust stable channel の pkg.rust.version が読めません") from error
+    match = re.fullmatch(
+        r"(\d+\.\d+\.\d+)(?: \([0-9a-f]{7,40} \d{4}-\d{2}-\d{2}\))?", version,
+    ) if isinstance(version, str) else None
+    if match is None:
+        raise RuntimeError("Rust stable channel の version が不正です")
+    return match.group(1)
+
+
 def upstream_report(root: Path = ROOT) -> str:
     rows: list[tuple[str, str, str, str]] = []
 
@@ -721,8 +775,8 @@ def upstream_report(root: Path = ROOT) -> str:
         try:
             pinned = gitlink_sha(name, root)
             remote = run("git", "ls-remote", "--tags", module["url"], cwd=root)
-            fixed = fixed_stable_tag(pinned, remote)
-            latest = latest_stable_tag(remote)
+            fixed = fixed_stable_tag(pinned, remote, name)
+            latest = latest_stable_tag(remote, name)
             if not fixed:
                 raise RuntimeError("gitlink に一致する安定版タグがありません")
             if not latest:
@@ -748,6 +802,24 @@ def upstream_report(root: Path = ROOT) -> str:
         except (KeyError, OSError, RuntimeError, subprocess.CalledProcessError) as error:
             print(f"{name}: upstream を取得できません: {error}", file=sys.stderr)
             add_row(f"{name} (branch)", "取得できません", "取得できません", "要確認")
+
+    for path, module in modules.items():
+        if not path.startswith("third_party/"):
+            continue
+        try:
+            pinned = gitlink_sha(path, root)
+            branch = module["branch"].strip()
+            if not branch:
+                raise RuntimeError("更新監視用の branch がありません")
+            ref = f"refs/heads/{branch}"
+            remote = run("git", "ls-remote", module["url"], ref, "refs/tags/*", cwd=root)
+            latest = remote_ref_sha(remote, ref)
+            latest_tag = latest_stable_tag(remote)
+            label = latest[:12] + (f" / tag {latest_tag}" if latest_tag else " / 安定版タグなし")
+            add_row(f"{path} (branch)", pinned[:12], label, "最新" if pinned == latest else "更新あり")
+        except (KeyError, OSError, RuntimeError, subprocess.CalledProcessError) as error:
+            print(f"{path}: upstream を取得できません: {error}", file=sys.stderr)
+            add_row(f"{path} (branch)", "取得できません", "取得できません", "要確認")
 
     try:
         pin = parse_wasi_sdk_pin(read_text(root / "RESEARCH.md"))
@@ -836,10 +908,8 @@ def upstream_report(root: Path = ROOT) -> str:
 
     try:
         rust_pin = parse_surfer_tool_pins(read_text(root / "RESEARCH.md"))["rust"]["version"]
-        rust_match = re.search(r'^version = "([^"]+)"', fetch(RUST_STABLE_CHANNEL), re.MULTILINE)
-        if rust_match is None:
-            raise RuntimeError("Rust stable channel version が見つかりません")
-        add_row("Rust toolchain", rust_pin, rust_match.group(1), compare_status(rust_pin, rust_match.group(1)))
+        latest_rust = rust_stable_version(fetch(RUST_STABLE_CHANNEL))
+        add_row("Rust toolchain", rust_pin, latest_rust, compare_status(rust_pin, latest_rust))
     except (OSError, urllib.error.URLError, RuntimeError) as error:
         print(f"Rust toolchain: upstream を取得できません: {error}", file=sys.stderr)
         add_row("Rust toolchain", "取得できません", "取得できません", "要確認")

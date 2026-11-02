@@ -424,6 +424,43 @@ class CheckPinsTests(unittest.TestCase):
         self.assertEqual("v20240322", check_pins.fixed_stable_tag("b" * 40, tags))
         self.assertEqual("更新あり", check_pins.compare_status("v20240322", "v2024-12-30"))
 
+    def test_ghdl_release_family_excludes_date_weekly_and_development_tags(self):
+        tags = "\n".join(
+            "a" * 40 + "\trefs/tags/" + tag
+            for tag in ("20181129", "v20191231", "v7.0.0-dev", "v7.0.0-rc1",
+                        "v7.0.0-beta", "v7.0.0-alpha", "weekly", "weekly-20261101",
+                        "v5.1.1", "v6.0.0", "v6.0.0^{}")
+        )
+        self.assertEqual("v6.0.0", check_pins.latest_stable_tag(tags, "ghdl"))
+        self.assertEqual("v6.0.0", check_pins.fixed_stable_tag("a" * 40, tags, "ghdl"))
+        for tag in ("20181129", "weekly", "v7.0.0-dev", "v7.0.0-rc1", "v7.0.0-beta", "v7.0.0-alpha"):
+            with self.subTest(tag=tag):
+                remote = "a" * 40 + "\trefs/tags/" + tag
+                self.assertIsNone(check_pins.latest_stable_tag(remote, "ghdl"))
+                self.assertIsNone(check_pins.fixed_stable_tag("a" * 40, remote, "ghdl"))
+
+    def test_rust_version_uses_rust_package_in_either_table_order(self):
+        cargo = '[pkg.cargo]\nversion = "0.99.0"\n'
+        rust = '[pkg.rust]\nversion = "1.99.1 (abcdef012 2026-10-29)"\n'
+        for document in (cargo + rust, rust + cargo, '[pkg.rust]\nversion = "1.99.1"\n'):
+            with self.subTest(document=document):
+                self.assertEqual("1.99.1", check_pins.rust_stable_version(document))
+
+    def test_rust_missing_malformed_and_wrong_type_versions_are_rejected(self):
+        for document in ('', 'version = "1.99.1"', '[pkg.cargo]\nversion = "1.99.1"',
+                         '[pkg.rust]\nversion = "', '[pkg.rust]\nversion = 199',
+                         '[pkg.rust]\nversion = []', '[pkg.rust]\nversion = "1.99.1-beta"',
+                         '[pkg.rust]\nversion = "garbage"', 'pkg = 1', '[pkg]\nrust = 1'):
+            with self.subTest(document=document):
+                with self.assertRaises(RuntimeError):
+                    check_pins.rust_stable_version(document)
+
+    def test_rust_invalid_channel_report_fails_closed(self):
+        tags = self.prepare_upstream_fixture()
+        self.rust_channel = '[pkg.cargo]\nversion = "0.99.0"\n'
+        rows, _ = self.upstream_report(tags, self.pinned["libftdi"] + "\tHEAD\n")
+        self.assertEqual("要確認", next(row for row in rows if row[0] == "Rust toolchain")[3])
+
     def prepare_upstream_fixture(self, libftdi_branch=None):
         names = (*check_pins.TAGGED_SUBMODULES, *check_pins.BRANCH_SUBMODULES)
         self.pinned = {
@@ -515,7 +552,7 @@ class CheckPinsTests(unittest.TestCase):
             if url == check_pins.WASI_SDK_RELEASE:
                 return self.latest_wasi_sdk
             if url == check_pins.RUST_STABLE_CHANNEL:
-                return 'version = "1.99.1"\n'
+                return getattr(self, "rust_channel", '[pkg.cargo]\nversion = "0.99.0"\n[pkg.rust]\nversion = "1.99.1 (abcdef012 2026-10-29)"\n')
             if url in check_pins.SURFER_TOOL_RELEASES.values():
                 name = next(
                     name for name, release_url in check_pins.SURFER_TOOL_RELEASES.items()
@@ -724,6 +761,72 @@ class CheckPinsTests(unittest.TestCase):
 
     def test_needs_update_is_true_when_a_row_has_an_update(self):
         rows = [("Node.js Active LTS", "22", "v24.22.1", "更新あり")]
+        self.assertTrue(check_pins.needs_update(rows))
+
+    def register_library_fixture(self):
+        path = "third_party/probe"
+        revision = "a" * 40
+        with (self.root / ".gitmodules").open("a", encoding="utf-8") as output:
+            output.write(
+                f'\n[submodule "{path}"]\npath = {path}\n'
+                "url = https://gitlab.example.invalid/probe.git\n"
+                "shallow = true\nbranch = main\n"
+            )
+        (self.root / "libraries").mkdir(exist_ok=True)
+        (self.root / "libraries/catalog.json").write_text(json.dumps({
+            "formatVersion": 1,
+            "entries": [{"id": "probe", "submodule": path}],
+        }), encoding="utf-8")
+        subprocess.run(
+            ["git", "update-index", "--add", "--cacheinfo", f"160000,{revision},{path}"],
+            cwd=self.root, check=True,
+        )
+        self.commit_fixture("library fixture")
+        return path, revision
+
+    def test_library_gitlinks_and_catalog_are_checked_without_checkouts(self):
+        self.prepare_upstream_fixture()
+        path, revision = self.register_library_fixture()
+        modules = check_pins.parse_gitmodules((self.root / ".gitmodules").read_text())
+        self.assertEqual(revision, check_pins.gitlink_sha(path, self.root))
+        self.assertEqual([], check_pins.library_catalog_errors(self.root, modules))
+
+    def test_library_catalog_cannot_omit_modules_or_duplicate_pins(self):
+        self.prepare_upstream_fixture()
+        self.register_library_fixture()
+        modules = check_pins.parse_gitmodules((self.root / ".gitmodules").read_text())
+        catalog_path = self.root / "libraries/catalog.json"
+        catalog = json.loads(catalog_path.read_text())
+        catalog["entries"][0]["revision"] = "b" * 40
+        catalog_path.write_text(json.dumps(catalog))
+        self.assertTrue(any("gitlink" in error for error in check_pins.library_catalog_errors(self.root, modules)))
+        catalog["entries"] = []
+        catalog_path.write_text(json.dumps(catalog))
+        self.assertTrue(any("一致しません" in error for error in check_pins.library_catalog_errors(self.root, modules)))
+
+    def test_library_missing_branch_is_reported(self):
+        self.prepare_upstream_fixture()
+        self.register_library_fixture()
+        modules = check_pins.parse_gitmodules((self.root / ".gitmodules").read_text())
+        next(module for module in modules if module["path"].startswith("third_party/"))["branch"] = ""
+        self.assertTrue(any("branch" in error for error in check_pins.library_catalog_errors(self.root, modules)))
+
+    def test_library_update_report_keeps_branch_and_tag_checks_distinct(self):
+        tags = self.prepare_upstream_fixture()
+        path, revision = self.register_library_fixture()
+        remote = revision + "\trefs/heads/main\n" + "b" * 40 + "\trefs/tags/v2.0.0\n"
+        rows, refs = self.upstream_report(tags, remote)
+        row = next(row for row in rows if row[0] == f"{path} (branch)")
+        self.assertEqual(row, (f"{path} (branch)", revision[:12], revision[:12] + " / tag v2.0.0", "最新"))
+        self.assertIn("refs/heads/main", refs)
+        rows, _ = self.upstream_report(tags, "c" * 40 + "\trefs/heads/main\n")
+        self.assertEqual(next(row[3] for row in rows if row[0] == f"{path} (branch)"), "更新あり")
+
+    def test_library_update_report_fails_closed_when_remote_is_unavailable(self):
+        tags = self.prepare_upstream_fixture()
+        path, _ = self.register_library_fixture()
+        rows, _ = self.upstream_report(tags, branch_error=True)
+        self.assertEqual(next(row[3] for row in rows if row[0] == f"{path} (branch)"), "要確認")
         self.assertTrue(check_pins.needs_update(rows))
 
     def test_needs_update_is_true_when_a_row_needs_confirmation(self):

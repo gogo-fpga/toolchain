@@ -76,6 +76,19 @@ package body Synth_Api is
       return 0;
    end Synth_Init;
 
+   function Synth_Set_Library
+     (Name : Thin_String_Ptr; Len : Natural) return Integer
+   is
+   begin
+      Errorout.Nbr_Errors := 0;
+      Libraries.Work_Library_Name := Name_Table.Get_Identifier (Name (1 .. Len));
+      Libraries.Load_Work_Library (True);
+      if Errorout.Nbr_Errors > 0 then
+         return -1;
+      end if;
+      return 0;
+   end Synth_Set_Library;
+
    function Analyze_File
      (File : Thin_String_Ptr; Len : Natural) return Integer
    is

@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import { expect, test } from "@playwright/test";
 import { createHash, randomUUID } from "node:crypto";
+import { execFileSync } from "node:child_process";
+import { buildSync } from "esbuild";
 import {
   mkdirSync,
+  mkdtempSync,
   readFileSync,
   readdirSync,
   rmSync,
@@ -209,6 +212,23 @@ function assertSynthMatchesBuild() {
   );
 }
 
+function assertLibrariesMatchSources(distRoot, buildRoot) {
+  const libraryWorkdir = mkdtempSync(resolve(buildRoot, "e2e-libraries-"));
+  try {
+    const sourceRoot = resolve(libraryWorkdir, "libraries");
+    execFileSync("python3", [
+      resolve(repoRoot, "scripts/build-library-assets.py"),
+      "--root", repoRoot,
+      "--output", sourceRoot,
+    ]);
+    return assertCopiedTreeMatches({
+      repoRoot, distRoot, sourceRoot, distSubdir: "libraries",
+    });
+  } finally {
+    rmSync(libraryWorkdir, { recursive: true, force: true });
+  }
+}
+
 function assertDistributionMatchesSources() {
   const webRoot = resolve(repoRoot, "web");
   const distRoot = resolve(repoRoot, "dist");
@@ -225,7 +245,17 @@ function assertDistributionMatchesSources() {
         cause: error,
       });
     }
-    if (!readFileSync(sourcePath).equals(distContents)) {
+    const expectedContents = path === "lib/project-store.mjs"
+      ? Buffer.from(buildSync({
+        absWorkingDir: repoRoot,
+        entryPoints: [sourcePath],
+        bundle: true,
+        minify: true,
+        format: "esm",
+        write: false,
+      }).outputFiles[0].contents)
+      : readFileSync(sourcePath);
+    if (!expectedContents.equals(distContents)) {
       throw new Error(`Playwright preflight: dist/${path} differs from web/${path}`);
     }
   }
@@ -242,6 +272,7 @@ function assertDistributionMatchesSources() {
     "openFPGALoader.wasm",
   ]);
   const buildRoot = resolve(repoRoot, process.env.BUILD_ROOT ?? "build");
+  const libraryPaths = assertLibrariesMatchSources(distRoot, buildRoot);
   const licensePaths = assertCopiedTreeMatches({
     repoRoot,
     distRoot,
@@ -282,6 +313,7 @@ function assertDistributionMatchesSources() {
     if (surferPaths.delete(path)) continue;
     if (iverilogPaths.delete(path)) continue;
     if (thirdPartyNoticePaths.delete(path)) continue;
+    if (libraryPaths.delete(path)) continue;
     throw new Error(`Playwright preflight: unexpected dist/${path}`);
   }
   if (generatedFileAllowlist.size > 0) {
@@ -305,6 +337,7 @@ function assertDistributionMatchesSources() {
     surferPaths,
     iverilogPaths,
     thirdPartyNoticePaths,
+    libraryPaths,
   ]) {
     if (copiedPaths.size > 0) {
       throw new Error(
@@ -341,6 +374,34 @@ async function openSupportedPage(page) {
 
 test("built distribution matches sources and the build-root WASM", () => {
   assertDistributionMatchesSources();
+  const catalogPath = resolve(repoRoot, "dist/libraries/catalog.json");
+  const originalCatalog = readFileSync(catalogPath);
+  for (const contents of [Buffer.concat([originalCatalog, Buffer.from("\n")]), null]) {
+    try {
+      if (contents) writeFileSync(catalogPath, contents);
+      else rmSync(catalogPath);
+      assert.throws(assertDistributionMatchesSources, /dist\/libraries\/catalog\.json (differs|is missing)/);
+    } finally {
+      writeFileSync(catalogPath, originalCatalog);
+    }
+  }
+  const extraLibrary = resolve(repoRoot, "dist/libraries/unexpected-preflight-negative-control.v");
+  let extraCreated = false;
+  try {
+    writeFileSync(extraLibrary, "module extra; endmodule\n", { flag: "wx" });
+    extraCreated = true;
+    assert.throws(assertDistributionMatchesSources, /unexpected dist\/libraries\/unexpected-preflight-negative-control\.v/);
+  } finally {
+    if (extraCreated) rmSync(extraLibrary);
+  }
+  const storePath = resolve(repoRoot, "dist/lib/project-store.mjs");
+  const originalStore = readFileSync(storePath);
+  try {
+    writeFileSync(storePath, Buffer.concat([originalStore, Buffer.from("\n")]));
+    assert.throws(assertDistributionMatchesSources, /dist\/lib\/project-store\.mjs differs/);
+  } finally {
+    writeFileSync(storePath, originalStore);
+  }
   assert.equal(
     readFileSync(resolve(repoRoot, "web/_headers"), "utf8"),
     "/*\n" +

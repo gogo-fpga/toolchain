@@ -60,6 +60,28 @@ AdaWebPack の 24.0.0 release archive にはライセンスファイルがあり
 
 Yosys と nextpnr の `COPYING` は ISC License の本文です。ABC の `copyright.txt` は University of California, Berkeley の許諾条件を記載したファイルです。Boost と Eigen のライセンス、Apycula と build dependencies のライセンス本文も `licenses/` と配布 zip に含めます。WASI SDK のアーカイブにはライセンス本文が含まれないため、wasi-sdk 34 の source commit と、その commit が参照する LLVM、wasi-libc の各 commit からライセンス文書を取得し、リポジトリーと配布 zip に収録する方針です。wasi-libc の原文には主要ライセンスだけでなく、musl、cloudlibc、musl-fts、wasi-headers の許諾文書も含まれています。
 
+## HDL ライブラリーと CPU コア
+
+`third_party/` の22候補は固定版の shallow submodule として参照します。取得元は [`.gitmodules`](.gitmodules)、固定版は gitlink、ライセンス本文のパスは [部品カタログ](libraries/catalog.json)が正です。候補ごとの用途・条件と訂正履歴は [HDL ライブラリーと CPU コアの調査](docs/research/hdl-libraries.md)に記録しています。
+
+| 部品 | 主なライセンス |
+|---|---|
+| Colibri | RTL は主に CERN-OHL-W-2.0。Apache-2.0 と CC-BY-SA-4.0 の文書も保持 |
+| Open Logic | PSI HDL Library License 1.0（GNU Library GPL v2 以降と、FPGA 等の生成物への例外） |
+| hdl-modules、NEORV32、DarkRISCV、learn-fpga の FemtoRV | BSD-3-Clause |
+| verilog-axis、verilog-uart、verilog-axi、verilog-ethernet、libfpga、VexRiscv の生成済みリポジトリー、VexiiRiscv | MIT |
+| SERV、PicoRV32 | ISC |
+| Hazard3、Ibex、OSVVM、UVVM | Apache-2.0 |
+| CV32E40P | SHL-0.51 または Apache-2.0 |
+| VUnit | HDL と Python 等は MPL-2.0。図版のフォントは別の条件 |
+| Taxi | CERN-OHL-S-2.0。有償ライセンスは別途契約が必要 |
+
+静的資材の生成時には、ライセンス文書と登録した部品のソースを固定版から変更せずに取り出します。ファイル内の著作権表示と SPDX 表記も保持します。Web 配布物の `libraries/catalog.json` は、取得元、固定版、元のパス、サイズ、SHA-256 と原文のライセンスへの参照を含みます。Release のソースアーカイブには全 `third_party/` の固定版も含めます。
+
+この表の分類だけで、各ソースの許諾条件を置き換えるものではありません。Colibri の文書とメタデータ、VUnit の図版など、部品の RTL と条件が異なるファイルがあります。配布する部品ごとの原文も確認してください。原文の表示を目的とした登録は、その候補が現在の HDL ツールで使えることや、4ボードで動くことを保証しません。
+
+`verilog-axis`、`verilog-uart`、`verilog-axi`、`verilog-ethernet` は deprecated の表示を保持します。後継の Taxi へ自動で置き換えず、MIT と CERN-OHL-S-2.0 の違いを残します。
+
 ## 配布物に含まないもの
 
 - yomiyasu: 文書の推敲に使う開発用ツールです。

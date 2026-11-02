@@ -18,6 +18,9 @@ import {
   runWasiP1,
 } from "../../web/lib/wasi-p1.mjs";
 import { runIverilog } from "../../web/lib/iverilog-host.mjs";
+import { inspectInstalledLibraries, prepareLibrarySelection } from "../../web/lib/libraries.mjs";
+import { changeProjectLibraries, prepareProjectInputs } from "../../web/lib/project.mjs";
+import { exportProjectZip, importProjectZip } from "../../web/lib/project-zip.mjs";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const fixtureDir = path.join(repo, "tests/fixtures/iverilog");
@@ -45,6 +48,65 @@ const nativeTools = Object.fromEntries(
 for (const toolPath of Object.values(nativeTools)) {
   if (!existsSync(toolPath)) throw new Error(`Native Icarus tool is missing: ${toolPath}`);
 }
+
+test("simulation worker forwards include/define options and treats a .v ROM asset as data rather than HDL", async () => {
+  const originalSelf = globalThis.self;
+  const originalFetch = globalThis.fetch;
+  let listener;
+  const messages = [];
+  globalThis.self = {
+    addEventListener: (type, callback) => { if (type === "message") listener = callback; },
+    postMessage: (message) => messages.push(message),
+  };
+  globalThis.fetch = async (url) => {
+    const name = path.basename(url.pathname);
+    assert.ok(["ivlpp.wasm", "ivl.wasm", "vvp.wasm"].includes(name));
+    return new Response(readFileSync(path.join(wasmDir, name)));
+  };
+  try {
+    await import("../../web/sim-worker.js?library-options-test");
+    const romPaths = ["libraries/fixture/sources/data/rom.v", "work/rom.v", "tmp/rom.v", "share/rom.v"];
+    const input = {
+      top: "tb",
+      includeDirectories: ["libraries/fixture/sources/include"],
+      defines: { FLAG: 11 },
+      files: [
+        { path: "libraries/fixture/sources/include/nested/component.vh", role: "source", content: "`define EXPECTED 42\n" },
+        ...romPaths.map((path) => ({ path, role: "data", content: "2a\n" })),
+        { path: "src/tb.v", content: [
+          '`include "nested/component.vh"',
+          "module tb;",
+          "reg [7:0] memory [0:0];",
+          "initial begin",
+          ...romPaths.flatMap((path) => [
+            `  $readmemh("${path}", memory);`,
+            '  if (memory[0] !== `EXPECTED || `FLAG !== 11) $fatal(1, "Mismatch");',
+          ]),
+          '  $display("LIBRARY_ROM_OK");',
+          '  $dumpfile("wave.vcd");',
+          "  $dumpvars(0, tb);",
+          "  #1 $finish;",
+          "end",
+          "endmodule",
+        ].join("\n") },
+      ],
+    };
+    await listener({ data: input });
+    const result = messages.find(({ type }) => type === "done")?.result;
+    assert.ok(result, JSON.stringify(messages));
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.match(result.stdout, /LIBRARY_ROM_OK/);
+    for (const invalid of [{ ...input, includeDirectories: [] }, { ...input, defines: {} }]) {
+      messages.length = 0;
+      await listener({ data: invalid });
+      assert.notEqual(messages.find(({ type }) => type === "done")?.result.status, 0);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalSelf === undefined) delete globalThis.self;
+    else globalThis.self = originalSelf;
+  }
+});
 
 function filesFor(name, boardId) {
   if (boardId) {
@@ -102,10 +164,9 @@ function capture(command, args, cwd) {
   };
 }
 
-function runNative(name, boardId) {
+function runNative(name, boardId, files = filesFor(name, boardId)) {
   const root = mkdtempSync(path.join(os.tmpdir(), "iverilog-native-"));
   try {
-    const files = filesFor(name, boardId);
     const top = boardId ? "tb" : "top";
     const sourceFiles = files
       .filter((file) => file.path.endsWith(".v"))
@@ -138,8 +199,8 @@ function runNative(name, boardId) {
     writeFileSync(path.join(root, "work/preprocessed.v"), preprocessed.stdout);
     const compiled = capture(nativeTools.ivl, ["-C", "work/ivl.conf", "work/preprocessed.v"], root);
     if (compiled.status !== 0) return { ...compiled, vcd: null };
-    const simulated = capture(nativeTools.vvp, ["work/design.vvp"], root);
-    const vcdPath = path.join(root, "wave.vcd");
+    const simulated = capture(nativeTools.vvp, ["design.vvp"], path.join(root, "work"));
+    const vcdPath = path.join(root, "work/wave.vcd");
     return {
       ...simulated,
       vcd: existsSync(vcdPath) ? readFileSync(vcdPath) : null,
@@ -169,6 +230,49 @@ function normalizedDiagnostic(text) {
     .join("\n");
 }
 
+test("pinned libfpga survives portable ZIP and runs exhaustive Gray conversion in native and WASM", async () => {
+  const directory = mkdtempSync(path.join(repo, "build/t5-library-simulation-"));
+  const assets = path.join(directory, "assets");
+  try {
+    const built = capture("python3", ["scripts/build-library-assets.py", "--output", assets], repo);
+    assert.equal(built.status, 0, built.stderr);
+    const catalog = JSON.parse(readFileSync(path.join(assets, "catalog.json"), "utf8"));
+    const added = await prepareLibrarySelection(catalog, { id: "libfpga", component: "gray" },
+      (asset) => readFileSync(path.join(assets, asset.asset)), { requireConfirmed: false });
+    const template = createBlinkTemplate("tangnano1k", "verilog");
+    template.files.set("src/top.v", readFileSync(path.join(fixtureDir, "library_gray.v"), "utf8"));
+    template.project.simulation.top = "top";
+    const installed = await changeProjectLibraries(template.project, template.files, { add: added });
+    const restored = await importProjectZip(await exportProjectZip(installed.project, installed.files));
+    const state = await inspectInstalledLibraries(restored.project, restored.files, catalog);
+    assert.equal(state.records.length, 1);
+    assert.equal(state.records[0].matched, true);
+    const licensePath = "libraries/libfpga/sources/LICENSE";
+    assert.deepEqual(Buffer.from(restored.files.get(licensePath)), readFileSync(path.join(repo, "third_party/libfpga/LICENSE")));
+    assert.ok([...restored.files.keys()].filter((file) => file.startsWith("libraries/"))
+      .every((file) => file.startsWith("libraries/libfpga/")));
+    const input = await prepareProjectInputs(restored.project, restored.files, { simulation: true });
+    for (const broken of [false, true]) {
+      const files = input.files.map((file) => file.path === "src/top.v" && broken
+        ? { ...file, content: Buffer.from(file.content).toString("utf8").replace("decoded !== value", "decoded !== (value ^ 8'h01)") }
+        : file);
+      const native = runNative(null, undefined, files);
+      const wasm = runIverilog({ modules, files, top: input.project.simulation.top,
+        includeDirs: input.includeDirectories, defines: input.defines });
+      assert.equal(native.status, broken ? 1 : 0, `${native.stdout}\n${native.stderr}`);
+      assert.equal(wasm.status, native.status, `${wasm.stdout}\n${wasm.stderr}`);
+      assert.equal(wasm.stdout, native.stdout);
+      assert.deepEqual(Buffer.from(wasm.tree.work["wave.vcd"]), native.vcd);
+      assert.match(wasm.stdout, broken ? /Inverse mismatch/ : /GRAY_256_OK/);
+    }
+    const corrupt = new Map(restored.files);
+    corrupt.set("libraries/libfpga/sources/rtl/math/lfpga_gray.v", "module invalid; endmodule\n");
+    await assert.rejects(exportProjectZip(restored.project, corrupt), /ハッシュ/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("Icarus WASI pipeline matches native stdout and VCD", () => {
   for (const name of fixtures) {
     const native = runNative(name);
@@ -181,8 +285,8 @@ test("Icarus WASI pipeline matches native stdout and VCD", () => {
     assert.equal(wasm.stdout, native.stdout, `${name}: stdout differs`);
     assert.equal(pollOneoffCalls, 0, `${name}: poll_oneoff is required`);
     assert.ok(native.vcd, `${name}: native VCD missing`);
-    assert.ok(wasm.tree["wave.vcd"], `${name}: WASI VCD missing`);
-    assert.deepEqual(Buffer.from(wasm.tree["wave.vcd"]), native.vcd, `${name}: VCD differs`);
+    assert.ok(wasm.tree.work["wave.vcd"], `${name}: WASI VCD missing`);
+    assert.deepEqual(Buffer.from(wasm.tree.work["wave.vcd"]), native.vcd, `${name}: VCD differs`);
   }
 });
 
@@ -203,9 +307,9 @@ test("four board Verilog templates match native stdout and VCD", () => {
     assert.equal(wasm.stdout, native.stdout, `${boardId}: stdout differs`);
     assert.equal(pollOneoffCalls, 0, `${boardId}: poll_oneoff is required`);
     assert.ok(native.vcd, `${boardId}: native VCD missing`);
-    assert.ok(wasm.tree["wave.vcd"], `${boardId}: WASI VCD missing`);
+    assert.ok(wasm.tree.work["wave.vcd"], `${boardId}: WASI VCD missing`);
     assert.deepEqual(
-      Buffer.from(wasm.tree["wave.vcd"]),
+      Buffer.from(wasm.tree.work["wave.vcd"]),
       native.vcd,
       `${boardId}: VCD differs`,
     );

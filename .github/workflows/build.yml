@@ -129,6 +129,8 @@ jobs:
           git submodule update --init --depth 1 -- \
             vendor/emsdk vendor/iverilog vendor/libftdi vendor/libusb vendor/openFPGALoader \
             vendor/yomiyasu vendor/zlib vendor/zstd vendor/yosys vendor/nextpnr vendor/surfer
+          git submodule update --init --depth 1 -- third_party/
+          git -C third_party/vexriscv submodule update --init --depth 1 -- pythondata_cpu_vexriscv/verilog/ext/VexRiscv
           git -C vendor/yosys submodule update --init --depth 1 -- \
             abc libs/cxxopts libs/fmt libs/tomlplusplus libs/boost_regex libs/symfpu
 
@@ -166,6 +168,12 @@ jobs:
       - id: wasm-build
         name: WASM をビルド
         run: scripts/build-wasm.sh
+
+      - name: Icarus Verilog の比較用資材を取得
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ci-iverilog-${{ github.run_id }}
+          path: build
 
       - name: WASI Yosys のブラウザー用資材を取得
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -816,6 +824,9 @@ jobs:
           pins="$(python3 .github/scripts/check-pins.py pnr-cache-pin)"
           printf '%s' "$pins" | sha256sum | awk '{ print "dependencies=" $1 }' >> "$GITHUB_OUTPUT"
 
+      - name: nextpnr の整列パッチと負の対照を検証
+        run: node --test tests/synth/nextpnr-control-set.test.mjs
+
       - id: nextpnr-cache-restore
         name: nextpnr build cache を復元
         if: github.event_name != 'schedule' && (github.event_name != 'workflow_dispatch' || inputs.cache)
@@ -827,7 +838,7 @@ jobs:
             build/wasi-sdk-*
             build/wasi/nextpnr/
             build/native/nextpnr/
-          key: nextpnr-ubuntu-26.04-${{ steps.nextpnr-pin.outputs.gitlink }}-${{ steps.nextpnr-pin.outputs.dependencies }}-${{ hashFiles('scripts/build-pnr-wasm.sh', 'scripts/build-pnr-info.py') }}
+          key: nextpnr-ubuntu-26.04-${{ steps.nextpnr-pin.outputs.gitlink }}-${{ steps.nextpnr-pin.outputs.dependencies }}-${{ hashFiles('scripts/build-pnr-wasm.sh', 'scripts/build-pnr-info.py', 'scripts/prepare-pnr-source.py', 'scripts/nextpnr-patches.cmake', 'patches/nextpnr/*.patch') }}
 
       - id: nextpnr-wasi-build
         name: WASI nextpnr と chipdb をビルド
@@ -1022,7 +1033,9 @@ jobs:
           persist-credentials: false
 
       - name: GHDL submodule を取得
-        run: git submodule update --init --depth 1 -- vendor/ghdl
+        run: |
+          git submodule update --init --depth 1 -- vendor/ghdl third_party/
+          git -C third_party/vexriscv submodule update --init --depth 1 -- pythondata_cpu_vexriscv/verilog/ext/VexRiscv
 
       - name: GNAT を確認
         run: |
@@ -1037,6 +1050,9 @@ jobs:
         with:
           node-version-file: .nvmrc
           package-manager-cache: false
+
+      - name: npm 依存を取得
+        run: npm ci
 
       - id: ghdl-key
         name: GHDL の cache key を作成
@@ -1198,13 +1214,18 @@ jobs:
           persist-credentials: false
 
       - name: Icarus Verilog submodule を取得
-        run: git submodule update --init --depth 1 -- vendor/iverilog
+        run: |
+          git submodule update --init --depth 1 -- vendor/iverilog third_party/
+          git -C third_party/vexriscv submodule update --init --depth 1 -- pythondata_cpu_vexriscv/verilog/ext/VexRiscv
 
       - name: Node.js を設定
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
           package-manager-cache: false
+
+      - name: npm 依存を取得
+        run: npm ci
 
       - name: ビルド依存を導入
         run: |
@@ -1238,6 +1259,24 @@ jobs:
         name: Icarus Verilog WASM/native を比較
         run: node --test tests/synth/iverilog-wasm.test.mjs
 
+      - name: Icarus Verilog のブラウザー用資材を保存
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ci-iverilog-web-assets-${{ github.run_id }}
+          path: build/iverilog-wasm/output/*.wasm
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Icarus Verilog の比較用資材を保存
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ci-iverilog-${{ github.run_id }}
+          path: |
+            build/iverilog-wasm/output/
+            build/iverilog-native/output/
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Icarus Verilog build inputs cache を保存
         if: steps.iverilog-cache-restore.outputs.cache-hit != 'true' && steps.iverilog-build.outcome == 'success' && steps.iverilog-tests.outcome == 'success' && github.event_name != 'schedule' && (github.event_name != 'workflow_dispatch' || inputs.cache)
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -1246,14 +1285,6 @@ jobs:
             build/cache/wasi-sdk-*
             build/wasi-sdk-*
           key: iverilog-wasi-ubuntu-26.04-${{ steps.iverilog-key.outputs.iverilog }}-${{ steps.iverilog-key.outputs.wasi }}-${{ hashFiles('scripts/build-iverilog-wasm.sh', 'scripts/build-iverilog-info.py', 'patches/iverilog/**') }}
-
-      - name: Icarus Verilog のブラウザー用資材を保存
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: ci-iverilog-web-assets-${{ github.run_id }}
-          path: build/iverilog-wasm/output/*.wasm
-          if-no-files-found: error
-          retention-days: 1
 
   surfer:
     name: Surfer WASM build
@@ -1324,8 +1355,8 @@ jobs:
 
   pyodide-pack:
     name: Pyodide gowin_pack
-    needs: [changes, nextpnr, nextpnr-compare]
-    if: needs.changes.outputs.build == 'true' && needs.nextpnr.result == 'success' && needs.nextpnr-compare.result == 'success'
+    needs: [changes, nextpnr, nextpnr-compare, synth-native, ghdl, iverilog]
+    if: needs.changes.outputs.build == 'true' && needs.nextpnr.result == 'success' && needs.nextpnr-compare.result == 'success' && needs.synth-native.result == 'success' && needs.ghdl.result == 'success' && needs.iverilog.result == 'success'
     runs-on: ubuntu-26.04
     timeout-minutes: 60
     permissions:
@@ -1336,6 +1367,11 @@ jobs:
         with:
           submodules: false
           persist-credentials: false
+
+      - name: 固定した HDL ライブラリーを取得
+        run: |
+          git submodule update --init --depth 1 -- third_party/
+          git -C third_party/vexriscv submodule update --init --depth 1 -- pythondata_cpu_vexriscv/verilog/ext/VexRiscv
 
       - name: Python venv をインストール
         run: |
@@ -1357,11 +1393,34 @@ jobs:
           name: ci-yosys-synth-${{ github.run_id }}
           path: build/wasi/yosys
 
+      - name: Native Yosys の比較用資材を取得
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ci-yosys-native-${{ github.run_id }}
+          path: build/native
+
       - name: nextpnr artifacts を取得
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ci-nextpnr-${{ github.run_id }}
           path: build
+
+      - name: GHDL WASM 資材を取得
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ci-ghdl-wasm-${{ github.run_id }}
+          path: build
+
+      - name: Icarus Verilog の比較用資材を取得
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ci-iverilog-${{ github.run_id }}
+          path: build
+
+      - name: Icarus Verilog native 版の実行権限を設定
+        run: |
+          chmod +x build/iverilog-native/output/ivlpp build/iverilog-native/output/ivl build/iverilog-native/output/vvp
+          chmod +x build/native/yosys build/native/yosys-abc build/native/nextpnr/nextpnr-himbaechel-gowin
 
       - id: pack-cache-restore
         name: Pyodide pack asset cache を復元
@@ -1388,7 +1447,7 @@ jobs:
           key: pyodide-pack-ubuntu-26.04-${{ hashFiles('package.json', 'package-lock.json', 'requirements-nextpnr.txt', 'scripts/build-pack-assets.sh', 'scripts/build-pack-assets.py', '.github/scripts/check-pins.py') }}
 
       - name: Native / Pyodide gowin_pack parity
-        run: node --test tests/synth/gowin-pack.test.mjs
+        run: node --test tests/synth/gowin-pack.test.mjs tests/synth/library-components.test.mjs tests/synth/yosys-parity.test.mjs tests/synth/library-measurements.test.mjs
 
       - name: Pyodide pack assets を保存
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -1545,8 +1604,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: zstd の submodule を取得
-        run: git submodule update --init --depth 1 -- vendor/zstd
+      - name: zstd と固定した HDL ライブラリーを取得
+        run: |
+          git submodule update --init --depth 1 -- vendor/zstd third_party/
+          git -C third_party/vexriscv submodule update --init --depth 1 -- pythondata_cpu_vexriscv/verilog/ext/VexRiscv
 
       - name: Node.js を設定
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -1585,6 +1646,12 @@ jobs:
 
       - name: Native Yosys の実行権限を復元
         run: chmod +x build/native/yosys build/native/yosys-abc
+
+      - name: Icarus Verilog の比較用資材を取得
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ci-iverilog-${{ github.run_id }}
+          path: build
 
       - name: nextpnr 成果物を取得
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2

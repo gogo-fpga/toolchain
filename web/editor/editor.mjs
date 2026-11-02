@@ -24,6 +24,14 @@ function languageExtension(language) {
   return [];
 }
 
+function readOnlyExtension(readOnly) {
+  return [
+    EditorState.readOnly.of(readOnly),
+    EditorView.editable.of(!readOnly),
+    EditorView.contentAttributes.of({ "aria-readonly": String(readOnly) }),
+  ];
+}
+
 function completionSource(language, getProjectTexts) {
   return (context) => {
     const keywords = KEYWORDS_BY_LANGUAGE[language] ?? [];
@@ -79,6 +87,7 @@ export function createHdlEditor(
   {
     doc = "",
     language = "plain",
+    readOnly = false,
     onChange = () => {},
     onDiagnostics = () => {},
     getProjectTexts = () => [doc],
@@ -87,12 +96,14 @@ export function createHdlEditor(
   let activeLanguage = normalizeLanguage(language);
   const languageCompartment = new Compartment();
   const completionCompartment = new Compartment();
+  const readOnlyCompartment = new Compartment();
   const view = new EditorView({
     parent,
     state: EditorState.create({
       doc,
       extensions: [
         basicSetup,
+        readOnlyCompartment.of(readOnlyExtension(readOnly)),
         languageCompartment.of(languageExtension(activeLanguage)),
         completionCompartment.of(
           autocompletion({
@@ -141,6 +152,9 @@ export function createHdlEditor(
       }
     },
     setLanguage,
+    setReadOnly(readOnly) {
+      view.dispatch({ effects: readOnlyCompartment.reconfigure(readOnlyExtension(readOnly)) });
+    },
     setDiagnostics: setEditorDiagnostics,
     focus() {
       view.focus();

@@ -29,5 +29,11 @@
 | [S12 Surfer WASM 化](S12-surfer-wasm.md) | Surfer v0.7.0 の WASM build、配布、browser test と再現性 | 同一 revision の local 2回と CI の全453ファイル一致 |
 | [S12 Surfer WASM 化の凍結基準](S12-surfer-wasm-criteria.md) | Surfer の再現 build、browser load、negative control の条件 | 測定前に固定 |
 | [S12B シミュレーション統合の回帰検証](S12B-simulation-integration.md) | timescale前後の4ボードbitstream比較、波形8画面、Icarus配布前検査と初回失敗の記録 | 全体E2E76件成功・比較測定4件skip、シミュレーション3回反復30件成功 |
+| [S13 nextpnr の配置結果の再現性](S13-nextpnr-determinism.md) | 製品用の8代表回路×4ボードで native / WASI を各5回比較。A/A、負の対照、資源、CSV を記録 | 候補2を採用。通常320回と A/A 20回が一致し、負例10回を拒否 |
+| [S14 CPU コアの実行と4ボード比較](S14-cpu-library-matrix.md) | ROM、RAM、GPIO と独立検査、負の対照、合成・配置配線・pack の採否基準 | 事前基準と初回失敗の保全記録 |
+| [S14 製品用HDLの正式反復](S14-production-hdl.md) | 8部品と4ボード、A/A、負の対照、生CSVと全列監査 | 全32組で両系各5回一致。350行39列を監査 |
+| [S14 製品用CPUの正式反復](S14-production-cpu.md) | 7候補と4ボード、3経路の対照、生CSVと全列監査 | 成功18・容量超過6・frontend非対応4。正常な18組は両系各5回一致。370行39列を監査 |
+| [S14 昇格後の最終回帰と配布ソース](S14-final-regression.md) | 全60組の全列CSV・診断・選択制限とGit情報なしの再生成 | 整列後の07e2256でもHDL32組成功、CPU成功18・容量超過6・frontend非対応4。全7,700値、22候補107資材と全配布ファイルを照合 |
+| [S14 整列後のE2Eと配布物再生成](S14-post-stack-e2e.md) | 保存API・配布前検査の修正、失敗試行、同一commitのWeb再生成 | 876c2a8で全体E2E76件成功・比較4件skip、22候補107資材とWeb全661ファイルが一致 |
 
 仮想デバイスによる測定値は、実機の値として扱いません。

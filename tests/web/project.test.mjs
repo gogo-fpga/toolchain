@@ -7,7 +7,8 @@ import {
 } from "../../web/lib/project.mjs";
 
 const validProject = {
-  version: 2,
+  version: 3,
+  libraries: [],
   name: "blink",
   board: "tangnano9k",
   top: "top",
@@ -34,7 +35,7 @@ test("project schema rejects unknown keys and versions", () => {
 
   const wrongVersion = validateProject({ ...validProject, version: 1 });
   assert.equal(wrongVersion.ok, false);
-  assert.match(wrongVersion.errors.join(" "), /版は 2/);
+  assert.match(wrongVersion.errors.join(" "), /版は 3/);
 });
 
 test("project schema validates simulation settings and selected Verilog files", () => {
@@ -105,9 +106,18 @@ test("validatePath accepts relative supported files", () => {
 });
 
 test("validatePath rejects traversal, empty segments, drive paths, and extensions", () => {
-  for (const path of ["../x.v", "a//b.v", "C:\\x.v", "/src/top.v", "src/top.bin"]) {
+  for (const path of ["../x.v", "a//b.v", "C:\\x.v", "/src/top.v", "src/top.exe", "project.json"]) {
     assert.equal(validatePath(path).ok, false, path);
   }
+});
+
+test("ROM files and reserved library paths are supported without widening user file paths", () => {
+  for (const path of ["rom/main.bin", "rom/main.hex", "rom/main.mem", "rom/main.dat", "libraries/example/sources/LICENSE", "libraries/example/snapshots/rtl.json"]) {
+    assert.equal(validatePath(path).ok, true, path);
+  }
+  assert.equal(validatePath("libraries/unregistered.v").ok, false);
+  assert.equal(validateProject({ ...validProject, libraries: [{ id: "../bad" }] }).ok, false);
+  assert.equal(validateProject({ ...validProject, files: [{ path: "src/top.v" }, { path: "src/top.v/other.v" }] }).ok, false);
 });
 
 test("validatePath enforces the path length and segment alphabet", () => {

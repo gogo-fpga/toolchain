@@ -109,6 +109,11 @@
               <button id="rename-file-button" type="button" class="secondary" disabled>名前変更</button>
               <button id="delete-file-button" type="button" class="secondary danger" disabled>削除</button>
             </div>
+            <details id="library-selector" class="library-selector">
+              <summary>HDL ライブラリー・CPU</summary>
+              <p data-library-status role="status" aria-live="polite">固定版のカタログを読み込みます。</p>
+              <ul data-library-list class="library-list" aria-label="ライブラリーと CPU の候補"></ul>
+            </details>
             <section class="simulation-settings" aria-labelledby="simulation-settings-heading">
               <h3 id="simulation-settings-heading">シミュレーション設定</h3>
               <label class="field" for="simulation-top">
@@ -461,8 +466,8 @@
           <input id="file-path-input" type="text" autocomplete="off" />
         </label>
         <label id="file-upload-field" class="field" for="file-content-input" hidden>
-          <span>.fs ファイルを選ぶ</span>
-          <input id="file-content-input" type="file" accept=".fs,application/octet-stream" />
+          <span>.fs または .bin ファイルを選ぶ</span>
+          <input id="file-content-input" type="file" accept=".fs,.bin,application/octet-stream" />
         </label>
         <p id="file-path-error" role="status" aria-live="polite"></p>
         <div class="dialog-actions">

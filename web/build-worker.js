@@ -1,10 +1,11 @@
-import { getBoard } from "./lib/boards.mjs";
+import { getBoard, gowinSynthesisCommand } from "./lib/boards.mjs";
 import { releaseDecoders } from "./lib/decompress.mjs";
 import { createVerifiedAssetLoader, safePath } from "./lib/verified-assets.mjs";
 import { createMemoryTree, runWasiP1, setTreeEntry } from "./lib/wasi-p1.mjs";
 import { readUstar } from "./lib/ustar.mjs";
 import { runGhdlSynth } from "./lib/ghdl-host.mjs";
-import { analyzeVhdlDesign, orderVhdlFiles } from "./lib/vhdl-order.mjs";
+import { analyzeVhdlDesign, getVhdlLibrary, orderVhdlFiles } from "./lib/vhdl-order.mjs";
+import { validateCompileOptions, verilogReadCommand } from "./lib/libraries.mjs";
 
 const synthURL = new URL("./synth/", import.meta.url);
 const synthCacheName = "gogo-fpga-synth-v1";
@@ -86,12 +87,17 @@ function checkedFiles(files) {
   const tree = { build: {}, tmp: {} };
   const sourcePaths = [];
   const vhdlFiles = [];
+  const dataFiles = [];
   let constraintPath = null;
   for (const file of files) {
     if (!file || typeof file.path !== "string") {
       throw new Error("A project file has an invalid path");
     }
     insertFile(tree, file.path, file.content);
+    if (file.role === "data") {
+      dataFiles.push(file);
+      continue;
+    }
     if (/\.(?:v|sv)$/i.test(file.path) && !/(?:^|\/)top_tb\.v$/i.test(file.path)) {
       sourcePaths.push(file.path);
     }
@@ -105,7 +111,7 @@ function checkedFiles(files) {
     throw new Error("The project has no HDL source files");
   }
   if (!constraintPath) throw new Error("The project has no generated constraint file");
-  return { tree, sourcePaths, vhdlFiles, constraintPath };
+  return { tree, sourcePaths, vhdlFiles, dataFiles, constraintPath };
 }
 
 function toolResult(module, args, workdir, share, tool) {
@@ -158,7 +164,8 @@ self.addEventListener("message", async ({ data }) => {
     if (!/^[A-Za-z_][A-Za-z0-9_$]*$/.test(data.top ?? "")) {
       throw new Error("The top module name is invalid");
     }
-    const { tree, sourcePaths, vhdlFiles, constraintPath } = checkedFiles(data.files);
+    const { tree, sourcePaths, vhdlFiles, dataFiles, constraintPath } = checkedFiles(data.files);
+    const compileOptions = validateCompileOptions(data);
     const hasVhdl = vhdlFiles.length > 0;
     let vhdlTime = 0;
     let vhdlStarted = 0;
@@ -186,13 +193,14 @@ self.addEventListener("message", async ({ data }) => {
       const units = analyzeVhdlDesign(orderedVhdlFiles);
       const entities = units.flatMap(({ file, declarations }) =>
         declarations
-          .filter(({ kind }) => kind === "entity")
+          .filter(({ kind }) => kind === "entity" && getVhdlLibrary(file) === "work")
           .map(({ name }) => ({ name, file: file.path }))
       );
       const instantiated = new Set(
-        units.flatMap(({ references }) =>
+        units.flatMap(({ file, references }) =>
           references
-            .filter(({ usage }) => usage === "instantiation")
+            .filter(({ usage, library }) => usage === "instantiation" &&
+              ((!library || library === "work") ? getVhdlLibrary(file) : library) === "work")
             .map(({ name }) => name)
         ),
       );
@@ -252,7 +260,7 @@ self.addEventListener("message", async ({ data }) => {
         const result = runGhdlSynth({
           module: ghdlModule,
           librariesTree,
-          files: orderedVhdlFiles,
+          files: [...orderedVhdlFiles, ...dataFiles],
           top: target,
           standard: data.vhdlStandard ?? "2008",
         });
@@ -296,7 +304,7 @@ self.addEventListener("message", async ({ data }) => {
     const yosysReadCommands = [];
     if (sourcePaths.length) {
       yosysReadCommands.push(
-        `read_verilog ${sourcePaths.map((path) => JSON.stringify(path)).join(" ")}`,
+        verilogReadCommand(sourcePaths, compileOptions),
       );
     }
     if (generatedVhdlPaths.length) {
@@ -308,7 +316,7 @@ self.addEventListener("message", async ({ data }) => {
     }
     const yosysCommand =
       `${yosysReadCommands.join("; ")}; ` +
-      `synth_gowin -top ${data.top} -json build/top.json`;
+      gowinSynthesisCommand(board.id, data.top, "build/top.json");
     const synthStarted = performance.now();
     const yosysResult = toolResult(
       yosysModule,

@@ -64,10 +64,11 @@ function tokensWithLines(source) {
 }
 
 function reference(tokens, start, references, kind, usage = "reference") {
-  if (tokens[start + 1]?.text !== "work" || tokens[start + 2]?.text !== ".") return;
+  const library = tokens[start + 1]?.text;
+  if (!/^[a-z][a-z0-9_]*$/.test(library ?? "") || tokens[start + 2]?.text !== ".") return;
   const name = tokens[start + 3];
   if (name && /^[a-z][a-z0-9_]*$/i.test(name.text)) {
-    references.push({ name: name.text, line: tokens[start].line, kind, usage });
+    references.push({ library, name: name.text, line: tokens[start].line, kind, usage });
   }
 }
 
@@ -81,7 +82,7 @@ function analyzeFile(file) {
   for (let index = 0; index < tokens.length; index += 1) {
     const word = tokens[index].text;
     if (word === "entity") {
-      if (tokens[index + 1]?.text === "work") {
+      if (tokens[index + 2]?.text === ".") {
         reference(tokens, index, references, "entity", "instantiation");
       } else if (tokens[index + 2]?.text === "is") {
         declarations.push({
@@ -109,7 +110,7 @@ function analyzeFile(file) {
         });
       }
     } else if (word === "context") {
-      if (tokens[index + 1]?.text === "work") {
+      if (tokens[index + 2]?.text === ".") {
         reference(tokens, index, references, "context");
       } else if (tokens[index + 2]?.text === "is") {
         declarations.push({
@@ -122,6 +123,7 @@ function analyzeFile(file) {
       declarations.push({
         name: tokens[index + 1].text,
         kind: "architecture",
+        entity: tokens[index + 3]?.text,
         line: tokens[index].line,
       });
       if (tokens[index + 3]) {
@@ -146,11 +148,19 @@ function analyzeFile(file) {
           usage: "configuration",
         });
       }
-    } else if (word === "use") {
+    } else if (word === "use" || word === "new") {
       reference(tokens, index, references, "reference");
     }
   }
   return { declarations, references };
+}
+
+export function getVhdlLibrary(file) {
+  const name = file.library === undefined ? "work" : file.library;
+  if (typeof name !== "string" || !/^[A-Za-z](?:[A-Za-z0-9]|_(?=[A-Za-z0-9]))*$/.test(name)) {
+    throw new TypeError(`Invalid VHDL library: ${name}`);
+  }
+  return name.toLowerCase();
 }
 
 export function analyzeVhdlDesign(files) {
@@ -169,27 +179,39 @@ export function orderVhdlFiles(files) {
   }
   const units = analyzeVhdlDesign(files);
   const declarations = new Map();
-  units.forEach(({ declarations: fileDeclarations }, fileIndex) => {
+  const errors = [];
+  const libraries = new Set(files.map(getVhdlLibrary));
+  const designUnits = new Map();
+  units.forEach(({ file, declarations: fileDeclarations }, fileIndex) => {
+    const library = getVhdlLibrary(file);
     for (const declaration of fileDeclarations) {
-      if (!["entity", "package", "context"].includes(declaration.kind)) continue;
-      const filesForName = declarations.get(declaration.name) ?? [];
+      const primary = ["entity", "package", "context", "configuration"].includes(declaration.kind);
+      const key = `${library}.${declaration.name}`;
+      const unitKey = primary ? key : `${key}:${declaration.kind}:${declaration.entity ?? ""}`;
+      if (designUnits.has(unitKey)) {
+        errors.push({ file: file.path, line: declaration.line, message: `Duplicate ${library} design unit "${declaration.name}"` });
+      }
+      designUnits.set(unitKey, declaration);
+      if (!primary) continue;
+      const filesForName = declarations.get(key) ?? [];
       filesForName.push(fileIndex);
-      declarations.set(declaration.name, filesForName);
+      declarations.set(key, filesForName);
     }
   });
 
-  const errors = [];
   const edges = files.map(() => []);
-  units.forEach(({ references }, fileIndex) => {
+  units.forEach(({ file, references }, fileIndex) => {
     for (const reference of references) {
-      const providers = declarations.get(reference.name);
+      const library = !reference.library || reference.library === "work" ? getVhdlLibrary(file) : reference.library;
+      if (reference.library && reference.library !== "work" && !libraries.has(library)) continue;
+      const providers = declarations.get(`${library}.${reference.name}`);
       if (!providers?.length) {
         errors.push({
           file: files[fileIndex].path,
           line: reference.line,
           message: reference.kind === "reference"
-            ? `Unresolved work reference "${reference.name}"`
-            : `Unresolved work ${reference.kind} reference "${reference.name}"`,
+            ? `Unresolved ${library} reference "${reference.name}"`
+            : `Unresolved ${library} ${reference.kind} reference "${reference.name}"`,
         });
         continue;
       }
