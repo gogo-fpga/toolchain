@@ -188,7 +188,7 @@ GHDL、NVC、Icarus Verilog など GPL のツールを WASM にビルドして R
 
 ## 7. 分割した調査
 
-T6は上流SBY・SMTBMCの再利用を選び、固定ソースと[S15の事前基準](docs/experiments/S15-formal-verification.md)を登録しました。Yosys SAT、元のVerilogをIcarusで独立に再実行する検査経路、明示したGHDL形式出力によるVHDL・PSL property保持を実装中です。PSLのコメント解析には上流と同じ2フラグが必要で、activation coverはassertと区別します。[GHDLの診断と初回の失敗](docs/experiments/S15-vhdl-formal.md)も保存します。VHDL原文による反例再実行、SMTソルバー・画面統合と正式5回反復は未完了です。以下に方式と制限、初期調査との差、依存、GMPの取得失敗と署名鍵の期限切れも記録します。
+T6は上流SBY・SMTBMCの再利用を選び、固定ソースと[S15の事前基準](docs/experiments/S15-formal-verification.md)を登録しました。Yosys SAT、元のVerilogをIcarusで独立に再実行する検査経路、明示したGHDL形式出力によるVHDL・PSL property保持を追加しました。PSLのコメント解析には上流と同じ2フラグが必要で、activation coverはassertと区別します。[GHDLの診断と初回の失敗](docs/experiments/S15-vhdl-formal.md)も保存します。元VHDLのnative検査経路とその5回反復も追加しましたが、下位化後の比較、追加fixture、SMTソルバー・画面統合と製品版の正式反復は未完了です。以下に方式と制限、初期調査との差、依存、GMPの取得失敗と署名鍵の期限切れも記録します。
 
 大きな調査は `docs/research/` に分けて置きます。
 
@@ -207,6 +207,8 @@ T6は上流SBY・SMTBMCの再利用を選び、固定ソースと[S15の事前�
 | [形式検証の原本とブラウザーの制約](docs/research/formal-verification.md) | SBY・SMTBMC、Z3のWASM先例、property、輸送と非成功判定 |
 | [HDLライブラリーとCPUコアの検証経緯](docs/research/hdl-validation-history.md) | 正式反復と全60組の回帰、失敗と修正、配布ソースの原記録 |
 | [形式検証の固定ソース・依存・配布条件](docs/research/formal-sources.md) | 採用releaseと初期snapshot、依存、SQLite、license、GMP、source closure |
+
+元VHDLの独立再実行は、GHDL標準のVPIと`--psl-report`を再利用する限定した検査経路を追加しました。清浄な同一commitで55件×5回とA/Aの2回が成功し、元ファイルとCSV全280行19列を照合しています。通常assertionとclocked PSLの評価位相、coverが既定では標準出力に現れないこと、root moduleのVPI列挙、生CSV・全ファイルのhash・失敗試行と未完了の範囲を[元VHDLによる再実行の実験記録](docs/experiments/S15-vhdl-native-replay.md)へ保存します。下位化後のVerilog比較、追加fixtureとT6全体は未完了です。
 
 Actions.lock は今回は導入を見送り、現行の完全長 SHA 固定を維持します。取得元 ID と推移依存の保護という追加価値、導入の制限、未確認の事項は上記の調査に記録しました。
 
