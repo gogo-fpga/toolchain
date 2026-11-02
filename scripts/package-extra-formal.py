@@ -20,7 +20,7 @@ HEX = re.compile(r"[0-9a-f]{64}\Z")
 MAX_OBJECT = 256 * 1024 * 1024
 MAX_ARCHIVE = 2 * 1024 * 1024 * 1024
 MAX_LOGICAL = 16 * 1024 * 1024 * 1024
-MAX_MANIFEST = 16 * 1024 * 1024
+MAX_MANIFEST = 64 * 1024 * 1024
 AUDITORS = ("measure-extra-formal.py", "audit-formal-python.py", "audit-formal-sby.py",
             "audit-formal-controls.py", "sby-artifact-audit.py", "formal-solver-audit.py")
 TRACE_AUDITORS = ("measure-formal-trace.py", "audit-formal-trace.py", "audit-formal-sby.py",
