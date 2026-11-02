@@ -80,7 +80,7 @@ python3 scripts/build-solver-probe.py --solver boolector --runtime wasi --out bu
 node scripts/probe-extra-solver-cli.mjs --native build/S15/boolector-native-01 --wasi build/S15/boolector-wasi-01 --out build/S15/boolector-cli-01
 ```
 
-`--cmake` と `--jobs` でhostツールのパスと並列数を明示できます。対応していないsolver名は拒否します。Bitwuzlaのビルド接続と正式反復は未完了です。Tang Nano実機での動作は本リポジトリでは試していません。
+`--cmake` と `--jobs` でhostツールのパスと並列数を明示できます。対応していないsolver名は拒否します。BitwuzlaのMeson経路とCLI予備比較は別記録とし、正式反復・SMTBMC認定は未完了です。Tang Nano実機での動作は本リポジトリでは試していません。
 
 CLI診断は清浄なbuild metadataとbinary hashを先に照合し、version、help、値取得とpush/pop、EOF、構文エラーの5条件をnativeと実workerで交互に実行します。WASIは7 byte bufferへ3 byteずつ書き、stdout/stderrの全byteと終了コードを比較します。Boolectorのsat終了10を通常終了0へ読み替えません。構文エラーの終了1も独立して検査します。生CSVと各stream・結果JSONは出力先へ保存します。これは予備CLI診断であり、全列の独立監査・正式反復・SMTBMCの検証を代替しません。
 

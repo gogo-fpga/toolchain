@@ -1,6 +1,6 @@
 # S15 P4 BitwuzlaのMeson診断ビルド
 
-- 状態: 固定依存だけでnative/WASIの清浄ビルドを生成。構文エラーの終了境界を修正中で、応答比較は未完了
+- 状態: 固定依存だけの清浄ビルドとCLI予備29実行が通過。正式反復・独立監査器・製品認定は未完了
 - 事前基準: [S15共通基準](S15-formal-verification.md)、[追加ソルバーの基準](S15-extra-solver-builds.md)
 - 戻り先: [実験索引](README.md)、[形式検証の候補](../research/formal-capabilities.md)
 
@@ -65,22 +65,40 @@ CLI比較は構文エラーで停止しました。stderrの全byteは一致し�
 
 原記録は `build/S15/bitwuzla-cli-clean-01` です。追加診断の初回はstdin APIの取り違えにより入力を渡せず、次の2試行も引数の型が違ったため除外しました。採用した診断は `syntax-exit-stack-04.json` です。通常のworker経由で得た初回の失敗CSV・stdout/stderrは上書きしていません。
 
+### 終了境界の修正後の予備比較
+
+機能commit `c45aad118c7f9ce52a0c782f54d3e0f9fd562673` をpushし、同じ清浄な版から固定依存で生成したnative/WASIを比較しました。nativeは7,672,896 bytes（SHA-256 `92de1c45986cb99ba3289ddbd180f9324a16e72445c7981d9226ce2451bfa9f7`）、WASIは8,356,855 bytes（`9269a522f4ec942d633d0c556eb231559e9993a383dc74665412e82bfbe61fb1`）です。
+
+14条件を両runtimeで実行し、修正前WASIの構文エラーを負の対照として加えた計29実行が予備基準を通過しました。[生CSV全29行14列](S15-bitwuzla-cli-preliminary.csv)は全cellを個別JSONと照合し、input・stdout/stderr・本体・metadataのhash、buildの全command終了値とlog・全libraryのhashも確認しました。これは正式反復や、負の対照で検査した独立監査器の通過とは区別します。[初回の失敗CSV全10行](S15-bitwuzla-cli-failure-preliminary.csv)も保持します。
+
+- 通常の13条件は版・help・sat/unsat・値/push/pop・EOF・構文エラー・model・FPの5丸めmode・NaN・array-storeです。stdout/stderrの全byteと終了codeがnative/WASIで一致しました。構文エラーは両方とも正常なエラー終了code 1であり、修正前WASIだけがtrapになる負の対照も維持しています。
+- 残る1条件は内部time limitの境界です。nativeの `--time-limit=10000` は短い入力を判定し、WASIは明示診断後に `runtime-error` となります。この拒否をsat/unsat成功と数えたり、内部time limitが利用可能と扱ったりしません。早期停止で起きた入力pipeのcloseもJSON・CSVに残します。
+- 通常終了時のWASM linear memoryは33,554,432 bytesでした。trap時とnativeの値は未取得であり、0へ置き換えていません。native RSSの測定値ではありません。
+
+### 予備証拠の保全
+
+失敗・除外試行と清浄build、CLIの原出力・stack診断、実際のdriver・patch・固定archive・header・library・本体を `bitwuzla-build-c45aad1-evidence.zip` にまとめました。[全1,004ファイルの目録](S15-bitwuzla-build-files.csv)とZIP全entryのサイズ・hashを照合しました。ZIPから展開した計測器による正式な再監査はまだ実施していません。
+
+ZIPは83,975,250 bytes、SHA-256 `6ad0b88cdf269789c45f53d9e002d189f7b6b294dfe2e11f152ebcb1d447d742`、目録のSHA-256は `fd18c0d8d151598cc77ca34b95271876d9c2daefcc09c7f9f7e61a3c4036aa3d` です。VMの一時領域へ移して原記録を削除することはせず、後続の正式反復とも別に保持します。
+
 ## 残る警告と次の採否条件
 
-初回のWASI buildでは `src/util/gmp_utils.cpp:123` と `src/solver/fp/floating_point.cpp:450` に、32 bit limbを32 bit shiftする警告が残りました。どちらも `mp_bits_per_limb == 64` のbranch内であり、今回の32 bit GMPでそのbranchを実行した結果ではありません。shift前の型を64 bitへ広げるpatchを両runtimeへ適用し、再buildと応答比較で検証します。
+初回のWASI buildでは `src/util/gmp_utils.cpp:123` と `src/solver/fp/floating_point.cpp:450` に、32 bit limbを32 bit shiftする警告が残りました。どちらも `mp_bits_per_limb == 64` のbranch内であり、今回の32 bit GMPでそのbranchを実行した結果ではありません。shift前の型を64 bitへ広げるpatchを両runtimeへ適用し、修正後の清浄buildで該当警告がなく、予備応答も一致することを確認しました。
 
 GMP C++ literalの空白に関する非推奨警告と、CaDiCaLの非trivial型に対する `memset` 警告も保持します。ビルド成功を、警告なし・意味論の認定済みとは扱いません。
 
-まず清浄な同一commitでnative/WASIを生成し、版・help・sat/unsat・値取得・push/pop・EOF・構文エラーとFPの5丸めmode・NaN・array-storeを比較します。現段階の性能値や起動時間を改善の根拠にせず、正式5回・A/A 2回と全列の独立監査は後続の検証とします。
+WASIのGMPにはunused expressionとbitwise conditionalの優先順位、MPFRには `-ffloat-store` の非対応と32 bitの `size_t`/`int` と定数の比較に関する警告もあります。原logを保持し、FPの限定fixtureの一致だけでMPFR全体の準拠性を認定しません。
+
+予備比較に続き、正式5回・A/A 2回と全列の独立監査器を検証します。現段階の性能値や起動時間を改善の根拠にしません。
 
 ```sh
 python3 scripts/build-solver-probe.py --solver bitwuzla --runtime native \
-  --meson "$MESON_BIN" --jobs 2 --out build/S15/bitwuzla-native-clean-01
+  --meson "$MESON_BIN" --jobs 1 --out build/S15/bitwuzla-native-clean-02
 python3 scripts/build-solver-probe.py --solver bitwuzla --runtime wasi \
-  --meson "$MESON_BIN" --jobs 2 --out build/S15/bitwuzla-wasi-clean-01
+  --meson "$MESON_BIN" --jobs 1 --out build/S15/bitwuzla-wasi-clean-02
 node scripts/probe-extra-solver-cli.mjs --solver bitwuzla \
-  --native build/S15/bitwuzla-native-clean-01 --wasi build/S15/bitwuzla-wasi-clean-01 \
-  --out build/S15/bitwuzla-cli-clean-01
+  --native build/S15/bitwuzla-native-clean-02 --wasi build/S15/bitwuzla-wasi-clean-02 \
+  --negative-wasi build/S15/bitwuzla-wasi-clean-01 --out build/S15/bitwuzla-cli-clean-02
 ```
 
 `MESON_BIN` は既存 `requirements-formal-build.txt` のhash lockで導入した実行ファイルです。出力先が存在すればdriverと計測器は上書きせず停止します。予期しない終了やunsupportedな境界は通常のsat/unsatとは別に検査します。Tang Nano実機は本リポジトリでは試していません。
