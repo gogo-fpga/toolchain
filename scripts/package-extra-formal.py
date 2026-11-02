@@ -4,6 +4,7 @@
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path, PurePosixPath
 import re
 import shutil
@@ -24,11 +25,15 @@ AUDITORS = ("measure-extra-formal.py", "audit-formal-python.py", "audit-formal-s
             "audit-formal-controls.py", "sby-artifact-audit.py", "formal-solver-audit.py")
 TRACE_AUDITORS = ("measure-formal-trace.py", "audit-formal-trace.py", "audit-formal-sby.py",
                   "sby-artifact-audit.py", "formal-solver-audit.py", "negative-formal-trace.py")
+REPLAY_AUDITORS = ("measure-smt-replay.py", "audit-smt-replay.py", "negative-smt-replay.py", "audit-formal-trace.py",
+                   "audit-formal-sby.py", "sby-artifact-audit.py", "formal-solver-audit.py")
 
 
 def campaign_sources(plan):
     kind = plan.get("kind")
-    require(kind in [None, "formal-trace-v1"], "unknown campaign kind")
+    require(kind in [None, "formal-trace-v1", "smt-replay-v1"], "unknown campaign kind")
+    if kind == "smt-replay-v1":
+        return ["scripts/" + name for name in REPLAY_AUDITORS] + ["vendor/yosys/backends/smt2/smtio.py"]
     if kind == "formal-trace-v1":
         return ["scripts/" + name for name in TRACE_AUDITORS] + ["vendor/yosys/backends/smt2/smtio.py"]
     return ["scripts/" + name for name in AUDITORS]
@@ -164,10 +169,16 @@ def stage(sources, output):
             entries.append((path, name))
     require(len(entries) == len({name for _, name in entries}), "overlapping staging sources")
     output.mkdir()
+    objects = {}
     for path, name in entries:
         target = output / name
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(path, target, follow_symlinks=True)
+        key = (digest(path.read_bytes()), stat.S_IMODE(path.stat().st_mode))
+        if key in objects:
+            os.link(objects[key], target)
+        else:
+            shutil.copy2(path, target, follow_symlinks=True)
+            objects[key] = target
     report = {"sources": [str(Path(source).absolute().relative_to(ROOT)) for source in sources], "files": len(entries), "materializedLaunchers": links}
     (output / "staging.json").write_text(json.dumps(report, sort_keys=True) + "\n")
     return report
@@ -220,12 +231,18 @@ def restore(archive, destination):
     manifest = validate(archive)
     destination = Path(destination).resolve()
     destination.mkdir()
+    objects = {}
     with zipfile.ZipFile(archive) as data:
         for item in manifest["files"]:
             path = destination / item["path"]
             path.parent.mkdir(parents=True, exist_ok=True)
-            with path.open("xb") as stream:
-                stream.write(data.read("objects/" + item["sha256"]))
+            key = (item["sha256"], item["mode"])
+            if key in objects:
+                os.link(objects[key], path)
+            else:
+                with path.open("xb") as stream:
+                    stream.write(data.read("objects/" + item["sha256"]))
+                objects[key] = path
             path.chmod(item["mode"])
             require(path.stat().st_size == item["bytes"] and digest(path.read_bytes()) == item["sha256"], "restored file bytes")
     report = audited_campaign(destination / manifest["campaign"])

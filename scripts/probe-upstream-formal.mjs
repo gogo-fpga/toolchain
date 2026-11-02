@@ -38,7 +38,7 @@ export function readSbyStatus(text, exitCode, stdout) {
   return status;
 }
 
-export function probeNative({ manifestFile, out, formal = false, solver }) {
+export function probeNative({ manifestFile, out, formal = false, solver, cases = sbyCases }) {
   const solvers = selectFormalSolvers(solver);
   const directory = path.resolve(out);
   assert.ok(!/[\s;'"`$\\]/.test(directory), "The upstream native shell requires an unambiguous workdir");
@@ -51,6 +51,7 @@ export function probeNative({ manifestFile, out, formal = false, solver }) {
   const nativeCommands = { yosys, "yosys-smtbmc": `${quoted(python)} ${quoted(path.join(root, "vendor/yosys/backends/smt2/smtbmc.py"))}`,
     "yosys-witness": `${quoted(python)} ${quoted(path.join(root, "vendor/yosys/backends/smt2/witness.py"))}` };
   const sourceFiles = ["scripts/probe-upstream-formal.mjs", "tests/synth/formal-sby-cases.mjs", "tests/synth/solver-protocol-helpers.mjs"];
+  if (cases !== sbyCases) sourceFiles.push("tests/synth/formal-smt-replay-cases.mjs");
   for (const name of ["sby", "click", "yosys"]) {
     const prefix = name === "yosys" ? "vendor/yosys/backends/smt2" : name === "sby" ? "vendor/sby/sbysrc" : "vendor/click/src/click";
     sourceFiles.push(...filesBelow(path.join(root, prefix)).filter(p => p.endsWith(".py")).map(p => `${prefix}/${p}`));
@@ -76,7 +77,7 @@ export function probeNative({ manifestFile, out, formal = false, solver }) {
     metadata.solverCommands[solver] = verifyNativeSolver(executable, bin, probe.info.artifact.sha256,
       { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` });
     writeFileSync(path.join(directory, "metadata.json"), JSON.stringify(metadata, null, 2) + "\n");
-    for (const fixture of sbyCases) {
+    for (const fixture of cases) {
       const working = path.join(directory, `${solver}-${fixture.name}`);
       mkdirSync(working);
       writeFileSync(path.join(working, "top.v"), fixture.source);
@@ -122,8 +123,10 @@ export function probeNative({ manifestFile, out, formal = false, solver }) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const { values } = parseArgs({ options: { probes: { type: "string" }, out: { type: "string" }, solver: { type: "string" }, formal: { type: "boolean", default: false } } });
+  const { values } = parseArgs({ options: { probes: { type: "string" }, out: { type: "string" }, solver: { type: "string" }, suite: { type: "string", default: "standard" }, formal: { type: "boolean", default: false } } });
   assert.ok(values.probes && values.out, "Use --probes MANIFEST --out NEW_DIRECTORY");
-  const rows = probeNative({ manifestFile: values.probes, out: values.out, formal: values.formal, solver: values.solver });
+  assert.ok(["standard", "replay"].includes(values.suite), "Unknown native fixture suite");
+  const rows = probeNative({ manifestFile: values.probes, out: values.out, formal: values.formal, solver: values.solver,
+    cases: values.suite === "replay" ? (await import("../tests/synth/formal-smt-replay-cases.mjs")).smtReplayCases : sbyCases });
   if (rows.some(row => row.error)) process.exitCode = 1;
 }

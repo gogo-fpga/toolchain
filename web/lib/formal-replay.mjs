@@ -1,4 +1,5 @@
 import { validateFormalProperties } from "./formal-properties.mjs";
+import { safePath } from "./verified-assets.mjs";
 
 const identifier = /^[A-Za-z_][A-Za-z0-9_$]*$/;
 
@@ -56,6 +57,7 @@ function requireInitializedRegisters(module) {
       throw new Error("Replay of unconstrained initial state is unsupported");
     }
   }
+  return initialized;
 }
 
 export function createSatReplay({ document, top, witness, clock = null, edge = "posedge", mode = "bmc", depth }) {
@@ -86,6 +88,103 @@ export function createSatReplay({ document, top, witness, clock = null, edge = "
     return { name, direction: port.direction, width, variable: `p${index}`, values };
   });
   if (ports.length > 1024) throw new Error("Too many replay ports");
+  return buildReplay({ inventory, ports, top, clock, edge, steps });
+}
+
+export async function createSmtReplay({ document, top, capture, model, vcd, clock = null,
+  edge = "posedge", mode = "bmc", phase = "bmc", depth }) {
+  if (typeof top !== "string" || !identifier.test(top) || !Number.isSafeInteger(depth) || depth < 1 || depth > 1024) {
+    throw new Error("Invalid replay top or depth");
+  }
+  if (!(mode === "bmc" && phase === "bmc" || mode === "prove" && phase === "basecase")) {
+    throw new Error("SMT replay requires an initialized assertion basecase");
+  }
+  const inventory = validateFormalProperties(document, document, { top, clock, edge, mode });
+  const module = document.modules[top];
+  const initialized = requireInitializedRegisters(module);
+  const record = structuredClone(capture);
+  const keys = (object, expected) => object && typeof object === "object" && !Array.isArray(object) &&
+    JSON.stringify(Object.keys(object).sort()) === JSON.stringify(expected.split(" ").sort());
+  const sha = value => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+  const filePath = value => safePath(value) && value.length <= 512 && !/[\0:]/.test(value) && value !== "formal-trace.json";
+  if (!keys(record, "format_version model traces upstreamExitCode") || record.format_version !== 1 || record.upstreamExitCode !== 1 ||
+      !keys(record.model, "path sha256") || !filePath(record.model.path) || !sha(record.model.sha256) ||
+      !Array.isArray(record.traces) || record.traces.length !== 1) {
+    throw new Error("SMT replay requires one complete failing assertion trace");
+  }
+  const trace = record.traces[0];
+  if (!keys(trace, "endTime path sha256 signals steps") || !filePath(trace.path) || trace.path === record.model.path ||
+      !sha(trace.sha256) || !Array.isArray(trace.steps) || trace.steps.length < 1 || trace.steps.length > depth ||
+      trace.endTime !== trace.steps.length || !Array.isArray(trace.signals) || !trace.signals.length || trace.signals.length > 4096) {
+    throw new Error("Invalid SMT replay trace inventory or depth");
+  }
+  const validPath = value => Array.isArray(value) && value.length >= 2 && value.length <= 64 && value[0] === top &&
+    value.every(part => typeof part === "string" && part.length <= 512 && identifier.test(part));
+  const signals = new Map();
+  for (const signal of trace.signals) {
+    if (!keys(signal, "clock path width") || !validPath(signal.path) ||
+        !Number.isSafeInteger(signal.width) || signal.width < 1 || signal.width > 4096) {
+      throw new Error("Invalid SMT replay signal");
+    }
+    const name = signal.path.slice(1).join(".");
+    const net = Object.hasOwn(module.netnames ?? {}, name) && module.netnames[name];
+    const clockAlias = clock !== null && signal.width === 1 && net?.bits?.[0] === module.ports[clock].bits[0];
+    if (signals.has(name) || !net || net.bits?.length !== signal.width ||
+        signal.clock !== (clockAlias ? edge : null) || clockAlias && name !== clock && Object.hasOwn(module.ports, name)) {
+      throw new Error("SMT replay signal differs from original design or clock");
+    }
+    const constant = net.bits.every(bit => bit === "0" || bit === "1");
+    const expression = constant ? `${signal.width}'b${[...net.bits].reverse().join("")}` :
+      `dut.${signal.path.slice(1).map(part => `\\${part} `).join(".")}`;
+    signals.set(name, { ...signal, name, bits: net.bits, values: [], expression });
+  }
+  let size = 0;
+  for (const [index, step] of trace.steps.entries()) {
+    if (!keys(step, "time values") || step.time !== index || !Array.isArray(step.values) || step.values.length !== signals.size) {
+      throw new Error("Missing or inconsistent SMT replay samples");
+    }
+    const seen = new Set();
+    for (const value of step.values) {
+      if (!keys(value, "bits path") || !validPath(value.path)) throw new Error("Invalid SMT replay sample");
+      const name = value.path.slice(1).join(".");
+      const signal = signals.get(name);
+      if (!signal || seen.has(name) || typeof value.bits !== "string" || value.bits.length !== signal.width || !/^[01]+$/.test(value.bits)) {
+        throw new Error("Duplicate, unknown or invalid SMT replay value");
+      }
+      size += value.bits.length + value.path.join(".").length;
+      if (size > 8 * 1024 * 1024) throw new Error("SMT replay value size limit");
+      if (index === 0 && signal.bits.some((bit, offset) => initialized.has(bit) && initialized.get(bit) !== value.bits.at(-1 - offset))) {
+        throw new Error("SMT replay initial value differs from original design");
+      }
+      signal.values.push(value.bits);
+      seen.add(name);
+    }
+  }
+  const ports = Object.entries(module.ports).map(([name, port], index) => {
+    const signal = signals.get(name);
+    if (!identifier.test(name) || !["input", "output"].includes(port?.direction) || !signal ||
+        signal.width !== port.bits?.length || JSON.stringify(signal.bits) !== JSON.stringify(port.bits)) {
+      throw new Error("Missing or unsupported original SMT replay port");
+    }
+    return { name, direction: port.direction, width: signal.width, variable: `p${index}`, values: signal.values };
+  });
+  if (ports.length > 1024) throw new Error("Too many replay ports");
+  if (clock !== null && !signals.has(clock)) throw new Error("Missing SMT replay clock");
+  const digest = async bytes => [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))]
+    .map(byte => byte.toString(16).padStart(2, "0")).join("");
+  const bytes = value => {
+    if (!(value instanceof Uint8Array) || !value.length || value.length > 32 * 1024 * 1024) throw new Error("Missing or excessive SMT replay evidence bytes");
+    return value.slice();
+  };
+  const inputs = [bytes(model), bytes(vcd)];
+  const [modelSha256, traceSha256] = await Promise.all(inputs.map(digest));
+  if (modelSha256 !== record.model.sha256 || traceSha256 !== trace.sha256) throw new Error("SMT replay model or VCD hash mismatch");
+  const observations = [...signals.values()].filter(signal => signal.clock === null && !Object.hasOwn(module.ports, signal.name));
+  return { ...buildReplay({ inventory, ports, observations, top, clock, edge, steps: trace.steps.length }),
+    origin: "smt", phase, modelSha256, traceSha256 };
+}
+
+function buildReplay({ inventory, ports, observations = [], top, clock, edge, steps }) {
   const locations = inventory.properties.filter(({ kind }) => kind !== "cover").map((property) => {
     const match = /^([^:|\r\n]+):(\d+)\.\d+-\d+\.\d+$/.exec(property.source);
     if (!match) throw new Error("Unsupported replay property source");
@@ -113,6 +212,9 @@ export function createSatReplay({ document, top, witness, clock = null, edge = "
     lines.push("    #1;");
     for (const port of ports.filter(({ direction }) => direction === "output")) {
       lines.push(`    if (${port.variable} !== ${port.width}'b${port.values[step]}) $fatal(1, "FORMAL_REPLAY_MISMATCH ${step + 1} ${port.name}");`);
+    }
+    for (const signal of observations) {
+      lines.push(`    if (${signal.expression} !== ${signal.width}'b${signal.values[step]}) $fatal(1, "FORMAL_REPLAY_MISMATCH ${step + 1} ${signal.name}");`);
     }
     lines.push(`    $display("FORMAL_REPLAY_CHECK ${step + 1}");`);
   }
