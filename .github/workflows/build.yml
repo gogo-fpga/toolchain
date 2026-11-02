@@ -1654,10 +1654,13 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          submodules: false
           persist-credentials: false
 
-      - name: zstd の submodule を取得
-        run: git submodule update --init --depth 1 -- vendor/zstd
+      - name: Web 資材に必要な submodule を取得
+        run: |
+          git submodule update --init --depth 1 -- vendor/zstd third_party/
+          git -C third_party/vexriscv submodule update --init --depth 1 -- pythondata_cpu_vexriscv/verilog/ext/VexRiscv
 
       - name: Node.js を設定
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
