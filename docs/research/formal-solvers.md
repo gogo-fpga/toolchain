@@ -1,0 +1,45 @@
+# 形式検証ソルバーのビルドと実行方式
+
+[調査の索引](../../RESEARCH.md#7-分割した調査) / [形式検証の原本](formal-verification.md) / [S15 P2の実験記録](../experiments/S15-solver-build-and-transport.md)
+
+## 方式の比較と現在の制約
+
+固定したYices2とZ3のCLIをWASI Preview 1で動かし、既存のshimへ双方向入力を接続する方式を先に調べています。SMT-LIBの意味、parser、判定処理をJavaScriptへ移植しません。原本のC APIと公式のEmscripten経路も比較候補ですが、まだ製品の既定方式を変更していません。
+
+P2の初回予備ビルドでは以下の制約を確認しました。その後のYices2は、SDKの`libsetjmp.a`もリンクすると、予備WASMで単純なSMT入力の判定と値の取得を通りました。清浄なcommitからの再build、native比較と正式反復は残っており、形式検証機能の完成を示す結果ではありません。
+
+| 対象 | 確認した制約 | 対応と未確認の範囲 |
+|---|---|---|
+| Yices2のGMP | static archive指定だけでは、configureの別の`-lgmp`検査が検索先を見つけない | 同じ固定GMPのincludeとlibrary検索先も明示する。別のGMPへ置き換えない |
+| Yices2のcross build | configureはWASIのhostを受け付けるが、引数なしのmakeは実行ホストの設定名を探す | makeにも`ARCH=wasm32-unknown-wasi`を渡す。SDKのcompiler・arch・最終linkをログで監査する |
+| Yices2のtimer | WASI SDKには`alarm`の宣言がなく、元の`timeout.c`のコンパイルが停止する | solver内のalarmを黙って無効化しない。WASIでtimer APIが呼ばれたら診断と非ゼロ終了で拒否する候補patchを作成。worker側の期限・cancelは別に検証する |
+| Yices2の版表示 | `make_source_version`がGit情報のない作業コピーの親Gitを拾い、別repoのrevisionを表示する | 固定ソースの`.gitcommit`と`SOURCE_DATE_EPOCH`を使う候補patchを作成。誤表示した初回は正常な検証結果として採用しない |
+| Yices2のsetjmp/longjmp | 本体のコンパイル後、例外処理のsymbolが未解決でlinkが停止する | SDK同梱の`libsetjmp.a`を追加すると予備CLIを生成できた。独自の例外処理は実装せず、SDKのruntimeと`-fwasm-exceptions`・`-wasm-enable-sjlj`を併用する |
+| Z3の浮動小数点 | SDKの`fenv.h`には`FE_UPWARD`・`FE_DOWNWARD`・`FE_TOWARDZERO`がなく、`hwf.cpp`が停止する | 定数の偽装や`fesetround`の無条件成功は行わない。C APIを選ぶだけでこのソース依存が消えるとも仮定しない |
+| Z3のnative参照版 | 初回に選ばれたg++ 11.4には、原本が要求する`<format>`がない | ソースを古いC++へ書き換えず、隔離したClang 21とlibc++ 21で再調査する。実際のC++ compilerをmetadataに記録する |
+
+原典は固定版の[Yices2 configure](https://github.com/SRI-CSL/yices2/blob/85cf17e44eac76b5d14b297c09fc9bfecf47ef65/configure.ac)、[Makefile](https://github.com/SRI-CSL/yices2/blob/85cf17e44eac76b5d14b297c09fc9bfecf47ef65/Makefile)、[timer](https://github.com/SRI-CSL/yices2/blob/85cf17e44eac76b5d14b297c09fc9bfecf47ef65/src/utils/timeout.c)、[版の生成](https://github.com/SRI-CSL/yices2/blob/85cf17e44eac76b5d14b297c09fc9bfecf47ef65/utils/make_source_version)、[Z3のhwf.cpp](https://github.com/Z3Prover/z3/blob/430d19e697e2ec9bad79ff210d41b4a7a5fcfa3e/src/util/hwf.cpp)、[array_decl_plugin.cpp](https://github.com/Z3Prover/z3/blob/430d19e697e2ec9bad79ff210d41b4a7a5fcfa3e/src/ast/array_decl_plugin.cpp)です。
+
+## timerと浮動小数点を区別する理由
+
+timerはworkerの強制終了で期限を守れる可能性がありますが、その仕組みを確認するまではtimeout対応済みとしません。上流timerが使えないときに成功を返す代用品は作りません。WASI timerの拒否と、hostが期限超過を分類して古いjobの応答を捨てることを、別の負の対照で調べます。
+
+一方、浮動小数点の丸めは数値計算の意味に関わります。ブラウザーにない丸めモードを定義するだけでは正しい実装になりません。Z3の[scoped_timer.cpp](https://github.com/Z3Prover/z3/blob/430d19e697e2ec9bad79ff210d41b4a7a5fcfa3e/src/util/scoped_timer.cpp)にもthread実装が残りますが、WASIの初回コンパイルはその前に停止しました。未到達の箇所を実際のビルド失敗として記録しません。公式WASMの設定とC APIの比較条件は[先例の調査](formal-verification.md#z3の公式wasm先例)へ戻れます。
+
+## 公式Emscriptenとhardware浮動小数点の制約
+
+使用中のEmscripten 6.0.13では、muslの`fenv.c`の`fegetround`は常に最近接を返し、`__fesetround`は引数のモードへ変更せず0を返します。ヘッダーの3定数が存在してコンパイルを通っても、WASIの不足を意味が等しい実装で補ったとは言えません。C APIを使っても、このC++実装のコンパイル・リンクと丸めの問題は残ります。
+
+Z3の原本では、`hwf_manager::set_rounding_mode`が実際の丸め変更を要求します。このmanagerは`subpaving` tacticの`numeral=hwf`などで使われ、一般のSMT浮動小数点理論と同一ではありません。WebAssemblyだけこのmethodを例外付きで拒否する候補patchを用意しました。これは定数や丸め関数のno-opを足す方法ではなく、未対応のhardware演算を成功させないための境界です。
+
+固定sourceの同じファイルをSDKで個別にコンパイルすると、無修正では3定数の不足で失敗し、候補patchを適用したものは成功しました。初回は検査用の定義が足りず、GMPヘッダーの不足で停止しました。この失敗と修正後の対照ログも保存します。これは単一のobjectのコンパイル検査です。bit-vectorやarrayを含めた全solver buildと実行比較、非対応要求の明示的な拒否の実行確認はまだ残っており、採用済みとは扱いません。
+
+原典: [Emscriptenのfenv実装](https://github.com/emscripten-core/emscripten/blob/6.0.13/system/lib/libc/musl/src/fenv/fenv.c)、[同じ版のfenv定数](https://github.com/emscripten-core/emscripten/blob/6.0.13/system/lib/libc/musl/arch/emscripten/bits/fenv.h)、固定Z3の`src/util/hwf.cpp`と`src/math/subpaving/tactic/subpaving_tactic.cpp`。
+
+## 標準入力と輸送の境界
+
+既存shimはstdinを常にEOFにしていたため、同期の`stdin(length)` callbackを追加しました。戻り値は要求長以下の`Uint8Array`に限り、Promise、過大な値、閉じたdescriptor、無効なmemoryを拒否します。短いreadで次のiovecを待たず、既定のEOFも維持します。これはbyte輸送の基盤であって、SMTのresponse framingやsolverの成功判定ではありません。
+
+容量を制限した共有bufferの基盤を追加し、EOF、終了後のwrite、cancel、backpressureをNodeの実workerを含む11件で検査しました。`crossOriginIsolated`と非同期Atomicsが使えなければ開始を拒否します。Nodeのfixtureではisolation flagを設定しており、ブラウザーのヘッダーを検証したものではありません。
+
+その後、専用workerの期限・終了管理とjob IDの照合を追加しました。古いjobの終了通知は無視し、現在のjobのSHA-256照合と終了通知、stdoutとstderr双方のEOFを要求します。破損、trap、timeout、cancel、crash、出力上限、consumerの停止を非成功へ分類し、528,384 byteの分割出力も検査しました。これはSMTの意味判定とは別のprocessの管理です。SMT framing、nativeとWASMの正式なsolver比較・反復は残っています。hostの共有bufferと、WASMのpthreadは区別します。ブラウザーの画面操作・実機確認・P3のSBY接続は、この予備調査では試していません。

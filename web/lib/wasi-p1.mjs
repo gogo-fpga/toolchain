@@ -146,11 +146,13 @@ export function createWasiP1ImportObject({
   args = [],
   env = {},
   preopens = {},
+  stdin = () => new Uint8Array(),
   stdout = () => {},
   stderr = () => {},
   clockTime = null,
   onPollOneoff = () => {},
 } = {}) {
+  if (typeof stdin !== "function") throw new TypeError("stdin must be a synchronous byte reader");
   const encoderOut = encoder;
   let instance;
   let exitCode = 0;
@@ -346,7 +348,10 @@ export function createWasiP1ImportObject({
       } else {
         let bytes;
         if (descriptor.kind === "stdin") {
-          bytes = new Uint8Array();
+          bytes = length === 0 ? new Uint8Array() : stdin(length);
+          if (!(bytes instanceof Uint8Array) || bytes.byteLength > length) {
+            throw new TypeError("stdin must return at most the requested bytes as Uint8Array");
+          }
         } else {
           const start = Number(fileOffset);
           if (!Number.isSafeInteger(start)) return ERRNO.FBIG;
