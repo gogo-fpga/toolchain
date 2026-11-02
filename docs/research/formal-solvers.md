@@ -36,6 +36,12 @@ Z3の原本では、`hwf_manager::set_rounding_mode`が実際の丸め変更を�
 
 原典: [Emscriptenのfenv実装](https://github.com/emscripten-core/emscripten/blob/6.0.13/system/lib/libc/musl/src/fenv/fenv.c)、[同じ版のfenv定数](https://github.com/emscripten-core/emscripten/blob/6.0.13/system/lib/libc/musl/arch/emscripten/bits/fenv.h)、固定Z3の`src/util/hwf.cpp`と`src/math/subpaving/tactic/subpaving_tactic.cpp`。
 
+## native参照版のlinkと応答の字句境界
+
+隔離したClang 21とlibc++ 21でZ3をコンパイルした予備試行は、最後のlinkでlibc++abiの明示指定が足りず失敗しました。標準ライブラリーのincludeとlinkを分離し、CMakeの`CMAKE_EXE_LINKER_FLAGS`と`CMAKE_CXX_STANDARD_LIBRARIES`で指定する候補へ変えます。`std::format`と例外の小さな対照は、ABI指定なしで失敗、`-lc++abi -lunwind`付きで成功しました。Z3本体のclean buildやWASMの成功ではなく、失敗と対処候補を[S15 P2](../experiments/S15-solver-build-and-transport.md)へ記録しています。
+
+SMT-LIB 2.6系の応答を区切る基盤も追加しました。固定Yices2の`smt2_read_string_var`とcomment処理に合わせ、文字列の二重引用符、縦棒付きsymbol、括弧、UTF-8の分割、途中欠落と上限を検査します。式の解析・意味判定は上流solverに任せ、字句境界が閉じたことを成功や証明としません。旧2.0のbackslash escapeは対象外です。単体12件は成功しましたが、実solverの正式比較・反復と画面統合は未完了です。
+
 ## 標準入力と輸送の境界
 
 既存shimはstdinを常にEOFにしていたため、同期の`stdin(length)` callbackを追加しました。戻り値は要求長以下の`Uint8Array`に限り、Promise、過大な値、閉じたdescriptor、無効なmemoryを拒否します。短いreadで次のiovecを待たず、既定のEOFも維持します。これはbyte輸送の基盤であって、SMTのresponse framingやsolverの成功判定ではありません。
