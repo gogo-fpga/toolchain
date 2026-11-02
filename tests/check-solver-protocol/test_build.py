@@ -66,7 +66,8 @@ class BuildTest(unittest.TestCase):
                 output = Path(temp)
                 for name, files in {"cadical": ("build/libcadical.a", "src/ccadical.h"),
                                     "btor2tools": ("src/btor2parser/btor2parser.h",),
-                                    "btor2tools-build": ("lib/libbtor2parser.a",)}.items():
+                                    "btor2tools-build": ("lib/libbtor2parser.a",),
+                                    "objects": ("lib/libboolector.a",)}.items():
                     for file in files:
                         path = output / name / file
                         path.parent.mkdir(parents=True, exist_ok=True)
@@ -86,13 +87,18 @@ class BuildTest(unittest.TestCase):
                 self.assertIn("-DUSE_GMP=OFF", config)
                 self.assertIn("-DCMAKE_DISABLE_FIND_PACKAGE_Threads=TRUE", config)
                 self.assertEqual(binary, output / "objects/bin/boolector")
+                self.assertEqual(set(metadata["static_libraries"]), {"boolector", "cadical", "btor2parser"})
+                for library in metadata["static_libraries"].values():
+                    self.assertEqual(BUILD.digest(output / library["path"]), library["sha256"])
                 env = next(kw["env"] for label, _, kw in commands if label == "configure")
                 self.assertEqual(env["GIT_CEILING_DIRECTORIES"], str(output))
                 if runtime == "wasi":
                     configure = next(command for label, command, _ in commands if label == "cadical-configure")
                     self.assertIn("--cross", configure)
                     self.assertEqual(metadata["patches"][0]["path"], "patches/cadical-wasi-cross.patch")
-                    self.assertEqual(len(metadata["patches"]), 4)
+                    self.assertEqual([item["path"] for item in metadata["patches"][-2:]], [
+                        "patches/btor2tools-wasi-ids.patch", "patches/boolector-wasi-trace.patch"])
+                    self.assertEqual(len(metadata["patches"]), 6)
                     self.assertIs(metadata["cadical_native_rss_available"], False)
                     for item in metadata["patches"]:
                         self.assertEqual(BUILD.digest(output / item["snapshot"]), item["sha256"])
@@ -102,6 +108,22 @@ class BuildTest(unittest.TestCase):
                     self.assertIn("-DCMAKE_EXE_LINKER_FLAGS=-Lhost", config)
                     self.assertIn("-DCMAKE_CXX_STANDARD_LIBRARIES=-lhost", config)
                     self.assertIn("-Ihost", env["CXXFLAGS"])
+
+    def test_patch_snapshot_is_immutable_and_is_the_applied_input(self):
+        with tempfile.TemporaryDirectory() as temp:
+            output = Path(temp)
+            metadata = {"patches": []}
+            commands = []
+            BUILD.apply_source_patch("btor2tools-wasi-ids.patch", output, output, metadata,
+                                     lambda *args: commands.append(args), "ids")
+            snapshot = output / "ids.patch"
+            self.assertEqual(commands[0], ("ids", ["patch", "--batch", "--fuzz=0", "-p1", "-i", snapshot], output))
+            self.assertEqual(BUILD.digest(snapshot), metadata["patches"][0]["sha256"])
+            before = snapshot.read_bytes()
+            with self.assertRaises(FileExistsError):
+                BUILD.apply_source_patch("boolector-wasi-trace.patch", output, output, metadata,
+                                         lambda *_: self.fail("Reused patch snapshot"), "ids")
+            self.assertEqual(snapshot.read_bytes(), before)
 
     def test_dependency_rejects_missing_symlinked_and_escaping_license(self):
         dependency = {"commit": "1" * 40, "url": "https://github.com/upstream/cadical.git"}

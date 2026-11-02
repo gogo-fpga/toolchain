@@ -84,6 +84,16 @@ def stage_dependency(name, dependency, output, metadata, run):
     return source
 
 
+def apply_source_patch(name, source, output, metadata, run, label):
+    patch = ROOT / "patches" / name
+    snapshot = output / f"{label}.patch"
+    with snapshot.open("xb") as stream:
+        stream.write(patch.read_bytes())
+    metadata["patches"].append({"path": str(patch.relative_to(ROOT)), "sha256": digest(snapshot),
+                                "snapshot": snapshot.name})
+    run(label, ["patch", "--batch", "--fuzz=0", "-p1", "-i", snapshot], source)
+
+
 def build_boolector(args, output, source, metadata, run, environment, compiler, compiler_cxx, c_flags, link_flags, sdk):
     metadata["cmake"] = subprocess.check_output([args.cmake, "--version"], text=True)
     cxx_flags = c_flags.replace(" -std=gnu17", "")
@@ -104,12 +114,9 @@ def build_boolector(args, output, source, metadata, run, environment, compiler, 
     if args.runtime == "wasi":
         for index, name in enumerate(("cadical-wasi-cross.patch", "cadical-wasi-pipes.patch",
                                       "cadical-wasi-resources.patch", "cadical-wasi-alarm.patch")):
-            patch = ROOT / "patches" / name
-            snapshot = output / f"cadical-patch-{index}.patch"
-            snapshot.write_bytes(patch.read_bytes())
-            metadata["patches"].append({"path": str(patch.relative_to(ROOT)), "sha256": digest(snapshot),
-                                         "snapshot": snapshot.name})
-            run(f"cadical-patch-{index}", ["patch", "--batch", "--fuzz=0", "-p1", "-i", snapshot], cadical)
+            apply_source_patch(name, cadical, output, metadata, run, f"cadical-patch-{index}")
+        apply_source_patch("btor2tools-wasi-ids.patch", btor, output, metadata, run, "btor2tools-ids-patch")
+        apply_source_patch("boolector-wasi-trace.patch", source, output, metadata, run, "boolector-trace-patch")
         cadical_options = ["--cross"]
         metadata["cadical_native_rss_available"] = False
         environment["LDFLAGS"] = f"{link_flags} -lunwind -lsetjmp"
@@ -139,6 +146,14 @@ def build_boolector(args, output, source, metadata, run, environment, compiler, 
                       "-DCMAKE_DISABLE_FIND_PACKAGE_Threads=TRUE"], env=environment)
     run("build", [args.cmake, "--build", output / "objects", "--target", "boolector-bin",
                   "--parallel", str(args.jobs)], env=environment)
+    metadata["static_libraries"] = {}
+    for name, library in (("boolector", output / "objects/lib/libboolector.a"),
+                          ("cadical", prefix / "lib/libcadical.a"),
+                          ("btor2parser", prefix / "lib/libbtor2parser.a")):
+        metadata["static_libraries"][name] = {
+            "path": str(library.relative_to(output)), "bytes": library.stat().st_size,
+            "sha256": digest(library),
+        }
     return output / "objects/bin/boolector"
 
 
