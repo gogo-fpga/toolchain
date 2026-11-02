@@ -11,12 +11,18 @@ globalThis.crossOriginIsolated = true;
 
 const { values } = parseArgs({ options: {
   native: { type: "string" }, wasi: { type: "string" }, out: { type: "string" },
-  solver: { type: "string", default: "boolector" },
+  solver: { type: "string", default: "boolector" }, "negative-wasi": { type: "string" },
 } });
 assert.ok(values.native && values.wasi && values.out, "Required: --native --wasi --out");
 assert.ok(["boolector", "bitwuzla"].includes(values.solver), "Unsupported solver");
 const probes = [loadSolverProbe(values.native, values.solver, "native"), loadSolverProbe(values.wasi, values.solver, "wasi")];
 assert.equal(probes[0].info.base_commit, probes[1].info.base_commit);
+const negative = values["negative-wasi"] ? loadSolverProbe(values["negative-wasi"], values.solver, "wasi") : null;
+if (negative) {
+  assert.equal(values.solver, "bitwuzla");
+  assert.ok(!negative.info.patches.some(patch => patch.path === "patches/bitwuzla-wasi-exit.patch"));
+  assert.ok(probes[1].info.patches.some(patch => patch.path === "patches/bitwuzla-wasi-exit.patch"));
+}
 const output = path.resolve(values.out);
 mkdirSync(output);
 const json = (file, value) => writeFileSync(path.join(output, file), JSON.stringify(value, null, 2) + "\n", { flag: "wx" });
@@ -37,6 +43,12 @@ const cases = [
   { name: "syntax", args: solverArgs, input: "(set-logic QF_BV)(not-a-command)\n", exit: 1 },
 ];
 if (values.solver === "bitwuzla") {
+  cases.push({ name: "model", args: solverArgs, exit: 0,
+    input: "(set-option :produce-models true)(set-logic QF_BV)(declare-fun x () (_ BitVec 8))(assert (= x #x2a))(check-sat)(get-model)\n",
+    stdout: "sat\n(\n  (define-fun x () (_ BitVec 8) #b00101010)\n)\n" });
+  cases.push({ name: "time-limit-boundary", args: [...solverArgs, "--time-limit=10000"], exit: 0,
+    input: "(set-logic QF_BV)(check-sat)\n", stdout: "sat\n",
+    wasi: { status: "runtime-error", exit: null, stdout: "", stderr: "Bitwuzla: threaded CLI time limits are unavailable on WASI\n" } });
   for (const [mode, expected] of [["RNE", "#x3f800000"], ["RNA", "#x3f800001"], ["RTP", "#x3f800001"],
     ["RTN", "#x3f800000"], ["RTZ", "#x3f800000"]]) {
     cases.push({ name: `fp-round-${mode}`, args: solverArgs, exit: 0, stdout: "unsat\n",
@@ -50,9 +62,11 @@ if (values.solver === "bitwuzla") {
 const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
 json("setup.json", { format: 1, purpose: "Diagnostic CLI comparison, not formal qualification", solver: values.solver, commit,
   argv: process.argv.slice(2), node: process.version, cases,
-  builds: probes.map(probe => ({ ...probe.info, metadata_sha256: probe.metadataSha256 })) });
+  builds: probes.map(probe => ({ ...probe.info, metadata_sha256: probe.metadataSha256 })),
+  negative_build: negative ? { ...negative.info, metadata_sha256: negative.metadataSha256 } : null });
 
 async function run(probe, fixture) {
+  const expected = { status: "exited", ...fixture, ...(probe.info.runtime === "wasi" ? fixture.wasi : {}) };
   const started = performance.now();
   let result;
   let stdout;
@@ -90,17 +104,19 @@ async function run(probe, fixture) {
   writeFileSync(path.join(output, `${prefix}.stderr`), stderr, { flag: "wx" });
   json(`${prefix}.json`, { ...row, result });
   appendFileSync(results, csv(columns.map(column => row[column])));
-  assert.equal(result.status, "exited");
-  assert.equal(result.exitCode, fixture.exit);
+  assert.equal(result.status, expected.status);
+  assert.equal(result.exitCode, expected.exit);
   assert.equal(result.signal ?? null, null);
-  if (fixture.name !== "syntax") {
+  if (expected.stderr !== undefined) {
+    assert.equal(stderr.toString(), expected.stderr);
+  } else if (fixture.name !== "syntax" && fixture.name !== "syntax-before-exit-fix") {
     assert.equal(writeError, null);
     assert.equal(stderr.length, 0);
   } else {
     assert.match(stderr.toString(), /expected command at 'not-a-command'/);
     assert.equal(stdout.length, 0);
   }
-  if (fixture.stdout !== undefined) assert.equal(stdout.toString(), fixture.stdout);
+  if (expected.stdout !== undefined) assert.equal(stdout.toString(), expected.stdout);
   if (fixture.name === "version") assert.equal(stdout.toString().trim(), probe.info.source.version);
   if (fixture.name === "help") assert.match(stdout.toString(), values.solver === "boolector" ? /^usage: boolector / : /^Usage:\n  bitwuzla /);
   return { stdout, stderr };
@@ -109,8 +125,14 @@ async function run(probe, fixture) {
 for (const fixture of cases) {
   const native = await run(probes[0], fixture);
   const wasi = await run(probes[1], fixture);
-  assert.deepEqual(wasi.stdout, native.stdout);
-  assert.deepEqual(wasi.stderr, native.stderr);
+  if (!fixture.wasi) {
+    assert.deepEqual(wasi.stdout, native.stdout);
+    assert.deepEqual(wasi.stderr, native.stderr);
+  }
 }
-json("summary.json", { status: "pass", commit, cases: cases.length, executions: cases.length * probes.length,
+if (negative) {
+  const syntax = cases.find(fixture => fixture.name === "syntax");
+  await run(negative, { ...syntax, name: "syntax-before-exit-fix", status: "runtime-error", exit: null, stdout: "" });
+}
+json("summary.json", { status: "pass", commit, cases: cases.length, executions: cases.length * probes.length + (negative ? 1 : 0),
   csv_sha256: digest(readFileSync(results)) });

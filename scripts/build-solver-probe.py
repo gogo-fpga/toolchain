@@ -280,7 +280,9 @@ def build_bitwuzla(args, output, source, metadata, run, environment, compiler, c
             str(p.relative_to(overlay)): digest(p) for p in files}
         shutil.copytree(overlay, target, dirs_exist_ok=True)
 
+    apply_source_patch("bitwuzla-gmp-limb-width.patch", source, output, metadata, run, "bitwuzla-limb-patch")
     if sdk:
+        apply_source_patch("bitwuzla-wasi-exit.patch", source, output, metadata, run, "bitwuzla-exit-patch")
         apply_source_patch("cadical-wasi-process-boundary.patch", cadical, output, metadata, run, "cadical-process-patch")
         apply_source_patch("cadical-wasi-random-seed.patch", cadical, output, metadata, run, "cadical-random-patch")
         apply_source_patch("bitwuzla-wasi-time-limit.patch", source, output, metadata, run, "bitwuzla-time-limit-patch")
