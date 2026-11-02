@@ -47,6 +47,33 @@ test("formal worker accepts a bounded verified exit, ignores old IDs and detache
   job.cancel(); assert.equal((await job.completion).status, "exited");
 });
 
+test("formal deadline rechecks the monotonic clock after an early timer and stays detached after cancellation", async t => {
+  let now = 100;
+  const timers = [];
+  t.mock.method(performance, "now", () => now);
+  t.mock.method(globalThis, "setTimeout", (callback, delay) => {
+    const timer = { callback, delay, cleared: false }; timers.push(timer); return timer;
+  });
+  t.mock.method(globalThis, "clearTimeout", timer => { timer.cleared = true; });
+  const { job, worker } = fakeRun(() => {});
+  assert.equal(timers[0].delay, 50);
+  now = 149.991565;
+  timers[0].callback();
+  assert.equal(worker.terminated, 0);
+  assert.equal(timers[1].delay, 1);
+  now = 150;
+  timers[1].callback();
+  const result = await job.completion;
+  assert.equal(result.status, "timeout"); assert.equal(result.elapsedMs, 50);
+  assert.equal(worker.terminated, 1); assert.equal(timers[1].cleared, true);
+  const cancelled = fakeRun(() => {});
+  cancelled.job.cancel();
+  const count = timers.length;
+  timers.at(-1).callback();
+  assert.equal(timers.length, count);
+  assert.equal((await cancelled.job.completion).status, "cancelled");
+});
+
 test("formal worker rejects forged success, unverified exits, malformed files and invented failures", async () => {
   const exit = { type: "exit", exitCode: 0, integrityVerified: true, files: [] };
   for (const message of [

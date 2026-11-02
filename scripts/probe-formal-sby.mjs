@@ -37,7 +37,7 @@ const metadata = { format: 1, preliminary: !values.formal, command: process.argv
   nativeMetadataSha256: digest(readFileSync(path.join(out, "native-metadata.json"))),
   sources: sources.manifest, yosys: { sha256: yosys.sha256, shareSha256: yosys.shareSha256 }, snapshots: {}, probes: {} };
 const snapshots = ["scripts/probe-formal-sby.mjs", "scripts/read-sby-status-db.py", "scripts/probe-upstream-formal.mjs",
-  "scripts/audit-formal-sby.py", "scripts/sby-artifact-audit.py",
+  "scripts/audit-formal-sby.py", "scripts/sby-artifact-audit.py", "scripts/formal-solver-audit.py",
   "scripts/build-formal-python.py", "package-lock.json", ".gitmodules", "patches/sby-process.patch", "patches/yosys-smtio-process.patch",
   "web/formal_process.py", "web/formal-python-worker.mjs", "web/formal-wasi-worker.mjs",
   ...["formal-python-process", "formal-python-job", "formal-process-client", "formal-tool-process", "formal-tool-client",
@@ -45,7 +45,7 @@ const snapshots = ["scripts/probe-formal-sby.mjs", "scripts/read-sby-status-db.p
     "verified-assets"].map(name => `web/lib/${name}.mjs`), "tests/synth/formal-sby-cases.mjs", "tests/synth/formal-python-helpers.mjs",
   "tests/synth/solver-protocol-helpers.mjs", "tests/web/formal-python-node-worker.mjs", "tests/web/formal-wasi-node-worker.mjs",
   "tests/web/solver-node-worker.mjs", "tests/web/solver-process-helpers.mjs"];
-if (values.formal) snapshots.push("scripts/measure-formal-sby.py");
+if (values.formal) snapshots.push("scripts/measure-formal-sby.py", "scripts/measure-extra-formal.py");
 for (const name of snapshots) { const bytes = readFileSync(path.join(root, name)); save(`snapshots/${name}`, bytes); metadata.snapshots[name] = digest(bytes); }
 for (const file of sources.sources) save(`assets/${file.path}`, file.bytes);
 save("inputs/yosys.wasm", yosys.wasm); save("inputs/yosys-share.tar", yosys.share);

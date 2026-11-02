@@ -14,15 +14,17 @@ T0 から T3 の編集・保存・合成・配置配線・ビットストリー�
 
 書き込み部は Chromium 系ブラウザーの WebUSB を使います。実機の Tang Nano では試していません。
 
-[Yices2・Z3のnative/WASI正式比較](docs/experiments/S15-solver-native-wasi.md)は、各5回とA/A 2回、全329行31列・294負の対照の監査を実施しました。bit-vector・array・長い応答とworker異常系を実CLIで検査し、構文エラーの終了0やunknownを証明成功へ読み替えません。これはNodeの検査経路であり、SBY接続・配布・ブラウザーの形式検証画面を含むT6全体は未完了です。
+[Yices2・Z3のnative/WASI正式比較](docs/experiments/S15-solver-native-wasi.md)は、各5回とA/A 2回、全329行31列・294負の対照の監査を実施しました。bit-vector・array・長い応答とworker異常系を実CLIで検査し、構文エラーの終了0やunknownを証明成功へ読み替えません。これはNodeの検査経路であり、製品用のSBY worker・配布・形式検証画面への統合を含むT6全体は未完了です。
 
 [原本SMTBMCのPyodide接続](docs/experiments/S15-sby-process.md)は、process・pipe・待機だけを仮想化し、両solverのBMC・basecase・induction・coverをnativeと比較しています。予備16条件ではログ・VCD・YW・testbenchが一致し、13列CSVの独立監査も通りました。
 
 [SBY全体の仮想process接続](docs/experiments/S15-sby-runtime.md)も追加しました。BMCの有界PASS、proveのUNKNOWN、coverの到達・未到達を区別し、初期実装は`-j 1`に限ります。[全268成果物・16列の独立監査](docs/experiments/S15-sby-artifact-audit.md)に加え、[清浄な同一commitの正式5回・A/A 2回](docs/experiments/S15-sby-repeated.md)で両solver各6条件が一致し、生CSV全84行19列と反復間の全成果物hashを照合しました。[worker異常対照](docs/experiments/S15-sby-controls.md)の23条件と[原本のwitness変換](docs/experiments/S15-sby-witness.md)の2形式も、正式5回・A/A 2回を終え、全列と全workerの終了を独立監査しました。witnessは形式変換の境界の試験であり、元回路による反例検証、配布・画面統合は残っています。
 
-[形式検証の候補一覧と無効理由](docs/research/formal-capabilities.md)のデータを追加しています。上流のSMT全9選択肢・SBY全6エンジンと内蔵SATを残し、検査経路での動作と製品資材の準備を区別します。[追加ソルバーの診断](docs/experiments/S15-extra-solver-builds.md)ではBoolectorのnative/WASIビルドとCLIの5条件が一致しました。[ID幅とtraceの境界](docs/experiments/S15-solver-portability.md)は修正後の正式5回・A/A 2回と全列監査が通りましたが、別の警告とSMTBMCでの認定は残り、製品では無効のままです。[BitwuzlaのMeson診断](docs/experiments/S15-bitwuzla-build.md)は固定依存だけの清浄ビルドとCLI予備29実行が通りました。[CLI正式5回・A/A 2回](docs/experiments/S15-bitwuzla-cli-qualification.md)も全203行14列の独立監査が通りました。SMTBMC認定は未完了で、両候補は無効のままです。候補の画面表示とT6全体も未完了です。
+[形式検証の候補一覧と無効理由](docs/research/formal-capabilities.md)のデータを追加しています。上流のSMT全9選択肢・SBY全6エンジンと内蔵SATを残し、検査経路での動作と製品資材の準備を区別します。[追加ソルバーの診断](docs/experiments/S15-extra-solver-builds.md)ではBoolectorのnative/WASIビルドとCLIの5条件が一致しました。[ID幅とtraceの境界](docs/experiments/S15-solver-portability.md)は修正後の正式5回・A/A 2回と全列監査が通りました。後続のSMTBMC/SBY認定とは別の段階で、製品では無効のままです。[BitwuzlaのMeson診断](docs/experiments/S15-bitwuzla-build.md)は固定依存だけの清浄ビルドとCLI予備29実行が通りました。[CLI正式5回・A/A 2回](docs/experiments/S15-bitwuzla-cli-qualification.md)も全203行14列の独立監査が通りました。後続のSMTBMC/SBY正式認定は下記へ記録し、製品では両候補とも無効を維持します。候補の画面表示とT6全体も未完了です。
 
-[追加候補と原本SMTBMC/SBYの接続](docs/experiments/S15-extra-solver-smtbmc.md)では、Bitwuzlaの実help取得とBoolectorの終了code 10/20をprocess境界へ接続しています。両候補の予備比較と、固定外のnative起動を除外した経緯を記録しました。正式反復・全列の独立監査・製品有効化とは区別します。
+[追加候補と原本SMTBMC/SBYの接続](docs/experiments/S15-extra-solver-smtbmc.md)では、Bitwuzlaの実help取得とBoolectorの終了code 10/20をprocess境界へ接続しています。両候補の予備比較と、固定外のnative起動を除外した経緯を保持し、後続の正式結果や製品での有効化とは区別します。
+
+[追加候補の独立監査と反復](docs/experiments/S15-extra-formal-audit.md)では、清浄な同一commitで正式5回・A/A 2回の全420行を全列監査しました。実構文エラー・未許可code・実行中停止に加え、改変対照20件、証拠ZIP全38,413ファイルの復元後監査も通りました。製品資材・依存の配布条件・製品認定は未完了で、両候補は無効のままです。
 
 ## IDE 画面
 

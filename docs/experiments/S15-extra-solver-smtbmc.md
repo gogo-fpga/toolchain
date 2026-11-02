@@ -17,6 +17,8 @@
 
 ## 接続の実装と予備試行
 
+この接続層に続く全列監査、process対照、正式反復の基準と結果は[追加solverの独立監査](S15-extra-formal-audit.md)へ分けています。接続層の予備一致だけでは正式認定になりません。
+
 変更はprocess境界に限ります。`patches/yosys-smtio-process.patch` はnativeで `subprocess.check_output`、browserで `formal_process.check_output` を参照する別名を追加します。helpの読み方、版別の引数選択、unroll、SMT応答の解析は原本のままです。仮想processはstdinをEOFにし、stdoutだけを捕捉してstderrを親へ転送します。bytes/text、UTF-8、改行、非ゼロ時の `CalledProcessError` を保持し、未対応のkeywordは拒否します。
 
 `Popen.wait()` と仮想readerのjoinは実際の終了codeを返す境界へ接続します。code 10/20を0へ書き換えません。brokerは資材の明示的な `exitCodes` を検査し、既定は `[0]`、Boolectorの診断だけは `[0, 10, 20]` です。空・重複・範囲外・不正な型は拒否し、各子processの証拠に実際のcodeと一覧を保存します。異常なtransportはこの一覧では成功になりません。
@@ -78,4 +80,4 @@ node scripts/probe-formal-sby.mjs \
 
 ## 状態と残件
 
-接続の予備検査中です。正式反復、追加候補向けの全列独立監査、実行中停止、配布closure、元HDLによる反例再実行は未完了です。Tang Nano実機は本リポジトリでは試していません。
+接続層の予備比較に続き、[独立監査と正式反復](S15-extra-formal-audit.md#清浄commitでの正式結果)で正式5回・A/A 2回の全420行と実行中停止、改変対照20件、ZIP復元後の監査を確認しました。予備記録は正式結果で置き換えず、その経緯として残します。製品資材の配布closure、元HDLによるSMT反例再実行、製品worker/画面の接続と認定は未完了です。両候補は製品で無効のままです。Tang Nano実機は本リポジトリでは試していません。

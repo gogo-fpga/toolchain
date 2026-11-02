@@ -186,9 +186,10 @@ T6は上流SBY・SMTBMCの再利用を選び、[S15の事前基準](docs/experim
 | [合成・配置配線のWASI調査](docs/research/yosys-nextpnr-wasi.md) | Yosysのshare・JSON比較、nextpnrの固定依存・chipdb・例外link・配置差と測定履歴 |
 | [形式検証の固定ソース・依存・配布条件](docs/research/formal-sources.md) | 採用releaseと初期snapshot、依存、SQLite、license、GMP、source closure |
 | [形式検証ソルバーのビルドと実行方式](docs/research/formal-solvers.md) | WASI CLI・C API・公式WASMの比較候補、GMP・timer・丸め・版表示・native ABIの制約、字句境界、終了0の構文エラーと実応答比較 |
-| [追加ソルバーの固定依存と診断](docs/experiments/S15-extra-solver-builds.md) | MPFRの固定archiveと署名、依存license、CaDiCaLのWASI patchと失敗試行。BoolectorのCLI 5条件は一致。[IDとtraceの境界](docs/experiments/S15-solver-portability.md)も正式5回・A/A 2回の全56行21列を監査。SMTBMC認定・Bitwuzla・製品配布は未完了 |
-| [BitwuzlaのMeson診断](docs/experiments/S15-bitwuzla-build.md) | 固定依存とWASI境界。[CLI正式5回・A/A 2回](docs/experiments/S15-bitwuzla-cli-qualification.md)の全203行14列を独立監査。SMTBMC認定は残件 |
-| [追加候補と原本SMTBMC/SBYの接続](docs/experiments/S15-extra-solver-smtbmc.md) | Bitwuzlaの実help取得、Boolectorの終了10/20、native解決先とhash検査。予備比較と失敗の除外を保持。正式認定・製品有効化は未完了 |
+| [追加ソルバーの固定依存と診断](docs/experiments/S15-extra-solver-builds.md) | MPFRの固定archiveと署名、依存license、CaDiCaLのWASI patchと失敗試行。BoolectorのCLI 5条件は一致。[IDとtraceの境界](docs/experiments/S15-solver-portability.md)も正式5回・A/A 2回の全56行21列を監査。後続の追加候補SMTBMC/SBY認定は別記。製品配布は未完了 |
+| [BitwuzlaのMeson診断](docs/experiments/S15-bitwuzla-build.md) | 固定依存とWASI境界。[CLI正式5回・A/A 2回](docs/experiments/S15-bitwuzla-cli-qualification.md)の全203行14列を独立監査。後続のSMTBMC/SBY正式認定は別記。製品認定は残件 |
+| [追加候補と原本SMTBMC/SBYの接続](docs/experiments/S15-extra-solver-smtbmc.md) | Bitwuzlaの実help取得、Boolectorの終了10/20、native解決先とhash検査。予備比較と失敗の除外を保持。後続の正式結果と製品認定を区別 |
+| [追加候補の独立監査と反復](docs/experiments/S15-extra-formal-audit.md) | SMTBMC/SBY全列の明示的solver選択、実parserエラーと未許可code、清浄な同一commitで正式5回・A/A、全420行、改変20件、ZIP全38,413ファイルの復元後監査。製品認定は未完了 |
 | [形式検証の候補と有効化条件](docs/research/formal-capabilities.md) | SMT全9選択肢・SBY全6エンジンと内蔵SAT。反復検証と製品資材を分離し、未対応候補は理由付きで無効。追加solverの製品認定は残件 |
 | [原本SBY・SMTBMCのprocess境界](docs/experiments/S15-sby-process.md) | Pyodideの制約、SQLite、native SBY12条件、SMTBMC仮想processの16条件・AST照合、Yosys子workerと安全なファイル差分、初期の失敗記録 |
 | [SBY全体の仮想process接続](docs/experiments/S15-sby-runtime.md) | SbyPopen・単一slot・子差分・両solver各6条件の比較 |

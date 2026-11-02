@@ -17,6 +17,9 @@ SPEC = importlib.util.spec_from_file_location("sby_artifacts", Path(__file__).wi
 ARTIFACTS = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(ARTIFACTS)
 require, strict_json = ARTIFACTS.require, ARTIFACTS.strict_json
+SOLVER_SPEC = importlib.util.spec_from_file_location("formal_solver_audit", Path(__file__).with_name("formal-solver-audit.py"))
+SOLVERS = importlib.util.module_from_spec(SOLVER_SPEC)
+SOLVER_SPEC.loader.exec_module(SOLVERS)
 COLUMNS = "solver case mode depth expected status kind exitCode elapsedMs artifactCount comparedCount sqliteSha256 modelSha256 solverSha256 yosysSha256 error".split()
 CASES = {
     "bmc-prefix": ("bmc", 2, "PASS", "bounded-pass", 0),
@@ -116,7 +119,7 @@ def canonical(auditor, evidence, prefix, name, runtime):
 
 def audit_case(evidence, meta, native_meta, row, csv_row):
     solver, case = row["solver"], row["case"]
-    require(solver in ["yices2", "z3"] and case in CASES, "unknown SBY condition")
+    require(solver in SOLVERS.SOLVERS and case in CASES, "unknown SBY condition")
     mode, depth, status, kind, code = CASES[case]
     label = solver + "-" + case
     data = lambda name: evidence.data(label + "/" + name)
@@ -169,7 +172,7 @@ def audit_case(evidence, meta, native_meta, row, csv_row):
     require(read("native/top.v") == read("native/result/src/top.v"), "copied HDL source")
     require(read("native/job.sby") == read("native/result/config.sby"), "copied SBY config")
     config = read("native/job.sby").decode()
-    require(f"mode {mode}\ndepth {depth}\n" in config and f"smtbmc {'yices' if solver == 'yices2' else 'z3'}\n" in config, "SBY fixture configuration")
+    require(f"mode {mode}\ndepth {depth}\n" in config and f"smtbmc {'yices' if solver == 'yices2' else solver}\n" in config, "SBY fixture configuration")
     children = transport["children"]
     require(len(children) == (5 if mode == "prove" else 4), "SBY tool child count")
     canonical_log = auditor.root_log(read("stdout.log").decode(), "pyodide")
@@ -188,6 +191,9 @@ def audit_case(evidence, meta, native_meta, row, csv_row):
         require(child["args"][0] == "yosys-smtbmc" and ("-i" in child["args"]) == (mode == "prove" and index == 4), "SMTBMC phase")
         log_name = "logfile_induction.txt" if index == 4 else "logfile_basecase.txt" if mode == "prove" else "logfile.txt"
         require(re.search(rb"Status: " + (b"failed" if expected_code else b"passed") + rb"\n$", read("pyodide/result/engine_0/" + log_name)), "SMTBMC phase status")
+        if solver in ["bitwuzla", "boolector"]:
+            SOLVERS.audit_children(child["children"], solver, meta["probes"][solver]["sha256"], case, "induction" if index == 4 else mode)
+            continue
         require(len(child["children"]) == 1, "solver child count")
         actual = child["children"][0]
         require(actual["status"] == "exited" and actual["integrityVerified"] is True and type(actual["exitCode"]) is int and actual["exitCode"] == 0 and actual["error"] is None, "solver termination")
@@ -204,7 +210,8 @@ def audit_case(evidence, meta, native_meta, row, csv_row):
     return {"condition": label, "artifacts": len(names), "columns": len(COLUMNS), "canonicalSha256": canonical_hash.hexdigest(), "variations": auditor.variations}
 
 
-def audit(directory):
+def audit(directory, solvers=("yices2", "z3")):
+    solvers = SOLVERS.select(solvers)
     evidence = Evidence(directory)
     meta, start = evidence.data("metadata-final.json"), evidence.data("metadata.json")
     require(meta["format"] == 1 and type(meta["preliminary"]) is bool and meta["worktree"] == "" and re.fullmatch(r"[a-f0-9]{40}", meta["commit"]), "clean comparison provenance")
@@ -239,7 +246,7 @@ def audit(directory):
     for item in assets:
         raw = evidence.read("assets/" + item["path"])
         require(len(raw) == item["size"] and digest(raw) == item["sha256"], "Python source hash")
-    require(set(meta["probes"]) == {"yices2", "z3"}, "solver set")
+    require(set(meta["probes"]) == set(solvers), "solver set")
     for solver, probe in meta["probes"].items():
         raw = evidence.read("build/" + solver + ".json")
         require(digest(raw) == probe["metadataSha256"], "solver build metadata hash")
@@ -256,9 +263,9 @@ def audit(directory):
     require(reader.fieldnames == COLUMNS, "CSV columns")
     csv_rows = list(reader)
     results = evidence.data("results.json")
-    require(results["preliminary"] is meta["preliminary"] and len(results["rows"]) == len(csv_rows) == 12, "complete condition matrix")
+    require(results["preliminary"] is meta["preliminary"] and len(results["rows"]) == len(csv_rows) == len(solvers) * len(CASES), "complete condition matrix")
     identities = [(row["solver"], row["case"]) for row in results["rows"]]
-    require(set(identities) == {(solver, case) for solver in ["yices2", "z3"] for case in CASES} and len(set(identities)) == len(identities), "unique complete conditions")
+    require(set(identities) == {(solver, case) for solver in solvers for case in CASES} and len(set(identities)) == len(identities), "unique complete conditions")
     reports = [audit_case(evidence, meta, native_meta, row, csv_row) for row, csv_row in zip(results["rows"], csv_rows, strict=True)]
     return {"status": "pass", "preliminary": meta["preliminary"], "commit": meta["commit"], "rows": len(reports), "columns": len(COLUMNS), "artifacts": sum(report["artifacts"] for report in reports), "conditions": reports}
 
@@ -267,8 +274,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("directory", type=Path)
     parser.add_argument("--out", type=Path)
+    parser.add_argument("--solver", choices=SOLVERS.SOLVERS, action="append")
     args = parser.parse_args()
-    report = audit(args.directory)
+    report = audit(args.directory, args.solver if args.solver is not None else ("yices2", "z3"))
     if args.out:
         with args.out.open("x") as stream:
             json.dump(report, stream, ensure_ascii=True, indent=2)

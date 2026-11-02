@@ -17,3 +17,8 @@ export const formalRestrictions = [
   { name: "temporary", args: ["-t"], diagnostic: "Browser SBY requires -j 1" },
   { name: "links", args: ["--link"], diagnostic: "Browser SBY requires -j 1" },
 ].map(value => ({ ...value, mode: "normal", status: "runtime-error", fixture: "bmc-prefix", restriction: true }));
+
+export const extraFormalControls = [
+  { name: "syntax-error", fixture: "bmc-prefix", mode: "syntax-error", status: "runtime-error", event: "solver-syntax-input" },
+  { name: "exit-code", fixture: "bmc-prefix", mode: "exit-code", status: "runtime-error", event: "solver-exit-code" },
+];

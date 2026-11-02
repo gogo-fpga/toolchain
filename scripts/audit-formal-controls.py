@@ -2,6 +2,7 @@
 """Derive each SBY control column from raw transport, worker events, and files."""
 
 import argparse
+import base64
 import csv
 import hashlib
 import importlib.util
@@ -21,6 +22,7 @@ NORMAL = {"bounded-pass": ("bmc-prefix", "PASS", 0), "engine-fail": ("bmc-violat
           "engine-unknown": ("prove-inconclusive", "UNKNOWN", 4)}
 FAULTS = {"cancel": "cancelled", "timeout": "timeout", "crash": "crashed", "protocol": "protocol-error",
           "corrupt-delta": "runtime-error", "conflict-delta": "runtime-error"}
+EXTRA_FAULTS = {"syntax-error": "runtime-error", "exit-code": "runtime-error"}
 RESTRICTIONS = {"autotune": "Browser SBY requires -j 1", "jobs": "Browser SBY requires -j 1",
                 "jobserver": "Jobserver helpers are not supported in the browser",
                 "temporary": "Browser SBY requires -j 1", "links": "Browser SBY requires -j 1"}
@@ -92,8 +94,12 @@ def audit_case(evidence, meta, label, solver, condition):
         environments = [event for event in events if event["event"] == "environment-after-run"]
         require(len(environments) == sum(worker["kind"] == "python" for worker in workers) and all(event["makeflags"] == "" for event in environments), "inherited jobserver cleared")
         require(transport["children"] and all(child["status"] == "exited" and child["integrityVerified"] is True for child in transport["children"]), "normal child transport")
+        if solver in ["bitwuzla", "boolector"]:
+            for child in transport["children"]:
+                if child["args"][0] == "yosys-smtbmc":
+                    SBY.SOLVERS.audit_children(child["children"], solver, sha, fixture, "induction" if "-i" in child["args"] else "bmc")
     else:
-        expected = "runtime-error" if condition in RESTRICTIONS else FAULTS[condition]
+        expected = "runtime-error" if condition in RESTRICTIONS else {**FAULTS, **EXTRA_FAULTS}[condition]
         require(transport["status"] == expected and transport.get("integrityVerified") is not True and not files and "DONE (PASS," not in stdout, "failure cannot be a verified success")
         if condition in RESTRICTIONS:
             require(len(workers) == 1 and RESTRICTIONS[condition] in stderr, "option rejected before spawning")
@@ -115,11 +121,26 @@ def audit_case(evidence, meta, label, solver, condition):
             for name in ["delta-conflict", "conflict-root-preserved"]:
                 require(any(event["event"] == name and event["sha256"] == concurrent for event in events), "root conflict was not preserved")
             require("Workspace delta conflict:" in stderr, "before-hash conflict rejection")
+        if condition == "syntax-error":
+            mutations = [event for event in events if event["event"] == "solver-syntax-input"]
+            endings = [event for event in events if event["event"] == "solver-syntax-exit"]
+            require(len(mutations) == len(endings) == 1, "single actual syntax mutation")
+            mutation, ending = mutations[0], endings[0]
+            before, after = (base64.b64decode(mutation[name], validate=True) for name in ["before", "after"])
+            require(before and len(before) == len(after) == mutation["bytes"] and before != after and before[1:] == after[1:] and after[0] == mutation["firstByte"] == 63, "raw syntax bytes")
+            require(digest(before) == mutation["beforeSha256"] and digest(after) == mutation["afterSha256"] and mutation["fd"] == 0 and mutation["sha256"] == sha, "syntax input integrity")
+            require(ending["sha256"] == sha and ending["corrupted"] is True and ending["resultType"] == "exit" and type(ending["exitCode"]) is int and ending["exitCode"] == 1, "actual syntax rejection, not a trap")
+            require(re.search(r"error|expected|invalid|parse", ending["output"], flags=re.I), "upstream parser diagnostic")
+        if condition == "exit-code":
+            changed = [event for event in events if event["event"] == "solver-exit-code"]
+            require(len(changed) == 1 and changed[0]["sha256"] == sha and changed[0]["resultType"] == "exit", "actual solver exit mismatch")
+            require(type(changed[0]["originalCode"]) is int and changed[0]["originalCode"] == (20 if solver == "boolector" else 0) and type(changed[0]["forcedCode"]) is int and changed[0]["forcedCode"] == 9, "explicit disallowed exit injection")
     return dict(zip(COLUMNS, [label, solver, transport["status"], transport.get("exitCode"), sby_status,
                              transport["elapsedMs"], len(files), len(workers), len(workers), len(waits), sha, None]))
 
 
-def audit(directory):
+def audit(directory, solvers=("yices2", "z3")):
+    solvers = SBY.SOLVERS.select(solvers)
     evidence = Evidence(directory)
     meta, results = evidence.data("metadata.json"), evidence.data("results.json")
     require(meta["format"] == 1 and type(meta["preliminary"]) is bool and re.fullmatch(r"[a-f0-9]{40}", meta["commit"]), "measurement provenance")
@@ -137,14 +158,15 @@ def audit(directory):
         require(len(raw) == asset["size"] and digest(raw) == asset["sha256"], "source asset hash")
     for name, key in [("yosys.wasm", "sha256"), ("yosys-share.tar", "shareSha256")]:
         require(digest(evidence.read("inputs/" + name)) == meta["yosys"][key], "Yosys binary identity")
-    require(set(meta["probes"]) == {"yices2", "z3"}, "both solvers required")
+    require(set(meta["probes"]) == set(solvers), "selected solver set")
     for solver, probe in meta["probes"].items():
         raw, binary = evidence.read("build/" + solver + ".json"), evidence.read("inputs/" + solver + ".wasm")
         build = SBY.strict_json(raw)
         require(digest(raw) == probe["metadataSha256"] and digest(binary) == probe["sha256"] == build["artifact"]["sha256"] and len(binary) == build["artifact"]["bytes"], "solver build and binary hash")
         require(build["status"] == "built" and build["worktree_status"] == "" and build["runtime"] == "wasi" and build["solver"] == solver, "successful pinned solver build")
-    matrix = [(solver + "-" + condition, solver, condition) for solver in ["yices2", "z3"] for condition in [*NORMAL, *FAULTS]]
-    matrix.extend(("restriction-" + condition, "yices2", condition) for condition in RESTRICTIONS)
+    faults = [*FAULTS, *(EXTRA_FAULTS if set(solvers) <= {"bitwuzla", "boolector"} else [])]
+    matrix = [(solver + "-" + condition, solver, condition) for solver in solvers for condition in [*NORMAL, *faults]]
+    matrix.extend(("restriction-" + condition, solvers[0], condition) for condition in RESTRICTIONS)
     rows = [audit_case(evidence, meta, *condition) for condition in matrix]
     require(results["rows"] == rows, "all result columns rederived")
     for row in rows:
@@ -158,4 +180,6 @@ def audit(directory):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("directory", type=Path)
-    print(json.dumps(audit(parser.parse_args().directory), sort_keys=True, allow_nan=False))
+    parser.add_argument("--solver", choices=SBY.SOLVERS.SOLVERS, action="append")
+    args = parser.parse_args()
+    print(json.dumps(audit(args.directory, args.solver if args.solver is not None else ("yices2", "z3")), sort_keys=True, allow_nan=False))

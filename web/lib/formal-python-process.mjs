@@ -28,7 +28,17 @@ export function startFormalPython({ sources, manifest, entrypoint, args, files, 
   let outputBytes = 0;
   let resolve;
   const completion = new Promise(done => { resolve = done; });
-  const deadline = setTimeout(() => finish("timeout"), timeoutMs);
+  let deadline = setTimeout(checkDeadline, timeoutMs);
+
+  function checkDeadline() {
+    if (terminal) return;
+    const remaining = timeoutMs - (performance.now() - started);
+    if (remaining > 0) {
+      deadline = setTimeout(checkDeadline, Math.ceil(remaining));
+      return;
+    }
+    finish("timeout");
+  }
 
   function finish(status, payload = {}) {
     if (terminal) return;
