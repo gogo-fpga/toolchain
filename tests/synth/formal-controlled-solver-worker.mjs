@@ -9,7 +9,9 @@ parentPort.once("message", async data => {
     if (!observed && args[0]?.buffer === data.channels.stdin.buffer && args[1] === 3) {
       observed = true;
       parentPort.postMessage({ type: "test-observation", jobId: data.jobId, event: "solver-stdin-wait", channel: "stdin", index: args[1], sha256: data.sha256 });
-      if (data.testControl.mode === "timeout") wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);
+      if (["cancel", "timeout", "crash", "protocol"].includes(data.testControl.mode)) {
+        wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);
+      }
     }
     return wait(...args);
   };

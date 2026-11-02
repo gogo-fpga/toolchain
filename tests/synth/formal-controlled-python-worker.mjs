@@ -33,7 +33,7 @@ else:
     raise AssertionError("Expected unavailable browser resource module")
 os.environ["MAKEFLAGS"] = "--jobserver-auth=3,4 -j8"
 `);
-    observe("native-guards-installed", { resourceAvailable: false, inheritedMakeflags: "--jobserver-auth=3,4 -j8" });
+    observe("native-guards-installed", { resourceAvailable: false, inheritedMakeflags: "--jobserver-auth=3,4 -j8", pythonVersion: py.runPython("sys.version") });
     return {
       ...py,
       runPython(source) {

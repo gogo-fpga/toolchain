@@ -214,7 +214,8 @@ T6は上流SBY・SMTBMCの再利用を選び、[S15の事前基準](docs/experim
 | [SBY全体の仮想process接続](docs/experiments/S15-sby-runtime.md) | SbyPopen・単一slot・子差分・両solver各6条件の比較 |
 | [SBY全成果物・16列の独立監査](docs/experiments/S15-sby-artifact-audit.md) | 全268成果物・SQLite・終了・16列の改変拒否 |
 | [SBY正式5回・A/A 2回](docs/experiments/S15-sby-repeated.md) | 同一commitで全84行・19列・1,876成果物が一致 |
-| [SBY子workerの停止と輸送の対照](docs/experiments/S15-sby-controls.md) | 実stdin待機からの取消・期限・停止と改変拒否が予備23条件で成功。正式反復とwitnessは未完了 |
+| [SBY子workerの停止と輸送の対照](docs/experiments/S15-sby-controls.md) | 実stdin待機からの取消・期限・停止と改変拒否が予備23条件で成功。全12列の独立監査済み、正式反復は未完了 |
+| [SbyPopenのwitness変換](docs/experiments/S15-sby-witness.md) | 原本のAIGER・BTOR変換2形式でnativeとPyodideの全byteが一致。形式境界の予備値であり、回路の反例検証や正式反復とは別 |
 
 元VHDLの独立再実行と下位化Verilog比較、各5回とA/Aの反復、失敗試行と当時の未完了項目は、[形式検証調査の経緯](docs/research/formal-verification.md#vhdl反例の再実行と比較の経緯)へ原記録を移しました。
 
