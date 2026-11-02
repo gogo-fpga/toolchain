@@ -20,6 +20,8 @@
 
 Boolectorの隔離した診断ビルドでは、上流のsetup scriptが固定したCaDiCaLとBTOR2Toolsを取得します。どちらもMITで、著作権表示を含む原licenseとソースarchiveのhashを診断metadataへ記録します。CaDiCaLへのWASI適応patchは本体のSAT判定を変更せず、原licenseを維持します。詳細と製品配布の未確認範囲は [追加ソルバーの記録](docs/experiments/S15-extra-solver-builds.md)を参照してください。
 
+Bitwuzlaの隔離したMeson診断は、上流wrapで固定したCaDiCaL（MIT）とSymFPU（BSD）、GMP・MPFRの原archiveを取得します。原license、ソース・overlay・patchのhashをmetadataに保持します。診断binaryを製品配布へ追加する変更ではありません。[Bitwuzlaの記録](docs/experiments/S15-bitwuzla-build.md)に、依存の分離と非対応なWASI境界を記録しています。
+
 ## 既存の実行資材と開発依存
 
 以下の固定版を使用しています。コミットは `vendor/` の gitlink に記録した値です。

@@ -1,6 +1,6 @@
 # S15 P4 追加ソルバーの固定依存と診断ビルド
 
-- 状態: 清浄なcommitでBoolector native/WASIを生成し、CLIの5条件が一致。型幅・traceの正式反復は別記。SMTBMC認定とBitwuzlaは未完了
+- 状態: 清浄なcommitでBoolector native/WASIを生成し、CLIの5条件が一致。型幅・traceの正式反復は別記。[BitwuzlaのMeson診断](S15-bitwuzla-build.md)は別記録。SMTBMC認定と製品化は未完了
 - 基準: [S15の共通基準](S15-formal-verification.md)、[候補と無効理由](../research/formal-capabilities.md)
 - 戻り先: [実験索引](README.md)、[形式検証の調査](../research/formal-solvers.md)
 
@@ -80,7 +80,7 @@ python3 scripts/build-solver-probe.py --solver boolector --runtime wasi --out bu
 node scripts/probe-extra-solver-cli.mjs --native build/S15/boolector-native-01 --wasi build/S15/boolector-wasi-01 --out build/S15/boolector-cli-01
 ```
 
-`--cmake` と `--jobs` でhostツールのパスと並列数を明示できます。対応していないsolver名は拒否します。Bitwuzlaのビルド接続と正式反復は未完了です。Tang Nano実機での動作は本リポジトリでは試していません。
+`--cmake` と `--jobs` でhostツールのパスと並列数を明示できます。対応していないsolver名は拒否します。BitwuzlaのMeson経路とCLI予備比較は別記録とし、正式反復・SMTBMC認定は未完了です。Tang Nano実機での動作は本リポジトリでは試していません。
 
 CLI診断は清浄なbuild metadataとbinary hashを先に照合し、version、help、値取得とpush/pop、EOF、構文エラーの5条件をnativeと実workerで交互に実行します。WASIは7 byte bufferへ3 byteずつ書き、stdout/stderrの全byteと終了コードを比較します。Boolectorのsat終了10を通常終了0へ読み替えません。構文エラーの終了1も独立して検査します。生CSVと各stream・結果JSONは出力先へ保存します。これは予備CLI診断であり、全列の独立監査・正式反復・SMTBMCの検証を代替しません。
 
