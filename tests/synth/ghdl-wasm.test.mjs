@@ -135,6 +135,28 @@ const positiveFixtures = [
   },
 ];
 
+test("GHDL compiles prototype member paths without mutating JavaScript prototypes", () => {
+  const [fixture] = fixtureFiles(["combinational.vhd"]);
+  const before = Object.getOwnPropertyDescriptors(Object.prototype);
+  const filename = "ghdl-probe.vhd";
+  assert.equal(Object.hasOwn(Object.prototype, filename), false);
+  try {
+    for (const name of ["__proto__", "constructor", "prototype", "toString"]) {
+      const result = runGhdlSynth({
+        module: wasmModule,
+        librariesTree,
+        files: [{ ...fixture, path: `${name}/${filename}` }],
+        top: "combinational",
+      });
+      assert.equal(result.status, 0, result.log);
+      assert.match(result.verilog, /module combinational/);
+      assert.deepEqual(Object.getOwnPropertyDescriptors(Object.prototype), before);
+    }
+  } finally {
+    delete Object.prototype[filename];
+  }
+});
+
 for (const fixture of positiveFixtures) {
   test(`GHDL WASM synthesizes ${fixture.label}`, () => {
     const standard = fixture.standard ?? "2008";

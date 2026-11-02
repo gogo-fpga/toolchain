@@ -185,6 +185,12 @@ jobs:
           name: ci-ghdl-wasm-${{ github.run_id }}
           path: build
 
+      - name: Icarus Verilog WASM 資材を取得
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ci-iverilog-web-assets-${{ github.run_id }}
+          path: build/iverilog-wasm/output
+
       - name: Surfer WASM 資材を取得
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -1241,6 +1247,14 @@ jobs:
             build/wasi-sdk-*
           key: iverilog-wasi-ubuntu-26.04-${{ steps.iverilog-key.outputs.iverilog }}-${{ steps.iverilog-key.outputs.wasi }}-${{ hashFiles('scripts/build-iverilog-wasm.sh', 'scripts/build-iverilog-info.py', 'patches/iverilog/**') }}
 
+      - name: Icarus Verilog のブラウザー用資材を保存
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ci-iverilog-web-assets-${{ github.run_id }}
+          path: build/iverilog-wasm/output/*.wasm
+          if-no-files-found: error
+          retention-days: 1
+
   surfer:
     name: Surfer WASM build
     needs: changes
@@ -1595,6 +1609,12 @@ jobs:
 
       - name: Native GHDL の実行権限を復元
         run: chmod +x build/ghdl-native/bin/ghdl
+
+      - name: Icarus Verilog WASM 資材を取得
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ci-iverilog-web-assets-${{ github.run_id }}
+          path: build/iverilog-wasm/output
 
       - name: Pyodide pack assets を取得
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2

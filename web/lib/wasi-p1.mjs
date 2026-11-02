@@ -107,15 +107,24 @@ export function createMemoryTree(tree) {
   return buildDirectory("/", tree, null);
 }
 
+export function setTreeEntry(tree, name, value) {
+  Object.defineProperty(tree, name, {
+    value,
+    enumerable: true,
+    configurable: true,
+    writable: true,
+  });
+}
+
 export function treeToObject(directory) {
   if (directory?.type !== "directory") {
     throw new TypeError("Expected a memory tree directory");
   }
   const result = {};
   for (const [name, entry] of directory.entries) {
-    result[name] = entry.type === "directory"
+    setTreeEntry(result, name, entry.type === "directory"
       ? treeToObject(entry)
-      : new Uint8Array(entry.data);
+      : new Uint8Array(entry.data));
   }
   return result;
 }

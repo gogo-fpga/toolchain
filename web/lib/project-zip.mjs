@@ -1,5 +1,5 @@
 import { strToU8, unzipSync, zipSync } from "fflate";
-import { validatePath, validateProject } from "./project.mjs";
+import { migrateProject, validatePath, validateProject } from "./project.mjs";
 
 const MAX_ENTRIES = 256;
 const MAX_UNCOMPRESSED_BYTES = 16 * 1024 * 1024;
@@ -212,13 +212,7 @@ export function importProjectZip(bytes) {
   } catch (error) {
     throw new Error("project.json を読み取れません。", { cause: error });
   }
-  if (
-    project !== null &&
-    typeof project === "object" &&
-    !Object.hasOwn(project, "vhdlStandard")
-  ) {
-    project.vhdlStandard = "2008";
-  }
+  project = migrateProject(project);
   const validation = validateProject(project);
   if (!validation.ok) {
     throw new Error(`project.json の内容が不正です: ${validation.errors.join(" ")}`);

@@ -254,6 +254,14 @@ function assertDistributionMatchesSources() {
     sourceRoot: resolve(buildRoot, "surfer/dist"),
     distSubdir: "surfer",
   });
+  const iverilogPaths = new Set(["ivlpp", "ivl", "vvp"].flatMap((name) =>
+    [...assertCopiedFileMatches({
+      repoRoot,
+      distRoot,
+      sourcePath: resolve(buildRoot, `iverilog-wasm/output/${name}.wasm`),
+      distPath: `iverilog/${name}.wasm`,
+    })],
+  ));
   const thirdPartyNoticePaths = assertCopiedFileMatches({
     repoRoot,
     distRoot,
@@ -272,6 +280,7 @@ function assertDistributionMatchesSources() {
     if (synthPaths.delete(path)) continue;
     if (licensePaths.delete(path)) continue;
     if (surferPaths.delete(path)) continue;
+    if (iverilogPaths.delete(path)) continue;
     if (thirdPartyNoticePaths.delete(path)) continue;
     throw new Error(`Playwright preflight: unexpected dist/${path}`);
   }
@@ -294,6 +303,7 @@ function assertDistributionMatchesSources() {
   for (const copiedPaths of [
     licensePaths,
     surferPaths,
+    iverilogPaths,
     thirdPartyNoticePaths,
   ]) {
     if (copiedPaths.size > 0) {
@@ -421,6 +431,28 @@ test("built distribution matches sources and the build-root WASM", () => {
     );
   } finally {
     writeFileSync(surferIndexPath, originalSurferIndex);
+  }
+
+  for (const name of ["ivlpp", "ivl", "vvp"]) {
+    const path = resolve(repoRoot, `dist/iverilog/${name}.wasm`);
+    const original = readFileSync(path);
+    const altered = Buffer.from(original);
+    altered[0] ^= 1;
+    try {
+      writeFileSync(path, altered);
+      assert.throws(() => assertDistributionMatchesSources(), /iverilog\/.*\.wasm differs from/);
+      rmSync(path);
+      assert.throws(() => assertDistributionMatchesSources(), /iverilog\/.*\.wasm is missing/);
+    } finally {
+      writeFileSync(path, original);
+    }
+  }
+  const extraIverilogPath = resolve(repoRoot, `dist/iverilog/.preflight-extra-${randomUUID()}`);
+  try {
+    writeFileSync(extraIverilogPath, "unexpected");
+    assert.throws(() => assertDistributionMatchesSources(), /unexpected dist\/iverilog\/\.preflight-extra-/);
+  } finally {
+    rmSync(extraIverilogPath, { force: true });
   }
 });
 

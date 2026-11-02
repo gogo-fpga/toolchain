@@ -7,11 +7,12 @@ import {
 } from "../../web/lib/project.mjs";
 
 const validProject = {
-  version: 1,
+  version: 2,
   name: "blink",
   board: "tangnano9k",
   top: "top",
   files: [{ path: "src/top.v" }, { path: "src/top.vhd" }],
+  simulation: { top: "top_tb", files: null, timeLimitSeconds: 10 },
 };
 
 test("project schema accepts the supported shape", () => {
@@ -31,9 +32,31 @@ test("project schema rejects unknown keys and versions", () => {
   assert.equal(unknownKey.ok, false);
   assert.match(unknownKey.errors.join(" "), /未対応の項目/);
 
-  const wrongVersion = validateProject({ ...validProject, version: 2 });
+  const wrongVersion = validateProject({ ...validProject, version: 1 });
   assert.equal(wrongVersion.ok, false);
-  assert.match(wrongVersion.errors.join(" "), /版は 1/);
+  assert.match(wrongVersion.errors.join(" "), /版は 2/);
+});
+
+test("project schema validates simulation settings and selected Verilog files", () => {
+  assert.deepEqual(validateProject(validProject), { ok: true, errors: [] });
+  for (const simulation of [
+    { ...validProject.simulation, extra: true },
+    { ...validProject.simulation, files: ["src/missing.v"] },
+    { ...validProject.simulation, files: ["src/top.vhd"] },
+    { ...validProject.simulation, files: ["src/top.v", "src/top.v"] },
+    { ...validProject.simulation, timeLimitSeconds: 0 },
+    { ...validProject.simulation, timeLimitSeconds: 121 },
+    { ...validProject.simulation, timeLimitSeconds: 1.5 },
+  ]) {
+    assert.equal(validateProject({ ...validProject, simulation }).ok, false);
+  }
+  assert.equal(
+    validateProject({
+      ...validProject,
+      simulation: { top: "tb", files: ["src/top.v"], timeLimitSeconds: 120 },
+    }).ok,
+    true,
+  );
 });
 
 test("project schema rejects unknown boards and duplicate paths", () => {

@@ -51,6 +51,24 @@ test("parses source locations and tool errors into editor diagnostics", () => {
       message: "ERROR: Could not find routed netlist",
     }],
   );
+  assert.deepEqual(
+    parseToolDiagnostics("ivl", "/work/src/top.v:12: syntax error"),
+    [{
+      file: "src/top.v",
+      line: 12,
+      severity: "error",
+      message: "syntax error",
+    }],
+  );
+  assert.deepEqual(
+    parseToolDiagnostics("vvp", "work/sim/top_tb.v:4: warning: ignored"),
+    [{
+      file: "sim/top_tb.v",
+      line: 4,
+      severity: "warning",
+      message: "warning: ignored",
+    }],
+  );
 });
 
 test("parses diagnostics from captured tool stderr", () => {

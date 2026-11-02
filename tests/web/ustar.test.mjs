@@ -77,3 +77,42 @@ test("ustar reader rejects entry types other than files and directories", () => 
 
   assert.throws(() => readUstar(archive), /entry type/);
 });
+
+test("ustar prototype member paths stay inside the extracted tree", () => {
+  const data = Uint8Array.of(1, 2, 3);
+  const before = Object.getOwnPropertyDescriptors(Object.prototype);
+  const filename = "ustar-probe.v";
+  assert.equal(Object.hasOwn(Object.prototype, filename), false);
+  try {
+    for (const name of ["__proto__", "constructor", "prototype", "toString"]) {
+      const file = readUstar(createUstar([{ name, contents: data }]));
+      assert.equal(Object.hasOwn(file, name), true);
+      assert.deepEqual(file[name], data);
+      assert.equal(Object.getPrototypeOf(file), Object.prototype);
+
+      const directory = readUstar(createUstar([
+        { name: `${name}/`, type: 53 },
+        { name: `${name}/${filename}`, contents: data },
+      ]));
+      assert.equal(Object.hasOwn(directory, name), true);
+      assert.deepEqual(directory[name][filename], data);
+      assert.deepEqual(Object.getOwnPropertyDescriptors(Object.prototype), before);
+    }
+  } finally {
+    delete Object.prototype[filename];
+  }
+});
+
+test("ustar prototype member paths still reject file and directory conflicts", () => {
+  const data = Uint8Array.of(1);
+  for (const name of ["__proto__", "constructor"]) {
+    assert.throws(() => readUstar(createUstar([
+      { name, contents: data },
+      { name: `${name}/child.v`, contents: data },
+    ])), /Conflicting/);
+    assert.throws(() => readUstar(createUstar([
+      { name: `${name}/child.v`, contents: data },
+      { name, contents: data },
+    ])), /Conflicting/);
+  }
+});

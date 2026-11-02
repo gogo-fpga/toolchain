@@ -16,6 +16,7 @@
 
 #synthesis-stage,
 #synthesis-reason,
+#simulation-reason,
 #synthesis-asset-size {
   margin: 0;
   font-size: 0.8rem;
@@ -27,6 +28,19 @@
 
 body {
   margin: 0;
+}
+
+.license-information {
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.license-information summary {
+  cursor: pointer;
+}
+
+#waveform-file {
+  max-width: 100%;
 }
 
 button,
@@ -496,11 +510,67 @@ dialog::backdrop {
   font-weight: 700;
 }
 
-.synthesis-reason {
+.synthesis-reason,
+.simulation-reason {
   align-self: center;
   margin: 0;
   color: #475467;
   font-size: 0.8rem;
+}
+
+.simulation-settings {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 1rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid #eaecf0;
+}
+
+.simulation-settings h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.simulation-settings fieldset {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0.45rem;
+  border: 1px solid #d0d5dd;
+  border-radius: 0.4rem;
+}
+
+.simulation-file {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  overflow-wrap: anywhere;
+  font-size: 0.78rem;
+}
+
+.simulation-settings .field {
+  min-width: 0;
+  margin: 0;
+}
+
+.simulation-settings input {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.waveform-panel {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  padding: 0.5rem;
+}
+
+#surfer-mount,
+#surfer-mount iframe {
+  width: 100%;
+  min-height: 20rem;
+  height: 100%;
+  border: 0;
 }
 
 .mobile-pane-toggle {
@@ -544,6 +614,10 @@ dialog::backdrop {
   gap: 0.75rem;
   min-height: 0;
   padding: 0.75rem;
+}
+
+.ide-layout.waveform-active {
+  flex: 0 0 auto;
 }
 
 .ide-sidebar,
@@ -672,6 +746,10 @@ dialog::backdrop {
   display: grid;
   grid-template-rows: auto auto minmax(16rem, 1fr) minmax(12rem, 30vh);
   overflow: hidden;
+}
+
+.editor-pane[data-waveform-active="true"] {
+  grid-template-rows: auto auto minmax(12rem, 1fr) minmax(30rem, 50vh);
 }
 
 .editor-heading {
@@ -904,6 +982,10 @@ dialog .field input {
     gap: 0.6rem;
   }
 
+  .header-actions .synthesis-control {
+    align-items: flex-start;
+  }
+
   .synthesis-control {
     flex-wrap: wrap;
   }
@@ -914,7 +996,8 @@ dialog .field input {
     justify-content: center;
   }
 
-  .synthesis-reason {
+  .synthesis-reason,
+  .simulation-reason {
     align-self: center;
   }
 
@@ -987,6 +1070,7 @@ dialog .field input {
 
   .project-title,
   .synthesis-reason,
+  .simulation-reason,
   .editor-heading span,
   #project-status {
     color: #d0d5dd;

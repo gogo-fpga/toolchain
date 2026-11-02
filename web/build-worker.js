@@ -1,7 +1,7 @@
 import { getBoard } from "./lib/boards.mjs";
 import { releaseDecoders } from "./lib/decompress.mjs";
 import { createVerifiedAssetLoader, safePath } from "./lib/verified-assets.mjs";
-import { createMemoryTree, runWasiP1 } from "./lib/wasi-p1.mjs";
+import { createMemoryTree, runWasiP1, setTreeEntry } from "./lib/wasi-p1.mjs";
 import { readUstar } from "./lib/ustar.mjs";
 import { runGhdlSynth } from "./lib/ghdl-host.mjs";
 import { analyzeVhdlDesign, orderVhdlFiles } from "./lib/vhdl-order.mjs";
@@ -24,8 +24,8 @@ function insertFile(tree, path, content) {
   const parts = path.split("/");
   let directory = tree;
   for (const part of parts.slice(0, -1)) {
-    const current = directory[part];
-    if (current === undefined) directory[part] = {};
+    const current = Object.hasOwn(directory, part) ? directory[part] : undefined;
+    if (current === undefined) setTreeEntry(directory, part, {});
     else if (
       current === null ||
       typeof current !== "object" ||
@@ -36,10 +36,10 @@ function insertFile(tree, path, content) {
     directory = directory[part];
   }
   const name = parts.at(-1);
-  if (directory[name] !== undefined) throw new Error(`Duplicate project file path: ${path}`);
-  if (typeof content === "string") directory[name] = content;
-  else if (content instanceof Uint8Array) directory[name] = new Uint8Array(content);
-  else if (content instanceof ArrayBuffer) directory[name] = new Uint8Array(content);
+  if (Object.hasOwn(directory, name)) throw new Error(`Duplicate project file path: ${path}`);
+  if (typeof content === "string") setTreeEntry(directory, name, content);
+  else if (content instanceof Uint8Array) setTreeEntry(directory, name, new Uint8Array(content));
+  else if (content instanceof ArrayBuffer) setTreeEntry(directory, name, new Uint8Array(content));
   else throw new Error(`Invalid content for project file: ${path}`);
 }
 
@@ -92,7 +92,9 @@ function checkedFiles(files) {
       throw new Error("A project file has an invalid path");
     }
     insertFile(tree, file.path, file.content);
-    if (/\.(?:v|sv)$/i.test(file.path)) sourcePaths.push(file.path);
+    if (/\.(?:v|sv)$/i.test(file.path) && !/(?:^|\/)top_tb\.v$/i.test(file.path)) {
+      sourcePaths.push(file.path);
+    }
     if (/\.(?:vhd|vhdl)$/i.test(file.path)) vhdlFiles.push(file);
     if (/\.cst$/i.test(file.path)) {
       if (constraintPath) throw new Error("The project has multiple constraint files");

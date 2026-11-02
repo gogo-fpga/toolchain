@@ -27,6 +27,10 @@ case "${BUILD_INFO_CHECK:-full}" in
     ;;
 esac
 
+python3 "$root/scripts/build-info.py" "$build_info_action" \
+  --root "$root" \
+  --artifacts "$artifacts"
+
 for artifact in openFPGALoader.mjs openFPGALoader.wasm; do
   if [[ ! -s "$artifacts/$artifact" ]]; then
     printf 'Missing required C-profile artifact: %s\n' "$artifacts/$artifact" >&2
@@ -50,10 +54,13 @@ if [[ ! -s "$build_root/surfer/dist/index.html" ||
   printf 'Missing required Surfer WASM distribution under %s\n' "$build_root/surfer/dist" >&2
   exit 1
 fi
-
-python3 "$root/scripts/build-info.py" "$build_info_action" \
-  --root "$root" \
-  --artifacts "$artifacts"
+for artifact in ivlpp.wasm ivl.wasm vvp.wasm; do
+  if [[ ! -s "$build_root/iverilog-wasm/output/$artifact" ]]; then
+    printf 'Missing required Icarus WASM asset: %s\n' \
+      "$build_root/iverilog-wasm/output/$artifact" >&2
+    exit 1
+  fi
+done
 
 if [[ ! -f "$root/web/index.html" || ! -f "$root/web/serve.py" ]]; then
   printf 'Missing web application sources under %s/web\n' "$root" >&2
@@ -79,6 +86,8 @@ python3 "$root/scripts/build-synth-assets.py" \
   --dist-output "$dist/synth"
 mkdir -p "$dist/surfer"
 cp -R "$build_root/surfer/dist/." "$dist/surfer/"
+mkdir -p "$dist/iverilog"
+cp "$build_root/iverilog-wasm/output/"*.wasm "$dist/iverilog/"
 cp "$root/THIRD_PARTY_NOTICES.md" "$dist/THIRD_PARTY_NOTICES.md"
 mkdir -p "$dist/licenses"
 cp -R "$root/licenses/." "$dist/licenses/"

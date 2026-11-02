@@ -1,4 +1,4 @@
-import { createMemoryTree, createWasiP1ImportObject } from "./wasi-p1.mjs";
+import { createMemoryTree, createWasiP1ImportObject, setTreeEntry } from "./wasi-p1.mjs";
 
 const decoder = new TextDecoder("latin1");
 
@@ -11,17 +11,21 @@ function insertFile(tree, pathname, content) {
   let directory = tree;
   for (const part of parts.slice(0, -1)) {
     if (!part || part === "." || part === "..") throw new Error(`Invalid GHDL path: ${pathname}`);
-    directory[part] ??= {};
-    if (typeof directory[part] !== "object" || directory[part] instanceof Uint8Array) {
+    if (!Object.hasOwn(directory, part)) setTreeEntry(directory, part, {});
+    if (
+      directory[part] === null ||
+      typeof directory[part] !== "object" ||
+      directory[part] instanceof Uint8Array
+    ) {
       throw new Error(`Conflicting GHDL path: ${pathname}`);
     }
     directory = directory[part];
   }
   const name = parts.at(-1);
-  if (!name || name === "." || name === ".." || directory[name] !== undefined) {
+  if (!name || name === "." || name === ".." || Object.hasOwn(directory, name)) {
     throw new Error(`Duplicate or invalid GHDL path: ${pathname}`);
   }
-  directory[name] = content;
+  setTreeEntry(directory, name, content);
 }
 
 function normalizePath(pathname) {

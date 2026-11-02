@@ -54,6 +54,7 @@ function filesFor(name, boardId) {
       {
         path: "src/testbench.v",
         content: [
+          "`timescale 1ns/1ps",
           "module tb;",
           "  reg clk = 0;",
           "  wire led;",
@@ -194,6 +195,11 @@ test("four board Verilog templates match native stdout and VCD", () => {
     });
     assert.equal(native.status, 0, `${boardId}: native failed: ${native.stderr}`);
     assert.equal(wasm.status, 0, `${boardId}: WASI failed: ${wasm.stderr}`);
+    assert.doesNotMatch(
+      `${native.stderr}\n${wasm.stderr}`,
+      /timescale|time unit/i,
+      `${boardId}: timescale warning`,
+    );
     assert.equal(wasm.stdout, native.stdout, `${boardId}: stdout differs`);
     assert.equal(pollOneoffCalls, 0, `${boardId}: poll_oneoff is required`);
     assert.ok(native.vcd, `${boardId}: native VCD missing`);
@@ -217,6 +223,14 @@ test("Icarus WASI negative controls match native status and diagnostics", () => 
       normalizedDiagnostic(native.stderr),
       `${name}: diagnostic differs`,
     );
+    if (name === "syntax-error") {
+      assert.match(
+        wasm.stages.ivl.stderr instanceof Uint8Array
+          ? new TextDecoder().decode(wasm.stages.ivl.stderr)
+          : wasm.stages.ivl.stderr,
+        /work\/src\/syntax-error\.v:4: syntax error/,
+      );
+    }
   }
 });
 
@@ -237,6 +251,31 @@ test("WASI ivlpp rejects VHDL input with a diagnostic", () => {
   const message = Buffer.concat(stderr.map((chunk) => Buffer.from(chunk))).toString("utf8");
   assert.notEqual(result.exitCode, 0);
   assert.match(message, /VHDL input is not supported in this build/);
+});
+
+test("Icarus compiles prototype member paths without mutating JavaScript prototypes", () => {
+  const before = Object.getOwnPropertyDescriptors(Object.prototype);
+  const filename = "iverilog-probe.v";
+  assert.equal(Object.hasOwn(Object.prototype, filename), false);
+  try {
+    for (const name of ["__proto__", "constructor", "prototype", "toString"]) {
+      const pathname = `${name}/${filename}`;
+      const content = 'module top; initial begin $display("path-ok"); $finish; end endmodule';
+      const result = runIverilog({
+        modules,
+        files: [{ path: pathname, content }],
+        sourceFiles: [pathname],
+        top: "top",
+      });
+      assert.equal(result.status, 0, result.stderr);
+      assert.match(result.stdout, /path-ok/);
+      assert.equal(Object.hasOwn(result.tree.work, name), true);
+      assert.deepEqual(result.tree.work[name][filename], new TextEncoder().encode(content));
+      assert.deepEqual(Object.getOwnPropertyDescriptors(Object.prototype), before);
+    }
+  } finally {
+    delete Object.prototype[filename];
+  }
 });
 
 test("corrupted Icarus WASM is rejected by the WebAssembly validator", () => {
