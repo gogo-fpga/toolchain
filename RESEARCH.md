@@ -205,7 +205,7 @@ Actions.lock は今回は導入を見送り、現行の完全長 SHA 固定を�
 
 T6 P2では、WASI shimの同期stdin reader、容量を制限した共有buffer、期限・整合性・終了を管理する専用workerを追加しました。予備Yices2 WASMでは5 byteの入力chunkと7 byteのbufferで双方向SMT通信を確認しました。この段階は正式反復ではありません。GMP検索先、cross makeのarch、alarm、SDKとEmscriptenの丸め、C++標準ライブラリー、setjmp/longjmp、版表示の由来を[ソルバー調査](docs/research/formal-solvers.md)と[S15 P2](docs/experiments/S15-solver-build-and-transport.md)に残します。hardware丸めの単独compile後、実Z3 WASIでも非対応要求を明示拒否できました。
 
-その後、Z3のclean buildを終え、両solverのnative/WASIを清浄な`3ea717e`の比較器で各5回・A/A 2回実行しました。全329行31列と294負の対照を監査し、正常3条件の全byte一致と異常分類を確認しました。欠測をnullに保つ資源、生CSV、全buildの由来と警告、証拠ZIPは[正式比較](docs/experiments/S15-solver-native-wasi.md)、予備21実行などの履歴は[実応答記録](docs/experiments/S15-solver-protocol.md)へ分けます。Z3 WASIはZstandardで5,246,594 byteとなり、host展開後のhashも元と一致しました。ブラウザーの展開、SBYの製品workerと画面への接続、既定solverの選定は未完了です。
+両solverのnative/WASIは各5回・A/A 2回で全329行31列と294負の対照を監査しました。[正式比較と圧縮配信の制約](docs/research/formal-solvers.md#正式比較と圧縮配信の制約)へ条件・証拠・未完了の範囲を分けます。
 
 ## 8. 未確認の事項
 

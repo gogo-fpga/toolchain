@@ -4,7 +4,6 @@ import hashlib
 import importlib.util
 import json
 import os
-import re
 import shutil
 import subprocess
 import tempfile
@@ -20,15 +19,16 @@ SPEC.loader.exec_module(library_assets)
 
 
 class LibraryAssetsTests(unittest.TestCase):
-    def test_e2e_fetches_the_library_sources_before_rebuilding_web_assets(self):
-        workflow = (ROOT / ".github/workflows/build.yml").read_text()
-        job = re.split(r"(?m)^  [a-z][a-z0-9-]*:\s*$", workflow.split("\n  e2e:\n", 1)[1], maxsplit=1)[0]
-        sources = "git submodule update --init --depth 1 -- vendor/zstd third_party/"
-        nested = "git -C third_party/vexriscv submodule update --init --depth 1 -- pythondata_cpu_vexriscv/verilog/ext/VexRiscv"
-        self.assertIn(sources, job)
-        self.assertIn(nested, job)
-        self.assertLess(job.index(sources), job.index(nested))
-        self.assertLess(job.index(nested), job.index("npx playwright test"))
+    def test_e2e_fetches_pinned_library_sources_before_web_server(self):
+        workflow = (ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8")
+        e2e = workflow.split("\n  e2e:\n", 1)[1]
+        checkout = e2e.index("- uses: actions/checkout@")
+        sources = e2e.index("git submodule update --init --depth 1 -- vendor/zstd third_party/")
+        nested = e2e.index("git -C third_party/vexriscv submodule update --init --depth 1 -- pythondata_cpu_vexriscv/verilog/ext/VexRiscv")
+        browser = e2e.index("- name: Playwright E2E")
+        self.assertLess(checkout, sources)
+        self.assertLess(sources, nested)
+        self.assertLess(nested, browser)
 
     def test_cpu_board_availability_matches_all_formal_main_rows(self):
         catalog = json.loads((ROOT / "libraries/catalog.json").read_text())

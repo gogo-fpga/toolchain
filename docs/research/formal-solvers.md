@@ -54,6 +54,10 @@ SMT-LIB 2.6系の応答を区切る基盤も追加しました。固定Yices2の
 
 Yices2 WASIでも入力待ちとは別に、80変数を79種類の値へ割り当てる計算要求を送り、期限切れと取消を確認しました。CSVの全31列をraw log・結果JSON・build metadataへ照合する独立したPython監査器も追加しました。正常出力の全byte比較、行の欠落・重複、A/A、source snapshot、失敗分類、負の対照と欠測を含む資源集計を検査します。予備21実行の監査は成功しましたが、正式5回反復の完了やT6全体の完成とは扱いません。
 
+## 正式比較と圧縮配信の制約
+
+その後、Z3のclean buildを終え、両solverのnative/WASIを清浄な`3ea717e`の比較器で各5回・A/A 2回実行しました。全329行31列と294負の対照を監査し、正常3条件の全byte一致と異常分類を確認しました。欠測をnullに保つ資源、生CSV、全buildの由来と警告、証拠ZIPは[正式比較](../experiments/S15-solver-native-wasi.md)、予備21実行などの履歴は[実応答記録](../experiments/S15-solver-protocol.md)へ分けます。Z3 WASIはZstandardで5,246,594 byteとなり、host展開後のhashも元と一致しました。ブラウザーの展開、SBYと製品画面、既定solverの選定は未完了です。
+
 ## 標準入力と輸送の境界
 
 ### 実Yices2の応答で確認した境界
