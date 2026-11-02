@@ -20,7 +20,21 @@ test("asset presence cannot enable unverified, deprecated, diagnostic or model-o
   assert.deepEqual(solvers.filter(entry => !entry.disabled).map(entry => entry.id), ["yices2", "z3"]);
   assert.deepEqual(engines.filter(entry => !entry.disabled).map(entry => entry.id), ["smtbmc", "yosys-sat"]);
   assert.equal(solvers.find(entry => entry.id === "boolector").deprecated, true);
-  assert.ok(solvers.find(entry => entry.id === "bitwuzla").blockers.includes("help-adapter-missing"));
+  assert.ok(solvers.find(entry => entry.id === "bitwuzla").blockers.includes("product-qualification-missing"));
+});
+
+test("qualified diagnostic solvers stay disabled in every mode even when assets are claimed", () => {
+  for (const mode of ["bmc", "prove", "cover", "live"]) {
+    const { solvers } = formalCapabilities({ mode, availableSolvers: ["bitwuzla", "boolector"] });
+    for (const id of ["bitwuzla", "boolector"]) {
+      const entry = solvers.find(candidate => candidate.id === id);
+      assert.equal(entry.status, "product-unqualified");
+      assert.equal(entry.disabled, true);
+      assert.deepEqual(entry.modes, []);
+      assert.ok(entry.blockers.includes("dependency-distribution-unreviewed"));
+      assert.ok(!entry.blockers.includes("help-adapter-missing") && !entry.blockers.includes("build-unverified"));
+    }
+  }
 });
 
 test("mode and solver prerequisites independently restrict the available engines", () => {

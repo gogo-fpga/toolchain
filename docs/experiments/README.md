@@ -6,8 +6,8 @@
 
 | 記録 | 内容 | 状態 |
 |---|---|---|
-| [S15 追加候補と原本SMTBMC/SBYの接続](S15-extra-solver-smtbmc.md) | Bitwuzlaの実help、Boolectorの終了10/20、native起動先の検査 | 両候補でSMTBMC各8条件・SBY各6条件の予備比較。初期の別native起動は除外。正式反復と製品認定は残件 |
-| [S15 追加候補の独立監査と反復](S15-extra-formal-audit.md) | SMTBMC/SBY全列とhelp・実code・実構文エラーの監査 | 予備28条件の全列監査。正式5回・A/Aと証拠復元は未完了 |
+| [S15 追加候補と原本SMTBMC/SBYの接続](S15-extra-solver-smtbmc.md) | Bitwuzlaの実help、Boolectorの終了10/20、native起動先の検査 | 両候補でSMTBMC各8条件・SBY各6条件の予備比較。初期の別native起動は除外。正式反復は後続の独立監査へ記録。製品認定は残件 |
+| [S15 追加候補の独立監査と反復](S15-extra-formal-audit.md) | SMTBMC/SBY全列とhelp・実code・実構文エラーの監査 | 正式5回・A/A 2回の全420行・全列監査。改変20件とZIP全38,413ファイルの復元後監査も成功。製品では無効 |
 | [S15 SBY子workerの停止と輸送の対照](S15-sby-controls.md) | 実ソルバーのstdin待機、全worker停止、delta改変とroot競合、非対応オプション | 正式5回・A/A 2回、全161行14列・966出力・707 workerを独立監査。ZIPからの全件復元も成功 |
 | [S15 SbyPopenのwitness変換](S15-sby-witness.md) | AIGER・BTORの形式境界、原本の子worker、nativeとの全byte比較 | 正式5回・A/A 2回、全14行9列・42出力・21 workerを監査。回路の反例検証とは別 |
 | [S3A Pyodide gowin_pack のビットストリーム比較](S3A-pyodide-gowin-pack.md) | native と Pyodide の `.fs` 出力、実行時間、配布 asset の比較 | 完了 |
@@ -43,7 +43,7 @@
 
 仮想デバイスによる測定値は、実機の値として扱いません。
 
-追加ソルバーの固定依存・取得原文と診断の事前基準は [S15 P4](S15-extra-solver-builds.md) に記録します。Boolector native/WASIのCLI 5条件と失敗試行を確認しました。ID幅とtraceの境界は修正後の正式反復が通りました。[BitwuzlaのMeson診断](S15-bitwuzla-build.md)は固定依存だけの清浄ビルドとCLI予備29実行が通りました。[BitwuzlaのCLI独立監査](S15-bitwuzla-cli-qualification.md)は正式5回・A/A 2回の全203行14列が通りました。[正式145行](S15-bitwuzla-cli-formal.csv)・[A/A 58行](S15-bitwuzla-cli-aa.csv)と[証拠目録](S15-bitwuzla-cli-files.csv)を保存し、ZIP復元後も全列を再監査しました。SMTBMC認定・製品配布は未完了です。
+追加ソルバーの固定依存・取得原文と診断の事前基準は [S15 P4](S15-extra-solver-builds.md) に記録します。Boolector native/WASIのCLI 5条件と失敗試行を確認しました。ID幅とtraceの境界は修正後の正式反復が通りました。[BitwuzlaのMeson診断](S15-bitwuzla-build.md)は固定依存だけの清浄ビルドとCLI予備29実行が通りました。[BitwuzlaのCLI独立監査](S15-bitwuzla-cli-qualification.md)は正式5回・A/A 2回の全203行14列が通りました。[正式145行](S15-bitwuzla-cli-formal.csv)・[A/A 58行](S15-bitwuzla-cli-aa.csv)と[証拠目録](S15-bitwuzla-cli-files.csv)を保存し、ZIP復元後も全列を再監査しました。後続の[原本SMTBMC/SBY認定](S15-extra-formal-audit.md)は正式反復と証拠復元を通りました。製品配布は未完了です。
 
 型幅と未対応processの追加対照は [S15 P4 可搬性](S15-solver-portability.md) に分け、原本IDの負の対照とgzip API trace拒否を正式5回・A/A 2回で確認しました。生CSV全56行21列とZIP復元後の独立監査を記録しています。
 

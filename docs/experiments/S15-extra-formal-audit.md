@@ -82,6 +82,34 @@ ZIPは同じ内容をSHA-256のobjectとして一度だけ格納し、元の論�
 
 計測器は全コマンド、submodule、各probeの実際の版・ホスト・資材・source・全snapshotを保存します。出力先が既存なら停止します。単体検査は `python3 -m unittest discover -s tests/check-solver-protocol`、構文検査は `node --check` と `python3 -m py_compile` です。
 
+## 清浄commitでの正式結果
+
+計測器と監査器を `b082702a21d4ed2b95b0fe7a12a8534d1449ffa7` に固定し、清浄な作業treeからPython接続資材を再生成しました。solverとYosysのbinaryは、前段で照合した資材を再利用しています。A/A 2回、その後に正式5回の全14組が個別監査と最終集計を通り、同じ保存証拠の `--audit-only` も成功しました。先の失敗試行や合成fixtureは混ぜていません。
+
+ホストはUbuntu 22.04.5 LTS、Linux `6.8.0-1061-aws`、x86_64、Intel Xeon、2 CPU、メモリー8,327,749,632 byteです。Node v24.21.0、native Python 3.12.13、Pyodide 314.0.7を使用しました。資材表にある固定compilerとsolver版、全submodule、全command、snapshotとsource hashは各probeのmetadataと `plan.json` に保持します。
+
+| 対象 | 正式行 | A/A行 | 合計行・全列 | 生CSV |
+|---|---:|---:|---|---|
+| SMTBMC | 80 | 32 | 112行15列 | [SMTBMC](S15-extra-formal-smtbmc.csv) |
+| SBY | 60 | 24 | 84行19列 | [SBY](S15-extra-formal-sby.csv) |
+| 異常対照 | 160 | 64 | 224行14列 | [controls](S15-extra-formal-controls.csv) |
+
+各表の全cellを生の証拠から導出し、status、error、終了codeも含めて照合しました。errorは全行空です。SMTBMCの `exited` は全性質のPASSを意味しません。SBYは通常のPASS/FAIL/UNKNOWNと6種類の意味分類を維持します。異常対照の取消・期限切れ・crash・protocol/runtime errorと、正常な反例・UNKNOWNを区別し、全workerの停止を確認しました。
+
+BitwuzlaのhelpとSMT子process、Boolectorの実終了10/20、実parserの構文エラー終了1、実codeから未許可9への変更を全反復で監査しました。native解決先、solver/Yosys/model hash、stderr、輸送のintegrity、VCD・YW・testbench・SQLite全5表、SBYの正規化後の全成果物も一致しています。SQLiteの生binary hashや実行時間まで反復一致とは主張せず、SQLiteの内容と保存hashをそれぞれ検査します。
+
+正式5標本だけの最小・中央値・最大は[全条件の時間表](S15-extra-formal-timings.csv)へ保存しました。A/Aは時間集計へ含めません。VMのworker起動・Pyodide初期化・輸送を含む値であり、solverの探索性能やTang Nano実機の値ではありません。
+
+### 改変対照とZIP復元
+
+正式原本から分けた検査用コピーで改変20件すべてを拒否しました。成果物、本体・solver hash、輸送のintegrity、欠落・余剰、3表それぞれのCSV status/error、保存した監査器、保存集計を対象にしています。変更前後のbaselineはともに終了0で監査を通り、各改変は終了1です。[証拠概要](S15-extra-formal-evidence.json)に各変更の前後hash、stream hash、拒否理由を保存しました。全streamと実コマンドはZIP内の別分類の対照記録にあります。
+
+証拠ZIP `p4-extra-formal-evidence-b082702-01.zip` は38,420,503 byte、全38,413論理ファイル、重複排除後7,461 objectです。SHA-256は `cbb86b879b089b76373cc35e2aa6b5f7773203c756ae7dfddb7c9e645b40e8e8`、manifestのSHA-256は `24a32cfc51ef767a9f99fa0367b6943295330fa96114dc62e87aeb0bbd6f32e2` です。計測・包装commitはともに上記の固定commitで、文書追記後のcommitを計測版とは扱いません。
+
+ZIPには採用campaign、前述の失敗試行、診断fixture、改変対照、原licenseとNOTICE、包装scriptと検査を別の論理パスで同梱しました。全38,413ファイルは成功件数ではありません。未使用の空の場所へ全5,765,474,485 byteを展開し、保存した監査器で同じ全列監査を再実行しました。さらに全ファイルのbyte数・hash・modeを目録と再照合しました。容量を確保するため復元コピーだけを削除し、原本・ZIP・再監査の受領記録は保持しています。実行手順と失敗試行の分類はZIP内の `classification-and-commands.json` に保存しています。
+
+同じ計測commitでPython 116件とWeb 273件の計389件が成功しました。後続のcatalog文言修正は、古い未ビルド・help未接続という無効理由だけを訂正し、`product-unqualified` のまま全modeで無効にします。資材の存在を申告しても両候補を有効化しない回帰検査を追加しました。
+
 ## 現在の判定
 
-監査器と計測器は実装済みです。清浄なcommitでの全対照の再検査、正式5回・A/A、証拠復元後の監査は未完了です。予備監査、正式結果、製品の有効化を別の状態として扱います。
+限定した原本SMTBMC/SBYの接続、全列監査、実行中停止を含む正式5回・A/A、改変対照、証拠復元後の監査は完了しました。元HDLによるSMT反例の独立再実行、製品資材の配布closure、製品worker/画面の接続と製品認定は未完了です。両候補は製品で無効のままです。Tang Nano実機は本リポジトリでは試していません。
