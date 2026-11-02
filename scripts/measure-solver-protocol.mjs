@@ -83,7 +83,7 @@ export async function measure({ manifestFile, out, repeats, aa, preliminary = fa
     copyFileSync(path.join(root, file), path.join(out, file.replaceAll("/", "__")));
   }
   globalThis.crossOriginIsolated = true;
-  const metadata = { format: 2, purpose: "Node real-solver protocol contracts, not browser isolation or HDL proofs", preliminary,
+  const metadata = { format: 3, purpose: "Node real-solver protocol contracts, not browser isolation or HDL proofs", preliminary,
     repeats, aa, harnessCommit: git(["rev-parse", "HEAD"]), worktreeStatus: status, sources, manifestSha256: digest(manifestBytes),
     argv: process.argv.slice(2), node: process.version, v8: process.versions.v8,
     timeVersion: execFileSync("/usr/bin/time", ["--version"], { encoding: "utf8" }),
@@ -93,6 +93,7 @@ export async function measure({ manifestFile, out, repeats, aa, preliminary = fa
   for (const [solver, targets] of Object.entries(probes)) for (const [runtime, probe] of Object.entries(targets)) {
     const label = `${solver}-${runtime}`;
     writeFileSync(path.join(out, label + ".metadata.json"), probe.metadata, { flag: "wx" });
+    writeFileSync(path.join(out, label + ".build-script.py"), probe.buildScript, { flag: "wx" });
     for (const command of probe.info.commands) {
       assert.match(command.label, /^[a-zA-Z0-9-]+$/);
       assert.equal(command.exit_status, 0);

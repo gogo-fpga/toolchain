@@ -2,6 +2,8 @@
 
 [形式検証の索引](S15-formal-verification.md) / [実験の索引](README.md)
 
+現在の結果は[両solverのnative/WASI正式比較](S15-solver-native-wasi.md)へ記録しています。clean buildと各5回・A/A 2回の全329行31列を監査済みです。以下は当初の事前基準・失敗と予備試行の履歴を保持したものです。SBYと製品画面の接続は未完了です。
+
 ## 目的と事前基準
 
 承認済みT6 P2として、上流のYices2とZ3を固定ソースからビルドし、SMT-LIBの解釈を移植せずにnativeとWASMの双方向通信を比較します。以下は実行前に定めた基準です。まだ成功結果ではありません。
@@ -73,6 +75,8 @@ python3 scripts/build-solver-probe.py --help
 ```
 
 ### 清浄なbuildの追加結果
+
+Z3 WASIの継続buildは全コンパイル後のlinkで失敗しました。SDKの例外libraryとWASIのfork登録を切り分けた[link診断の記録](S15-z3-wasi-link.md)へ、失敗logのhash、patchの理由、手動診断18条件、clean buildの再実行を保存します。正式なnative/WASI比較が未完了という結論は変えません。
 
 その後、`537a140b4ba4e233af6606a78071e80e08ce858b`の清浄なcheckoutで、Yices2のnativeとWASI、Z3 nativeのbuildが完了しました。手動の再linkではなく、記録したdriverを最後まで実行した結果です。各binaryのhash・Z3 nativeの実compilerとbuild時間・実応答の予備結果は[比較の記録](S15-solver-protocol.md)に分けます。Z3 WASIのbuildは続いており、正式反復の成功ではありません。
 

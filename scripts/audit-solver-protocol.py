@@ -68,7 +68,7 @@ def audit(directory, preliminary=False):
         return json.loads(read(name))
     end = data("metadata-end.json")
     start = data("metadata-start.json")
-    require(end["format"] == 2 and start["format"] == 2, "evidence format")
+    require(start["format"] == end["format"] and type(end["format"]) is int and end["format"] in [2, 3], "evidence format")
     require(re.fullmatch(r"[a-f0-9]{40}", end["harnessCommit"]) is not None, "invalid harness commit")
     require(end["status"] == "pass" and end["errors"] == [], "unsuccessful trial")
     require(type(end["preliminary"]) is bool and end["preliminary"] == preliminary, "trial mode")
@@ -109,7 +109,7 @@ def audit(directory, preliminary=False):
             require(re.fullmatch(r"[a-f0-9]{40}", probe["base_commit"]) is not None, "invalid build commit")
             require(type(probe["artifact"]["bytes"]) is int and probe["artifact"]["bytes"] > 0, "artifact size")
             require(bool(probe["compiler"]), "missing actual compiler")
-            if solver == "z3" and runtime == "native":
+            if solver == "z3":
                 require(bool(probe["compiler_cxx"]), "missing actual C++ compiler")
             labels = [c["label"] for c in probe["commands"]]
             require(len(labels) == len(set(labels)) and {"configure", "build"} <= set(labels), "build command coverage")
@@ -118,7 +118,10 @@ def audit(directory, preliminary=False):
                 require(type(command["exit_status"]) is int and command["exit_status"] == 0, "unsuccessful build command")
                 require(digest(read(f'{label}.{command["label"]}.log')) == command["log_sha256"], "raw build log hash")
             require(probe["source"]["version"].removeprefix("yices-").removeprefix("z3-") in probe["actualVersion"], "actual solver version")
-            require(probe["script_sha256"] == end["sources"]["scripts/build-solver-probe.py"], "build script hash")
+            if end["format"] == 3:
+                require(digest(read(label + ".build-script.py")) == probe["script_sha256"], "build script snapshot hash")
+            else:
+                require(probe["script_sha256"] == end["sources"]["scripts/build-solver-probe.py"], "build script hash")
             for patch in probe["patches"]:
                 require(patch["sha256"] == end["sources"][patch["path"]], "patch snapshot hash")
             if not preliminary:

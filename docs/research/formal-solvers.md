@@ -6,6 +6,8 @@
 
 固定したYices2とZ3のCLIをWASI Preview 1で動かし、既存のshimへ双方向入力を接続する方式を先に調べています。SMT-LIBの意味、parser、判定処理をJavaScriptへ移植しません。原本のC APIと公式のEmscripten経路も比較候補ですが、まだ製品の既定方式を変更していません。
 
+その後、Z3 WASIのclean buildも完了し、両solverのnative/WASIを同じ清浄な比較器commitで各5回・A/A 2回実行しました。全329行31列と294負の対照の独立監査が通っています。[正式条件・生CSV・資源・失敗と証拠](../experiments/S15-solver-native-wasi.md)を分けて保存します。上流CLIと既存workerの方式をP2で継続しますが、solverの既定は決めておらず、SBYや製品画面も未完了です。以下の「未確認」は各予備試行時点の制約を保持したものです。
+
 P2の初回予備ビルドでは以下の制約を確認しました。その後のYices2は、SDKの`libsetjmp.a`もリンクすると、予備WASMで単純なSMT入力の判定と値の取得を通りました。清浄なcommitからの再build、native比較と正式反復は残っており、形式検証機能の完成を示す結果ではありません。
 
 | 対象 | 確認した制約 | 対応と未確認の範囲 |
@@ -21,6 +23,8 @@ P2の初回予備ビルドでは以下の制約を確認しました。その後
 原典は固定版の[Yices2 configure](https://github.com/SRI-CSL/yices2/blob/85cf17e44eac76b5d14b297c09fc9bfecf47ef65/configure.ac)、[Makefile](https://github.com/SRI-CSL/yices2/blob/85cf17e44eac76b5d14b297c09fc9bfecf47ef65/Makefile)、[timer](https://github.com/SRI-CSL/yices2/blob/85cf17e44eac76b5d14b297c09fc9bfecf47ef65/src/utils/timeout.c)、[版の生成](https://github.com/SRI-CSL/yices2/blob/85cf17e44eac76b5d14b297c09fc9bfecf47ef65/utils/make_source_version)、[Z3のhwf.cpp](https://github.com/Z3Prover/z3/blob/430d19e697e2ec9bad79ff210d41b4a7a5fcfa3e/src/util/hwf.cpp)、[array_decl_plugin.cpp](https://github.com/Z3Prover/z3/blob/430d19e697e2ec9bad79ff210d41b4a7a5fcfa3e/src/ast/array_decl_plugin.cpp)です。
 
 ## timerと浮動小数点を区別する理由
+
+その後のZ3 WASIは全コンパイル後に例外libraryとfork登録の未解決で停止しました。SDKのlibunwind・setjmpを明示し、WASIのfork登録だけを除外すると隔離した手動linkが通りました。既存shimへ単一threadのyieldを加えた予備18条件も通っています。清浄なbuildと正式比較の成功ではありません。[link失敗・patchの理由・再実行の記録](../experiments/S15-z3-wasi-link.md)へ詳細を残します。
 
 timerはworkerの強制終了で期限を守れる可能性がありますが、その仕組みを確認するまではtimeout対応済みとしません。上流timerが使えないときに成功を返す代用品は作りません。WASI timerの拒否と、hostが期限超過を分類して古いjobの応答を捨てることを、別の負の対照で調べます。
 

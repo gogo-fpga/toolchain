@@ -48,5 +48,7 @@
 | [S15 P1 VHDL・PSL property保持](S15-vhdl-formal.md) | 上流GHDLの解析とmonitorを再利用し、明示した形式出力をYosysへ渡す | 清浄な72080beで33件成功、生CSV44行11列を監査。PSL解析の失敗も記録。独立再実行と正式反復は未完了 |
 | [S15 P1 元VHDLの独立再実行](S15-vhdl-native-replay.md) | GHDL標準VPI・PSLレポートと独立VCDで反例を照合 | 清浄な同一commitで55件×5回とA/Aの2回成功。CSV全280行19列を監査。下位化後比較・追加fixtureは未完了 |
 | [S15 P1 VHDLと下位化Verilog](S15-vhdl-lowered-replay.md) | 上流Yosysで下位化し、元VHDLとIcarus native/WASMを比較 | 69件の5回反復とA/Aが成功。[生CSV](S15-vhdl-lowered-results.csv)全420行20列を[監査](S15-vhdl-lowered-audit.json)。[失敗試行](S15-vhdl-lowered-failures.md)も保持 |
-| [S15 P2 ソルバーのビルドと双方向通信](S15-solver-build-and-transport.md) | 固定Yices2・Z3、stdin/stdout、終了・異常系、native/WASMの採否基準 | 輸送の基盤と予備Yices2 WASMを検査。正式なnative/WASM比較と反復は未完了 |
-| [S15 P2 実ソルバーの応答と終了](S15-solver-protocol.md) | bit-vector・array・長い応答、計算要求後の停止、hardware丸めの境界と全列監査 | Yices2の予備21実行を監査、Z3 nativeを予備確認。Z3 WASIと正式反復は未完了 |
+| [S15 P2 ソルバーのビルドと双方向通信](S15-solver-build-and-transport.md) | 固定Yices2・Z3、stdin/stdout、終了・異常系、native/WASMの採否基準 | 初期の失敗と予備輸送を保持。clean buildと正式反復は下記へ分離 |
+| [S15 P2 実ソルバーの応答と終了](S15-solver-protocol.md) | bit-vector・array・長い応答、計算要求後の停止、hardware丸めの境界と全列監査 | 事前基準と予備21実行などの履歴。正式結果は下記へ分離 |
+| [S15 P2 Z3 WASIのlink](S15-z3-wasi-link.md) | SDKの例外library、fork登録と単一threadのyield、buildと計測の履歴分離 | link失敗と手動18条件を保持。その後のclean buildは成功 |
+| [S15 P2 native/WASI正式比較](S15-solver-native-wasi.md) | 両solverの実応答、worker異常系、5回・A/A、資源、圧縮サイズと証拠 | 全329行31列・294負の対照を監査。SBY・製品画面は未完了 |

@@ -188,6 +188,8 @@ GHDL、NVC、Icarus Verilog など GPL のツールを WASM にビルドして R
 
 ## 7. 分割した調査
 
+Z3 WASIのlink失敗とSDK例外library・fork登録の対処は、[ソルバー調査](docs/research/formal-solvers.md)と[S15の診断記録](docs/experiments/S15-z3-wasi-link.md)に保存しました。手動18条件を経てclean buildと[両solverの正式反復](docs/experiments/S15-solver-native-wasi.md)まで実施しました。
+
 T6は上流SBY・SMTBMCの再利用を選び、固定ソースと[S15の事前基準](docs/experiments/S15-formal-verification.md)を登録しました。Yosys SAT、元のVerilogをIcarusで独立に再実行する検査経路、明示したGHDL形式出力によるVHDL・PSL property保持を追加しました。PSLのコメント解析には上流と同じ2フラグが必要で、activation coverはassertと区別します。[GHDLの診断と初回の失敗](docs/experiments/S15-vhdl-formal.md)も保存します。元VHDLのnative検査経路とその5回反復も追加しましたが、下位化後の比較、追加fixture、SMTソルバー・画面統合と製品版の正式反復は未完了です。以下に方式と制限、初期調査との差、依存、GMPの取得失敗と署名鍵の期限切れも記録します。
 
 大きな調査は `docs/research/` に分けて置きます。
@@ -215,9 +217,9 @@ T6は上流SBY・SMTBMCの再利用を選び、固定ソースと[S15の事前�
 
 Actions.lock は今回は導入を見送り、現行の完全長 SHA 固定を維持します。取得元 ID と推移依存の保護という追加価値、導入の制限、未確認の事項は上記の調査に記録しました。
 
-T6 P2では、WASI shimの同期stdin reader、容量を制限した共有buffer、期限・整合性・終了を管理する専用workerを追加しました。予備Yices2 WASMで、Nodeの実workerと既存shimによる双方向SMT通信を確認しました。5 byteに分割した入力と7 byteのbufferで、check-sat、get-value、push/popとEOFを通しています。これは清浄なcommitの正式反復やnative比較ではありません。Yices2とZ3の予備ビルドで見つかったGMP検索先、cross makeのarch、上流alarm、SDKとEmscriptenの丸め処理、C++標準ライブラリー、setjmp/longjmp、版表示の由来は、[ソルバーの調査](docs/research/formal-solvers.md)と[S15 P2](docs/experiments/S15-solver-build-and-transport.md)へ記録します。Z3の未対応hardware丸めを明示的に拒否する候補は、単独ファイルのコンパイル対照までで、solver全体の採用結果ではありません。ソルバーの正式比較・反復、SBYと画面の接続は未完了です。
+T6 P2では、WASI shimの同期stdin reader、容量を制限した共有buffer、期限・整合性・終了を管理する専用workerを追加しました。予備Yices2 WASMでは5 byteの入力chunkと7 byteのbufferで双方向SMT通信を確認しました。この段階は正式反復ではありません。GMP検索先、cross makeのarch、alarm、SDKとEmscriptenの丸め、C++標準ライブラリー、setjmp/longjmp、版表示の由来を[ソルバー調査](docs/research/formal-solvers.md)と[S15 P2](docs/experiments/S15-solver-build-and-transport.md)に残します。hardware丸めの単独compile後、実Z3 WASIでも非対応要求を明示拒否できました。
 
-その後、Z3 nativeのbuildが完了し、unknownを含む6条件と通常の浮動小数点・hardware丸めのnative対照が予備検査で成功しました。Yices2 WASIとZ3 nativeの計算要求後の期限切れ・取消も確認しました。全31列をraw logへ照合する独立監査器と、欠測をnullに保つ資源集計を追加しています。[実応答と監査の記録](docs/experiments/S15-solver-protocol.md)に、native binaryのhash・実際のC++ compiler・build時間、予備21実行の監査と制約を残します。Z3 WASIのbuild・拒否動作と両系の正式反復は未完了です。
+その後、Z3のclean buildを終え、両solverのnative/WASIを清浄な`3ea717e`の比較器で各5回・A/A 2回実行しました。全329行31列と294負の対照を監査し、正常3条件の全byte一致と異常分類を確認しました。欠測をnullに保つ資源、生CSV、全buildの由来と警告、証拠ZIPは[正式比較](docs/experiments/S15-solver-native-wasi.md)、予備21実行などの履歴は[実応答記録](docs/experiments/S15-solver-protocol.md)へ分けます。Z3 WASIはZstandardで5,246,594 byteとなり、host展開後のhashも元と一致しました。ブラウザーの展開、SBYと製品画面、既定solverの選定は未完了です。
 
 ## 8. 未確認の事項
 
