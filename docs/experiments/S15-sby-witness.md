@@ -49,6 +49,8 @@ python3 scripts/audit-formal-witness.py build/S15/p3-witness-preliminary
 
 正式反復の結果は次節へ保存します。ブラウザーの画面、実機Tang Nano、AIGER・BTORの実ソルバーは本リポジトリでは試していません。
 
+提出前の初回再検査では、呼び出しコマンドに存在しないモデルのpathを渡し、入力の読込みで停止しました。rootや変換の子workerは起動しておらず、変換失敗とは数えません。ログは`build/S15/p3-witness-submitted-56f83b3.log`へ残します。実際の出力先は`yices2-bounded-pass/output/result/model/design_prep.il`です。計測器や採否の基準は変えず、この入力指定だけを直して、別の出力先で再検査します。
+
 ## 正式5回とA/A 2回
 
 清浄な`56219e54dc03fe1d4de98e1c572d9ddda81bd4e6`で、[SBY異常対照と同じschedule](S15-sby-controls.md#正式5回とaa-2回)の全7組を実行しました。各回で実SbyPopenから原本のwitness子を2つ起動し、nativeとPyodideの終了0・stdout・stderr・出力全byteが一致しました。全42出力と21物理workerの実exitも監査しました。
