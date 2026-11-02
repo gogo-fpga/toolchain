@@ -26,8 +26,8 @@
 ## 再実行の入口
 
 ```sh
-python3 scripts/build-solver-probe.py --solver bitwuzla --runtime native --meson meson --jobs 1 --out build/S15/bitwuzla-native-new
-python3 scripts/build-solver-probe.py --solver bitwuzla --runtime wasi --meson meson --jobs 1 --out build/S15/bitwuzla-wasi-new
+python3 scripts/build-solver-probe.py --solver bitwuzla --runtime native --meson "$HOME/.cache/toolchain-meson/bin/meson" --jobs 1 --out build/S15/bitwuzla-native-new
+python3 scripts/build-solver-probe.py --solver bitwuzla --runtime wasi --meson "$HOME/.cache/toolchain-meson/bin/meson" --jobs 1 --out build/S15/bitwuzla-wasi-new
 node scripts/probe-extra-solver-cli.mjs --solver bitwuzla --phase formal-probe --native build/S15/bitwuzla-native-new --wasi build/S15/bitwuzla-wasi-new --negative-wasi build/S15/bitwuzla-wasi-clean-01 --out build/S15/bitwuzla-cli-new
 python3 scripts/audit-extra-solver-cli.py --input build/S15/bitwuzla-cli-new
 ```
