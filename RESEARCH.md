@@ -213,7 +213,7 @@ T6は上流SBY・SMTBMCの再利用を選び、[S15の事前基準](docs/experim
 | [原本SBY・SMTBMCのprocess境界](docs/experiments/S15-sby-process.md) | Pyodideの制約、SQLite、native SBY12条件、SMTBMC仮想processの16条件・AST照合、Yosys子workerと安全なファイル差分、初期の失敗記録 |
 | [SBY全体の仮想process接続](docs/experiments/S15-sby-runtime.md) | SbyPopen・単一slot・子差分・両solver各6条件の比較 |
 | [SBY全成果物・16列の独立監査](docs/experiments/S15-sby-artifact-audit.md) | 全268成果物・SQLite・終了・16列の改変拒否 |
-| [SBY正式5回・A/A 2回](docs/experiments/S15-sby-repeated.md) | 同一commit・全成果物hash・19列の事前基準と再実行 |
+| [SBY正式5回・A/A 2回](docs/experiments/S15-sby-repeated.md) | 同一commitで全84行・19列・1,876成果物が一致 |
 
 元VHDLの独立再実行は、GHDL標準のVPIと`--psl-report`を再利用する限定した検査経路を追加しました。清浄な同一commitで55件×5回とA/Aの2回が成功し、元ファイルとCSV全280行19列を照合しています。通常assertionとclocked PSLの評価位相、coverが既定では標準出力に現れないこと、root moduleのVPI列挙、生CSV・全ファイルのhash・失敗試行と未完了の範囲を[元VHDLによる再実行の実験記録](docs/experiments/S15-vhdl-native-replay.md)へ保存します。下位化後のVerilog比較、追加fixtureとT6全体は未完了です。
 

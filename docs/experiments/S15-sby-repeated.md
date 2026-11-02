@@ -52,4 +52,46 @@ runnerが最初に2回のA/Aを実行し、その後の5回を正式反復とし
 
 ## 結果
 
-上記の基準を固定した段階です。未commitのunit検査を正式反復とは数えません。清浄な実行commit、全列の生CSV、各回の完全な監査結果、時間統計、失敗試行、証拠のhashを実行後に追記します。
+清浄な`3a5c4b33e2b8181721c9a6e9e837220534f82672`で全7組が成功しました。実行前の基準からの変更や、破棄した正式試行はありません。実行した版でWeb/実WASI 272件・Python 49件が成功した後に、A/A 2回、正式5回を順に実行しました。
+
+[生CSV全84行19列](S15-sby-repeated-3a5c4b3.csv)を、全7組の元の結果・metadata・全1,876成果物・SQLite・transportから独立に作り直して一致を確認しました。CSVのSHA-256は`6a77fb68181a9d87841e58e86cac110fdf0ffa6cceedf4c278a07d6d09478740`です。全12条件の正規化後の全成果物hashは、A/Aと正式5回で一致しています。[全時間統計とhash](S15-sby-repeated-3a5c4b3.json)も保存しました。native/Pyodideのroot・Yosys・SMTBMCのlogを全回調べ、warning・error・traceback・unsupportedの診断は0件でした。期待したSMTBMC phaseのFAILとSBYのUNKNOWN/FAILは、診断0件とは別に全回で検査しています。
+
+### 正式5回の時間
+
+単位はmsで、各欄は最小 / 中央値 / 最大です。表示だけ小数3桁に丸め、元の値は生CSVへ保持しました。これはこの環境の端から端までの時間で、browser UIや実機の値ではありません。
+
+| solver | 条件 | native | Pyodide/WASI |
+|---|---|---:|---:|
+| Yices2 | bmc-prefix | 198.213 / 227.038 / 247.963 | 4328.462 / 4361.420 / 5819.489 |
+| Yices2 | bmc-violation | 194.937 / 233.820 / 257.753 | 4247.525 / 4291.595 / 5718.592 |
+| Yices2 | prove-inconclusive | 242.336 / 286.207 / 319.284 | 5537.308 / 5889.712 / 6935.390 |
+| Yices2 | prove-invariant | 265.108 / 265.965 / 314.668 | 5726.665 / 5806.493 / 6686.047 |
+| Yices2 | cover-reached | 196.383 / 210.484 / 250.264 | 4181.756 / 4331.216 / 4883.367 |
+| Yices2 | cover-unreached | 196.395 / 199.921 / 244.944 | 4257.240 / 4325.367 / 4470.819 |
+| Z3 | bmc-prefix | 209.049 / 212.856 / 255.962 | 4343.731 / 4515.266 / 4679.846 |
+| Z3 | bmc-violation | 209.547 / 218.881 / 291.247 | 4435.604 / 4586.485 / 4644.941 |
+| Z3 | prove-inconclusive | 266.730 / 284.890 / 386.587 | 6028.563 / 6152.433 / 6462.076 |
+| Z3 | prove-invariant | 268.091 / 279.398 / 445.434 | 6004.242 / 6061.206 / 6267.742 |
+| Z3 | cover-reached | 207.394 / 223.851 / 375.138 | 4429.868 / 4435.345 / 4455.161 |
+| Z3 | cover-unreached | 206.169 / 219.328 / 395.440 | 4348.477 / 4467.221 / 4565.048 |
+
+OSはLinux 6.8.0-1061-aws x86_64、glibc 2.35、論理CPU数は2、`MemTotal`は8,132,568 kBでした。Node v24.21.0、native Python 3.12.13、Pyodide package 314.0.7です。各回でsource/pin/patch、native/WASI binary、runtime版の全一致を確認しました。個々の環境と引数・元の値は`plan.json`と各回のmetadataに残しています。
+
+### 保全した証拠
+
+各回の目録を、[A/A 1](S15-sby-repeated-aa-1.files.csv)、[A/A 2](S15-sby-repeated-aa-2.files.csv)、[正式1](S15-sby-repeated-run-1.files.csv)、[正式2](S15-sby-repeated-run-2.files.csv)、[正式3](S15-sby-repeated-run-3.files.csv)、[正式4](S15-sby-repeated-run-4.files.csv)、[正式5](S15-sby-repeated-run-5.files.csv)へ分けました。[共通の計測器・資材・log・集計](S15-sby-repeated-common.files.csv)も保持し、1 CSVを1 MB未満にしています。
+
+全7,411ファイルの元のサイズは合計1,021,832,101 byteです。同じbinary等をSHA-256で重複排除し、1,459個のobjectと元の相対path・サイズ・hashの対応表をZIPへ保存しました。native起動用symlinkは含めず、各回の入力binaryの実体は保持しています。ZIP内の`restore.py`が空の出力先へ全pathを復元し、1件ずつサイズとhashを検査します。
+
+```sh
+unzip S15-sby-repeated-evidence-3a5c4b3.zip restore.py README.txt
+python3 restore.py S15-sby-repeated-evidence-3a5c4b3.zip evidence-restored
+python3 evidence-restored/scripts/measure-formal-sby.py \
+  --out evidence-restored/build/S15/p3-sby-campaign --audit-only
+```
+
+`S15-sby-repeated-evidence-3a5c4b3.zip`は45,452,961 byte、SHA-256は`d8b7f2cdd8b8ac34210e4410bf09aa0e1ac35b22f199b370615ed524ac67585b`です。実際にZIPから全7,411ファイルを別directoryへ復元して全件再hashし、復元した計測器だけで全7組・84行・19列・1,876成果物の独立監査が通りました。ZIPはチャットで渡し、repositoryにはCSV・時間統計・目録と本記録を保存します。
+
+### 採否と残件
+
+事前基準を満たしたため、原本SBYのこの12条件についてprocess境界と成果物回収の接続を採用します。これはBMCのPASSを証明へ昇格させる根拠ではなく、source pinとこの条件集合を超えた全回路の正しさも意味しません。worker異常対照、witnessの実変換、元回路の反例検査、製品の配布・画面統合、CI全体は引き続き残件です。
