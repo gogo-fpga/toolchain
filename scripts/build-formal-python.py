@@ -46,8 +46,9 @@ def build(root, output):
         source = root / "patches" / name
         subprocess.run(["patch", "--batch", "--fuzz=0", "--no-backup-if-mismatch", "-p1", "-i", str(source)], cwd=output, check=True)
         patches[name] = hashlib.sha256(source.read_bytes()).hexdigest()
-    adapter = root / "web/formal_process.py"
-    (output / adapter.name).write_bytes(adapter.read_bytes())
+    for name in ("formal_process.py", "formal_trace.py"):
+        adapter = root / "web" / name
+        (output / name).write_bytes(adapter.read_bytes())
     files = sorted(p for p in output.rglob("*") if p.is_file())
     manifest = {"format_version": 1, "pins": pins, "patch_sha256": hashlib.sha256(patch.read_bytes()).hexdigest(), "patches": patches,
         "origins": origins, "assets": [{"path": p.relative_to(output).as_posix(), "size": p.stat().st_size,

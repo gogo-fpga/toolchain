@@ -6,7 +6,7 @@ export async function runFormalPythonJob(data, loadPyodide, postMessage) {
   const { jobId, sources, manifest, entrypoint, args, files, cwd = null } = data;
   let status = "setup-error";
   try {
-    if (typeof jobId !== "string" || !["smtbmc", "sby", "witness"].includes(entrypoint) ||
+    if (typeof jobId !== "string" || !["smtbmc", "sby", "witness", "formal_trace"].includes(entrypoint) ||
         (cwd !== null && (!safePath(cwd) || cwd.includes("\0") || cwd.length > 512)) ||
         !Array.isArray(args) || args.length > 64 || !args.every(arg => typeof arg === "string" && arg.length < 4096 && !arg.includes("\0"))) {
       throw new TypeError("Invalid formal Python job");

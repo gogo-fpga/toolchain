@@ -18,6 +18,72 @@ function sources(text) {
     assets: assets.map(file => ({ path: file.path, size: file.bytes.length, sha256: sha256(file.bytes) })) } };
 }
 
+function traceSources(text) {
+  const { sources: assets } = sources(text);
+  for (const [path, file] of [["formal_trace.py", "../../web/formal_trace.py"],
+    ["original_smtio.py", "../../vendor/yosys/backends/smt2/smtio.py"]]) {
+    assets.push({ path, bytes: new Uint8Array(readFileSync(new URL(file, import.meta.url))) });
+  }
+  assets.push({ path: "smtio.py", bytes: bytes(`import ast, re
+from pathlib import Path
+tree = ast.parse(Path(__file__).with_name('original_smtio.py').read_text())
+classes = [node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == 'MkVcd']
+assert len(classes) == 1
+exec(compile(ast.Module(body=classes, type_ignores=[]), __file__, 'exec'))
+`) });
+  return { sources: assets, manifest: { format_version: 1,
+    assets: assets.map(file => ({ path: file.path, size: file.bytes.length, sha256: sha256(file.bytes) })) } };
+}
+
+test("explicit trace entrypoint records upstream VCD without changing the default SMTBMC result", { timeout: 30000 }, async () => {
+  const code = `from smtio import MkVcd
+with open('trace.vcd', 'w') as stream:
+    writer = MkVcd(stream)
+    writer.add_net(['top', 'q'], 1)
+    writer.add_clock(['top', 'clk'], 'posedge')
+    writer.set_time(0)
+    writer.set_net(['top', 'q'], '1')
+    writer.set_net(['top', 'clk'], '0')
+    writer.set_time(1)
+raise SystemExit(1)
+`;
+  const run = entrypoint => startFormalPython({ ...traceSources(code), entrypoint, args: ["model.smt2"],
+    files: [{ path: "model.smt2", bytes: bytes("fixed model") }], workerFactory: nodeFormalWorker, timeoutMs: 10000 }).completion;
+  const plain = await run("smtbmc");
+  const recorded = await run("formal_trace");
+  for (const result of [plain, recorded]) {
+    assert.equal(result.status, "exited", result.error); assert.equal(result.exitCode, 1);
+    assert.equal(result.integrityVerified, true); assert.equal(result.children.length, 0);
+    assert.ok(!result.files.some(file => file.path.startsWith(".formal-trace-")), "No temporary output published");
+  }
+  const content = (result, name) => result.files.find(file => file.path === name)?.bytes;
+  assert.deepEqual(content(recorded, "trace.vcd"), content(plain, "trace.vcd"));
+  assert.equal(content(plain, "formal-trace.json"), undefined);
+  const capture = JSON.parse(new TextDecoder().decode(content(recorded, "formal-trace.json")));
+  assert.equal(capture.upstreamExitCode, 1);
+  assert.equal(capture.model.sha256, sha256(bytes("fixed model")));
+  assert.equal(capture.traces[0].sha256, sha256(content(plain, "trace.vcd")));
+  assert.equal(capture.traces[0].endTime, 1);
+  assert.deepEqual(capture.traces[0].steps[0].values, [{ path: ["top", "q"], bits: "1" }, { path: ["top", "clk"], bits: "0" }]);
+});
+
+test("trace entrypoint rejects unknown values, truncated traces and unsafe file arguments", { timeout: 40000 }, async () => {
+  const prefix = "from smtio import MkVcd\nwith open('trace.vcd', 'w') as stream:\n    writer = MkVcd(stream)\n    writer.add_net(['top', 'q'], 1)\n    writer.set_time(0)\n";
+  for (const [code, args] of [
+    [prefix + "    writer.set_net(['top', 'q'], 'x')\n    writer.set_time(1)\n", ["model.smt2"]],
+    [prefix + "    writer.set_net(['top', 'q'], '1')\n", ["model.smt2"]],
+    ["raise RuntimeError('must not run')\n", ["--dump-vcd", "../escape.vcd", "model.smt2"]],
+  ]) {
+    const errors = [];
+    const result = await startFormalPython({ ...traceSources(code), entrypoint: "formal_trace", args,
+      files: [{ path: "model.smt2", bytes: bytes("fixed model") }], workerFactory: nodeFormalWorker, timeoutMs: 10000,
+      onStderr: line => errors.push(line) }).completion;
+    assert.equal(result.status, "runtime-error");
+    assert.match(errors.join(""), /ValueError: (Invalid captured bits|Incomplete captured trace|Unsafe trace file path)/);
+    assert.ok(!(result.files ?? []).some(file => file.path === "formal-trace.json"));
+  }
+});
+
 function fakeWorker(send) {
   const listeners = new Map();
   return {
