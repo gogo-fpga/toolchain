@@ -12,9 +12,17 @@ globalThis.crossOriginIsolated = true;
 const { values } = parseArgs({ options: {
   native: { type: "string" }, wasi: { type: "string" }, out: { type: "string" },
   solver: { type: "string", default: "boolector" }, "negative-wasi": { type: "string" },
+  phase: { type: "string", default: "preliminary" },
 } });
 assert.ok(values.native && values.wasi && values.out, "Required: --native --wasi --out");
 assert.ok(["boolector", "bitwuzla"].includes(values.solver), "Unsupported solver");
+assert.ok(["preliminary", "formal-probe"].includes(values.phase), "Unsupported measurement phase");
+const worktree = execFileSync("git", ["status", "--porcelain", "--untracked-files=all"], { cwd: root, encoding: "utf8" });
+if (values.phase === "formal-probe") {
+  assert.equal(values.solver, "bitwuzla");
+  assert.equal(worktree, "", "Formal CLI measurements require a clean worktree");
+  assert.ok(values["negative-wasi"], "Formal CLI measurements require the pre-fix negative control");
+}
 const probes = [loadSolverProbe(values.native, values.solver, "native"), loadSolverProbe(values.wasi, values.solver, "wasi")];
 assert.equal(probes[0].info.base_commit, probes[1].info.base_commit);
 const negative = values["negative-wasi"] ? loadSolverProbe(values["negative-wasi"], values.solver, "wasi") : null;
@@ -60,7 +68,18 @@ if (values.solver === "bitwuzla") {
     input: "(set-logic QF_ABV)(declare-fun a () (Array (_ BitVec 8) (_ BitVec 8)))(assert (not (= (select (store a #x2a #x7f) #x2a) #x7f)))(check-sat)\n" });
 }
 const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
-json("setup.json", { format: 1, purpose: "Diagnostic CLI comparison, not formal qualification", solver: values.solver, commit,
+const sources = {};
+for (const file of ["scripts/probe-extra-solver-cli.mjs", "tests/synth/solver-protocol-helpers.mjs",
+  "tests/web/solver-process-helpers.mjs", "tests/web/solver-node-worker.mjs", "web/lib/solver-process.mjs",
+  "web/lib/solver-job.mjs", "web/lib/byte-pipe.mjs", "web/lib/smt-response-framer.mjs", "web/lib/wasi-p1.mjs", "web/solver-worker.mjs",
+  "scripts/audit-extra-solver-cli.py", "tests/check-solver-protocol/test_extra_cli_audit.py"]) {
+  const bytes = readFileSync(path.join(root, file));
+  if (values.phase === "formal-probe") assert.deepEqual(bytes, execFileSync("git", ["show", `${commit}:${file}`], { cwd: root }));
+  sources[file] = digest(bytes);
+  writeFileSync(path.join(output, file.replaceAll("/", "__")), bytes, { flag: "wx" });
+}
+json("setup.json", { format: 2, purpose: "Diagnostic CLI comparison, not product qualification", solver: values.solver, commit,
+  phase: values.phase, repository: root, worktree, sources,
   argv: process.argv.slice(2), node: process.version, cases,
   builds: probes.map(probe => ({ ...probe.info, metadata_sha256: probe.metadataSha256 })),
   negative_build: negative ? { ...negative.info, metadata_sha256: negative.metadataSha256 } : null });
@@ -68,6 +87,7 @@ json("setup.json", { format: 1, purpose: "Diagnostic CLI comparison, not formal 
 async function run(probe, fixture) {
   const expected = { status: "exited", ...fixture, ...(probe.info.runtime === "wasi" ? fixture.wasi : {}) };
   const started = performance.now();
+  writeFileSync(path.join(output, `${probe.info.runtime}-${fixture.name}.stdin`), fixture.input, { flag: "wx" });
   let result;
   let stdout;
   let stderr;
@@ -94,15 +114,16 @@ async function run(probe, fixture) {
     stdout = Buffer.concat(out);
     stderr = Buffer.concat(err);
   }
+  const ended = performance.now();
   const row = { runtime: probe.info.runtime, case: fixture.name, status: result.status, exit_code: result.exitCode,
-    signal: result.signal ?? null, elapsed_ms: performance.now() - started, wasm_memory_bytes: result.memoryBytes,
+    signal: result.signal ?? null, elapsed_ms: ended - started, wasm_memory_bytes: result.memoryBytes,
     input_sha256: digest(fixture.input), stdout_sha256: digest(stdout), stderr_sha256: digest(stderr),
     binary_sha256: probe.info.artifact.sha256, build_commit: probe.info.base_commit, metadata_sha256: probe.metadataSha256,
     write_error: writeError };
   const prefix = `${row.runtime}-${fixture.name}`;
   writeFileSync(path.join(output, `${prefix}.stdout`), stdout, { flag: "wx" });
   writeFileSync(path.join(output, `${prefix}.stderr`), stderr, { flag: "wx" });
-  json(`${prefix}.json`, { ...row, result });
+  json(`${prefix}.json`, { ...row, result, args: fixture.args, started_ms: started, ended_ms: ended });
   appendFileSync(results, csv(columns.map(column => row[column])));
   assert.equal(result.status, expected.status);
   assert.equal(result.exitCode, expected.exit);
@@ -113,7 +134,7 @@ async function run(probe, fixture) {
     assert.equal(writeError, null);
     assert.equal(stderr.length, 0);
   } else {
-    assert.match(stderr.toString(), /expected command at 'not-a-command'/);
+    assert.equal(stderr.toString(), "[error] <stdin>:1:19: expected command at 'not-a-command'\n");
     assert.equal(stdout.length, 0);
   }
   if (expected.stdout !== undefined) assert.equal(stdout.toString(), expected.stdout);
@@ -134,5 +155,5 @@ if (negative) {
   const syntax = cases.find(fixture => fixture.name === "syntax");
   await run(negative, { ...syntax, name: "syntax-before-exit-fix", status: "runtime-error", exit: null, stdout: "" });
 }
-json("summary.json", { status: "pass", commit, cases: cases.length, executions: cases.length * probes.length + (negative ? 1 : 0),
+json("summary.json", { status: "pass", commit, phase: values.phase, cases: cases.length, executions: cases.length * probes.length + (negative ? 1 : 0),
   csv_sha256: digest(readFileSync(results)) });
