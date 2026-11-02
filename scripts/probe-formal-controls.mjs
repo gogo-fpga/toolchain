@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import { parseArgs } from "node:util";
 import { startFormalPython } from "../web/lib/formal-python-process.mjs";
 import { readFormalSources } from "../tests/synth/formal-python-helpers.mjs";
@@ -38,11 +39,14 @@ const yosys = { wasm: new Uint8Array(readFileSync(path.join(values.synth, "yosys
   share: new Uint8Array(readFileSync(path.join(values.synth, "yosys-share.tar"))), shareSha256: asset("yosys-share.tar").sha256 };
 assert.equal(digest(yosys.wasm), yosys.sha256); assert.equal(digest(yosys.share), yosys.shareSha256);
 save("inputs/yosys.wasm", yosys.wasm); save("inputs/yosys-share.tar", yosys.share);
-const metadata = { format: 1, preliminary: !values.formal, commit, worktree, command: process.argv.slice(1),
+const metadata = { format: 1, preliminary: !values.formal, commit, worktree, command: process.argv.slice(1), startedUtc: new Date().toISOString(),
+  host: { platform: process.platform, arch: process.arch, release: os.release(), cpu: os.cpus()[0].model, cpus: os.availableParallelism(), memoryBytes: os.totalmem() },
+  environment: Object.fromEntries(["LANG", "LC_ALL", "TZ"].map(name => [name, process.env[name] ?? null])),
   node: process.version, pyodidePackage: JSON.parse(readFileSync(path.join(root, "node_modules/pyodide/package.json"))).version,
   sources: sources.manifest, yosys: { sha256: yosys.sha256, shareSha256: yosys.shareSha256 }, snapshots: {}, probes: {},
   deadlineMs: 15_000, cleanupDeadlineMs: 5000 };
-const snapshots = ["scripts/probe-formal-controls.mjs", "scripts/build-formal-python.py", "scripts/probe-upstream-formal.mjs",
+const snapshots = ["scripts/probe-formal-controls.mjs", "scripts/audit-formal-controls.py", "scripts/audit-formal-sby.py", "scripts/sby-artifact-audit.py",
+  "scripts/build-formal-python.py", "scripts/probe-upstream-formal.mjs", "scripts/measure-formal-controls.py",
   "web/formal_process.py", "patches/sby-process.patch", "patches/yosys-smtio-process.patch", "package-lock.json", ".gitmodules",
   ...["formal-python-process", "formal-python-job", "formal-tool-client", "formal-process-client", "formal-tool-process", "formal-tool-command",
     "formal-workspace", "formal-wasi-job", "solver-job", "solver-process", "wasi-p1", "byte-pipe", "verified-assets"].map(name => `web/lib/${name}.mjs`),

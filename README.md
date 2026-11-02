@@ -18,7 +18,7 @@ T0 から T3 の編集・保存・合成・配置配線・ビットストリー�
 
 [原本SMTBMCのPyodide接続](docs/experiments/S15-sby-process.md)は、process・pipe・待機だけを仮想化し、両solverのBMC・basecase・induction・coverをnativeと比較しています。予備16条件ではログ・VCD・YW・testbenchが一致し、13列CSVの独立監査も通りました。
 
-[SBY全体の仮想process接続](docs/experiments/S15-sby-runtime.md)も追加しました。BMCの有界PASS、proveのUNKNOWN、coverの到達・未到達を区別し、初期実装は`-j 1`に限ります。[全268成果物・16列の独立監査](docs/experiments/S15-sby-artifact-audit.md)に加え、[清浄な同一commitの正式5回・A/A 2回](docs/experiments/S15-sby-repeated.md)で両solver各6条件が一致し、生CSV全84行19列と反復間の全成果物hashを照合しました。worker異常対照、元回路による反例検証、配布・画面統合は残っています。
+[SBY全体の仮想process接続](docs/experiments/S15-sby-runtime.md)も追加しました。BMCの有界PASS、proveのUNKNOWN、coverの到達・未到達を区別し、初期実装は`-j 1`に限ります。[全268成果物・16列の独立監査](docs/experiments/S15-sby-artifact-audit.md)に加え、[清浄な同一commitの正式5回・A/A 2回](docs/experiments/S15-sby-repeated.md)で両solver各6条件が一致し、生CSV全84行19列と反復間の全成果物hashを照合しました。[worker異常対照](docs/experiments/S15-sby-controls.md)と[原本のwitness変換](docs/experiments/S15-sby-witness.md)は、予備検査と独立監査まで実施しています。正式反復、元回路による反例検証、配布・画面統合は残っています。
 
 ## IDE 画面
 

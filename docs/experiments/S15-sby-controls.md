@@ -36,17 +36,33 @@ node scripts/probe-formal-controls.mjs \
   --synth build/synth --out build/S15/p3-controls-preliminary
 ```
 
-`--solver yices2|z3`と`--case NAME`で条件を選びます。正式版は`--formal`を加え、A/Aを2回行ってから正式に5回以上繰り返します。正式反復の開始前に、全列の独立監査と、その改変を拒否する単体検査を追加します。実行中の計測器は編集しません。
+`--solver yices2|z3`と`--case NAME`で条件を選びます。正式版は`--formal`を加えます。独立監査器`audit-formal-controls.py`は、実行器の判定関数を呼ばず、生の終了情報・イベント・ファイルから全12列を作り直します。各CSV列の改変、欠落した待機・異常注入・実exit、早すぎる期限、UNKNOWNの終了0、未停止のworker、偽PASSとシンボリックリンクを負の対照にします。
+
+正式なA/A 2回と5回の実行には次を使います。各回の23条件の後、[witnessの2形式](S15-sby-witness.md)も同じcommitで比較します。全結果を再監査し、反復間のソース・バイナリー・実行器の一致と、生CSV全14列を照合します。実行中の計測器は編集しません。
+
+```sh
+python3 scripts/measure-formal-controls.py \
+  --sources build/S15/p3-sby-campaign-assets \
+  --probes build/S15/p2-native-wasi-all-probes.json \
+  --synth build/synth --yosys build/native/yosys \
+  --out build/S15/p3-controls-campaign
+python3 scripts/measure-formal-controls.py \
+  --out build/S15/p3-controls-campaign --audit-only
+```
+
+正式版ではホストのOS・CPU・メモリー、Node・Pyodideの版、Pythonの実際の版、原本・パッチとバイナリーのhash、コマンド、UTCの開始時刻を保存します。ビルドを繰り返す試験ではなく、固定した既存資材を使います。5回の所要時間の最小・中央値・最大も保存しますが、期限切れや検査用待機を含む値をソルバーの性能とは扱いません。
 
 ## 結果と制約
 
-予備検査は両ソルバー各9条件とオプション拒否5条件の全23条件で成功しました。独立監査・正式反復・witness子の実変換は未完了です。初回の不合格や中止も、後の成功で消さずに記録します。
+予備検査は両ソルバー各9条件とオプション拒否5条件の全23条件で成功しました。正式反復は未完了です。初回の不合格や中止も、後の成功で消さずに記録します。
 
 初回のYices2予備検査では、14条件中3条件が検査用Node bridgeの不備で不合格になりました。実Yosys workerが正しい終了通知を送った後、deltaの書き出し中にNodeの自然終了0が届くと、bridgeが異常停止と誤分類していました。正常な終了通知を受け取った事実と、その後のNode exitを別に記録するよう修正します。製品の判定や採否の基準は変更しません。初回の全ログは`build/S15/p3-controls-preliminary-1`へ保全しています。
 
 修正後の2回目は全23条件が成功しました。3回目は待機対象のSharedArrayBufferが実際のstdinのものであることと、rootの競合ファイルが改変されずに残ることも確認し、全23条件が成功しました。同じ作業コピーでWeb・実WASIの既存272件も成功しています。これらは未コミットの予備値であり、正式な同一commitの確認とは区別します。生CSV、各終了情報、全イベント、全workerの実exitと資材は、それぞれ`build/S15/p3-controls-preliminary-2`と`build/S15/p3-controls-preliminary-3`へ保存しています。
 
-witness用mapの最初の生成は、`formalff -ff2anyinit -anyinit2ff`という互いに排他的なオプションを同時に渡して停止しました。出力mapは生成されていません。ログは`build/S15/p3-witness-map-preliminary.log`へ保存し、上流の生成手順を調べ直します。witness変換の成功とは扱いません。
+4回目は取消・期限切れ・停止・早すぎる終了通知の全条件で、実stdin待機を強制終了まで保つようにしました。待機の観測通知だけでソルバーが先に終了してしまう競争を避け、活動中であることを保証します。全23条件が成功し、全101 workerの実exit、全138出力ファイルとCSV全12列の独立監査が成功しました。証拠は`build/S15/p3-controls-preliminary-4`、監査結果は同名の`-audit.json`です。これも未コミットの予備値です。
+
+witness用mapの最初の生成は、`formalff -ff2anyinit -anyinit2ff`という互いに排他的なオプションを同時に渡して停止しました。出力mapは生成されていません。ログは`build/S15/p3-witness-map-preliminary.log`へ保存しました。その後は上流の手順で生成し、[witnessの別記録](S15-sby-witness.md)の予備比較まで進めました。初回の失敗を変換の成功とは扱いません。
 
 待機を使う期限切れは、ソルバー計算の速度や性能を測る試験ではありません。Nodeの終了17をerrorへ接続する試験も、ブラウザーのOOM検知を測ったものではありません。実ブラウザーの画面、配布物、実機のTang Nanoでは本リポジトリで試していません。
 
