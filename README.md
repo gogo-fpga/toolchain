@@ -16,7 +16,9 @@ T0 から T3 の編集・保存・合成・配置配線・ビットストリー�
 
 [Yices2・Z3のnative/WASI正式比較](docs/experiments/S15-solver-native-wasi.md)は、各5回とA/A 2回、全329行31列・294負の対照の監査を実施しました。bit-vector・array・長い応答とworker異常系を実CLIで検査し、構文エラーの終了0やunknownを証明成功へ読み替えません。これはNodeの検査経路であり、SBY接続・配布・ブラウザーの形式検証画面を含むT6全体は未完了です。
 
-[原本SMTBMCのPyodide接続](docs/experiments/S15-sby-process.md)は、process・pipe・待機だけを仮想化し、両solverのBMC・basecase・induction・coverをnativeと比較しています。予備16条件ではログ・VCD・YW・testbenchが一致し、13列CSVの独立監査も通りました。SBY全体の接続、清浄commitでの正式反復、元回路による反例検証と画面統合は残っています。
+[原本SMTBMCのPyodide接続](docs/experiments/S15-sby-process.md)は、process・pipe・待機だけを仮想化し、両solverのBMC・basecase・induction・coverをnativeと比較しています。予備16条件ではログ・VCD・YW・testbenchが一致し、13列CSVの独立監査も通りました。
+
+[SBY全体の仮想process接続](docs/experiments/S15-sby-runtime.md)も追加しました。両solver各6条件の予備比較では、status・終了コード・SQLite全5表と主要成果物がnativeと一致しています。BMCの有界PASS、proveのUNKNOWN、coverの到達・未到達を区別します。初期実装は`-j 1`に限ります。正式反復、全列の独立監査、元回路による反例検証、配布・画面統合は残っています。
 
 ## IDE 画面
 

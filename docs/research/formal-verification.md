@@ -2,6 +2,8 @@
 
 [調査の索引](../../RESEARCH.md#7-分割した調査) / [固定ソースと配布条件](formal-sources.md) / [S15の事前基準](../experiments/S15-formal-verification.md)
 
+原本のprocess調査を経て、[SBY全体の仮想process接続](../experiments/S15-sby-runtime.md)を追加しました。初期実装は単一slotのBMC・prove・coverに限定し、両solver各6条件でstatus・主要成果物・SQLiteを予備比較しています。Pythonの判定処理は維持します。JsNull、SQLite WAL、作業領域の競合とcommand制限の調査、失敗試行も同記録に保存します。正式反復、全列の独立監査、配布と画面統合は未完了です。
+
 ## 結論と確認範囲
 
 T6では upstream の SBY と `yosys-smtbmc` を再利用します。SMT式の生成、BMC、帰納法、モデルとVCDの生成を独自に書き換えません。Yices2とZ3を優先して比較し、BitwuzlaとBoolectorも候補として残します。Yosys内蔵SATは比較経路であり、SMT対応の代わりにはしません。
