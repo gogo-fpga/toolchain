@@ -86,7 +86,7 @@ class ExtraCliAuditTest(unittest.TestCase):
             info["wraps"] = {}
             info["dependencies"] = {}
             for name in ("cadical", "symfpu"):
-                archive = self.archive({"LICENSE": b"license fixture\n"}, "d" * 40 if name == "symfpu" else None)
+                archive = self.archive({f"{name}/LICENSE" if name == "cadical" else "LICENSE": b"license fixture\n"}, "d" * 40 if name == "symfpu" else None)
                 if name == "cadical":
                     wrap = {"directory": name, "source_url": "https://fixture.test/cadical.tar.gz", "source_filename": "cadical.tar.gz", "source_hash": AUDIT.sha(archive), "patch_directory": name}
                     section = "wrap-file"
