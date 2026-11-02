@@ -55,6 +55,22 @@ nativeのみでbit-vector、array、長い値、構文エラー、応答の欠�
 
 これらの試行は正式結果と混ぜません。初回のstdout、stderr、ソースのsnapshotを保全しています。[記録器の予備1の生CSV](S15-solver-protocol-preliminary-1.csv)と[予備2の生CSV](S15-solver-protocol-preliminary-2.csv)は、それぞれ19行31列です。binaryは清浄なbuildですが、比較器は未commitの予備版です。CSVのharness commitだけで比較器の版を示したとは扱わず、snapshotのhashも照合します。正式反復と全列監査の完了後に、正式CSV、ログのhash目録と集計をここへ追加します。
 
+### 清浄なcommitでの監査器の予備検査
+
+実装を`6776c620773cd87597af373b684d0f6808ec13d3`へ固定し、Yices2の各条件1回とA/A 2回、計63実行を行いました。[生CSV](S15-solver-protocol-audit-preliminary.csv)の全63行31列、63個の負の対照、rawのbuild logとmetadataの監査が成功しました。保存した14個のsource snapshotも、そのcommitのGit objectと全byte一致しました。12件の監査器単体と、Web・既存実WASIの計248件も同じ清浄なcommitで成功しています。これは監査器の予備確認であり、両solverの正式5回反復ではありません。
+
+```sh
+node scripts/measure-solver-protocol.mjs \
+  --probes build/S15/p2-yices-probes.json \
+  --out build/S15/p2-yices-protocol-driver-preliminary-5 \
+  --repeats 1 --aa 2 --preliminary
+python3 scripts/audit-solver-protocol.py \
+  --directory build/S15/p2-yices-protocol-driver-preliminary-5 \
+  --out build/S15/p2-yices-protocol-driver-preliminary-5/audit.json --preliminary
+```
+
+予備のmanifestは前述の同じnative/WASI buildを指します。再実行時は配置先へ合わせ、正常・失敗を含む既存の出力先を上書きしません。初期の失敗、Z3 nativeの予備結果、build metadataと生log、比較器のsnapshotを含む[1,118ファイルの目録](S15-solver-protocol-audit-preliminary-files.csv)を保存しました。証拠ZIPは`S15-solver-protocol-audit-preliminary-evidence-v1.zip`、1,261,962 byte、SHA-256は`42c9cbc4d9239f7b87f897e660ccd475d78c9af3a63cd16668dc645e8d3db493`です。ZIPを開き直し、目録の全項目のbyte数とhashを照合しました。実行中のZ3 WASIのlogは含めていません。
+
 ## 再実行の入口
 
 buildの記録に従って同じ固定版とprofileを生成し、出力先の`metadata.json`があるdirectoryをmanifestへ指定します。相対パスは実行時の作業directoryを基準にします。次はYices2の予備比較の例です。Z3も同じ形式の`z3`項目で指定できますが、実buildの完了と結果の確認は残っています。
