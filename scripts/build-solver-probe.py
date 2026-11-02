@@ -68,7 +68,7 @@ def build(args):
         selected_env = env or environment
         record["environment"] = {key: selected_env[key] for key in (
             "CC", "CXX", "AR", "RANLIB", "STRIP", "CPPFLAGS", "CFLAGS", "CXXFLAGS",
-            "LDFLAGS", "LC_ALL", "TZ", "SOURCE_DATE_EPOCH",
+            "LDFLAGS", "LIBS", "LC_ALL", "TZ", "SOURCE_DATE_EPOCH",
         ) if key in selected_env}
         metadata["commands"].append(record)
         (output / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
@@ -128,7 +128,9 @@ def build(args):
                             f"-DCMAKE_CXX_FLAGS={cxx_flags}", f"-DCMAKE_EXE_LINKER_FLAGS={link_flags}"]
             else:
                 command += [f"-DCMAKE_CXX_COMPILER={compiler_cxx}",
-                            f"-DCMAKE_CXX_FLAGS={args.cxx_flags}"]
+                            f"-DCMAKE_CXX_FLAGS={args.cxx_flags}",
+                            f"-DCMAKE_EXE_LINKER_FLAGS={args.cxx_link_flags}",
+                            f"-DCMAKE_CXX_STANDARD_LIBRARIES={args.cxx_libraries}"]
             run("configure", command)
             run("build", [args.cmake, "--build", output / "objects", "--target", "shell", "--parallel", str(args.jobs)])
             binary = output / "objects" / ("z3.wasm" if args.runtime == "wasi" else "z3")
@@ -160,6 +162,7 @@ def build(args):
             env["LDFLAGS"] = f"-L{prefix}/lib {link_flags}".strip()
             if args.runtime == "wasi":
                 env["STRIP"] = str(sdk / "bin/llvm-strip")
+                env["LIBS"] = "-lsetjmp"
             run("autoconf", ["autoconf"], source)
             command = [source / "configure", f"--with-static-gmp={prefix}/lib/libgmp.a",
                        f"--with-static-gmp-include-dir={prefix}/include", "--disable-mcsat",
@@ -197,6 +200,8 @@ def main():
     parser.add_argument("--jobs", type=int, default=1)
     parser.add_argument("--patch", type=Path, action="append")
     parser.add_argument("--cxx-flags", default=os.environ.get("CXXFLAGS", ""))
+    parser.add_argument("--cxx-link-flags", default="")
+    parser.add_argument("--cxx-libraries", default="")
     args = parser.parse_args()
     if args.jobs < 1:
         parser.error("jobs must be positive")
