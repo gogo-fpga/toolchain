@@ -94,6 +94,10 @@ node scripts/probe-formal-python-engine.mjs \
 
 `p3-engine-preliminary-7`では、実行したsource・patch・依存lockとPython資材を保存し、solverのnative/WASI双方から実際の版表示を取得しました。生CSV全16行13列を`python3 scripts/audit-formal-python.py build/S15/p3-engine-preliminary-7`でraw log・終了記録・全artifactと独立に照合しました。各列の改変13種、VCDの欠落・改変、worker異常・signal・stderr・重複行を拒否する監査器の単体検査も追加しています。この監査は予備結果専用で、正式反復やsource closureの完了を意味しません。
 
+清浄な実装commit `81b227eb57121191356e40978bde6474ab57c5aa`からPython資材を再生成した`p3-engine-preliminary-8`でも、16条件が一致し、Web単体253件・Python検査25件が成功しました。[生CSV](S15-smtbmc-process-preliminary.csv)全16行13列の独立監査も成功しました。Yicesは両系2.7.0、Z3は両系5.3.3と実行時の版表示で確認しました。nativeは64 bit、WASIは32 bitです。これはNodeでの予備比較であり、各5回とA/A、ブラウザー操作、独立した反例再実行、実機の確認ではありません。
+
+初期の失敗を含むraw log・全artifact・source snapshot・Python資材とlicenseを証拠ZIP `S15-smtbmc-process-evidence-81b227e.zip`へ保存しました。[ファイル目録](S15-smtbmc-process-files.csv)の全サイズ・SHA-256をZIPの再読込みで照合し、[ZIPのSHA-256](S15-smtbmc-process-evidence.sha256)も記録しました。`bin/`のsymlinkは実行用の別名なので目録に含めず、実バイナリーのhashと実行時の版表示はbuild metadata・version logへ記録しています。solver binary自体の出典・clean build・生ログは[P2の正式記録](S15-solver-native-wasi.md)を参照します。
+
 失敗試行も保持します。最初の手動probeはmanifestのruntime keyとbinaryのpropertyを取り違え、その後はadapterにwaitがなく停止しました。比較driverの初回はlocal変数がNodeのprocessを隠して停止しました。初めて全16条件を試した`preliminary-3`では、反例・coverの生成中に原本が呼ぶpollが未実装で6条件が失敗しました。waitとpollを接続した後に上記の一致を確認しています。AST検査の初回はnormalizer自身が空要素を残して不一致となりました。normalizerだけを直し、原本の判定処理は変更していません。
 
 この層にはSBYのprocess起動、Yosys子workerとのfilesystem反映、仮想selectをまだ実装していません。資材生成器のGitなし配布ソースへの接続、独立全列監査、清浄commitでの正式5回・A/A、元回路による反例再実行、画面統合も残件です。
