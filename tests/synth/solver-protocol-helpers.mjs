@@ -28,7 +28,7 @@ export function loadSolverProbe(directory, solver, runtime) {
   const binary = new Uint8Array(readFileSync(binaryPath));
   assert.equal(binary.length, info.artifact.bytes);
   assert.equal(digest(binary), info.artifact.sha256);
-  return { info, binary, binaryPath, metadataSha256: digest(metadata) };
+  return { info, binary, binaryPath, directory: location, metadata, metadataSha256: digest(metadata) };
 }
 
 function collectOutput() {

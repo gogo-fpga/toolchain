@@ -72,6 +72,20 @@ python3 -m py_compile scripts/build-solver-probe.py
 python3 scripts/build-solver-probe.py --help
 ```
 
+### 清浄なbuildの追加結果
+
+その後、`537a140b4ba4e233af6606a78071e80e08ce858b`の清浄なcheckoutで、Yices2のnativeとWASI、Z3 nativeのbuildが完了しました。手動の再linkではなく、記録したdriverを最後まで実行した結果です。各binaryのhash・Z3 nativeの実compilerとbuild時間・実応答の予備結果は[比較の記録](S15-solver-protocol.md)に分けます。Z3 WASIのbuildは続いており、正式反復の成功ではありません。
+
+Z3 nativeの再実行にはClang 21.1.8、隔離したlibc++ 21とCMake 3.31.10を使います。`HOST_CXX_ROOT`はlibc++のpackageを展開したdirectory、`CMAKE`はそのCMake実行ファイルを指すものとします。取得元・packageのhash・実際のargvは元のmetadataと予備証拠に残します。
+
+```sh
+CXX=clang++-21 python3 scripts/build-solver-probe.py \
+  --solver z3 --runtime native --jobs 2 --cmake "$CMAKE" \
+  --cxx-flags="-nostdinc++ -isystem $HOST_CXX_ROOT/usr/include/c++/v1" \
+  --cxx-link-flags="-stdlib=libc++ -L$HOST_CXX_ROOT/usr/lib/llvm-21/lib -Wl,-rpath,$HOST_CXX_ROOT/usr/lib/llvm-21/lib" \
+  --cxx-libraries="-lc++abi -lunwind" --out build/S15/replay-z3-native
+```
+
 ## 予備試行の証拠と再実行
 
 CSVの全21行13列を読み、全行のlog hashを再計算して一致を確認しました。完了した83ファイルの[path・byte数・SHA-256の目録](S15-solver-preliminary-files.csv)も保存しました。証拠ZIPは`S15-solver-preliminary-evidence-v3.zip`、432,778 byte、SHA-256は`2a116affce900ef17efc36d290953e81b4695b54d8473fcd0299c85ef8a4f100`です。ZIP内の全目録項目を再読して、byte数とhashを照合しました。初回のdriver、失敗したcompile・link・worker、修正後の対照、適用したpatchを含みます。実行中のZ3 native再buildのlogとmetadataは、変わり続けるため含めていません。

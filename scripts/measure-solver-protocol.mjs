@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { parseArgs } from "node:util";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync, copyFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -19,7 +19,14 @@ const json = (file, value) => writeFileSync(file, JSON.stringify(value, null, 2)
 
 async function version(probe) {
   let stdout;
-  if (probe.info.runtime === "native") stdout = execFileSync(probe.binaryPath, ["--version"], { timeout: 30000, maxBuffer: 1024 * 1024 }).toString("utf8");
+  if (probe.info.runtime === "native") {
+    const result = spawnSync(probe.binaryPath, ["--version"], { timeout: 30000, maxBuffer: 1024 * 1024 });
+    assert.equal(result.error, undefined);
+    assert.equal(result.status, 0);
+    assert.equal(result.signal, null);
+    assert.equal(result.stderr.length, 0);
+    stdout = result.stdout.toString("utf8");
+  }
   else {
     const parts = [];
     const errors = [];
@@ -41,7 +48,7 @@ function negativeControls(native, wasi) {
   assert.ok(stdout.length > 0);
   stdout[0] ^= 1;
   const changes = { stdout: { stdout }, stderr: { stderr: Buffer.from("injected error\n") }, status: { status: "timeout" },
-    exit: { exitCode: 255 }, frames: { frames: ["unknown"] } };
+    exit: { exitCode: 255 }, frames: { frames: ["unknown"] }, signal: { signal: "SIGKILL" }, framing: { framingError: "injected incomplete response" } };
   return Object.entries(changes).map(([control, change]) => {
     assert.throws(() => compareSolverResults(native, { ...wasi, ...change }));
     return { control, detected: true };
@@ -63,17 +70,20 @@ export async function measure({ manifestFile, out, repeats, aa, preliminary = fa
     probes[solver] = Object.fromEntries(["native", "wasi"].map(runtime => [runtime, loadSolverProbe(targets[runtime], solver, runtime)]));
   }
   mkdirSync(out);
-  const sourceFiles = ["scripts/measure-solver-protocol.mjs", "tests/synth/solver-protocol-helpers.mjs", "tests/synth/solver-protocol-cases.mjs",
+  const sourceFiles = ["scripts/measure-solver-protocol.mjs", "scripts/audit-solver-protocol.py", "scripts/build-solver-probe.py", "tests/synth/solver-protocol-helpers.mjs", "tests/synth/solver-protocol-cases.mjs",
     "tests/web/solver-process-helpers.mjs", "tests/web/solver-node-worker.mjs", "web/lib/solver-process.mjs", "web/lib/solver-job.mjs",
     "web/lib/byte-pipe.mjs", "web/lib/smt-response-framer.mjs", "web/lib/wasi-p1.mjs"];
   const sources = {};
+  for (const targets of Object.values(probes)) for (const probe of Object.values(targets)) {
+    for (const patch of probe.info.patches) if (!sourceFiles.includes(patch.path)) sourceFiles.push(patch.path);
+  }
   copyFileSync(manifestFile, path.join(out, "probes-manifest.json"));
   for (const file of sourceFiles) {
     sources[file] = digest(readFileSync(path.join(root, file)));
     copyFileSync(path.join(root, file), path.join(out, file.replaceAll("/", "__")));
   }
   globalThis.crossOriginIsolated = true;
-  const metadata = { format: 1, purpose: "Node real-solver protocol contracts, not browser isolation or HDL proofs", preliminary,
+  const metadata = { format: 2, purpose: "Node real-solver protocol contracts, not browser isolation or HDL proofs", preliminary,
     repeats, aa, harnessCommit: git(["rev-parse", "HEAD"]), worktreeStatus: status, sources, manifestSha256: digest(manifestBytes),
     argv: process.argv.slice(2), node: process.version, v8: process.versions.v8,
     timeVersion: execFileSync("/usr/bin/time", ["--version"], { encoding: "utf8" }),
@@ -82,6 +92,14 @@ export async function measure({ manifestFile, out, repeats, aa, preliminary = fa
   json(path.join(out, "metadata-start.json"), metadata);
   for (const [solver, targets] of Object.entries(probes)) for (const [runtime, probe] of Object.entries(targets)) {
     const label = `${solver}-${runtime}`;
+    writeFileSync(path.join(out, label + ".metadata.json"), probe.metadata, { flag: "wx" });
+    for (const command of probe.info.commands) {
+      assert.match(command.label, /^[a-zA-Z0-9-]+$/);
+      assert.equal(command.exit_status, 0);
+      const log = readFileSync(path.join(probe.directory, command.label + ".log"));
+      assert.equal(digest(log), command.log_sha256);
+      writeFileSync(path.join(out, `${label}.${command.label}.log`), log, { flag: "wx" });
+    }
     metadata.probes[label] = { ...probe.info, metadataSha256: probe.metadataSha256, actualVersion: await version(probe) };
   }
   const csvFile = path.join(out, "results.csv");
@@ -94,8 +112,8 @@ export async function measure({ manifestFile, out, repeats, aa, preliminary = fa
     const count = phase === "aa" ? aa : repeats;
     for (let repeat = 1; repeat <= count; repeat++) for (const [solver, targets] of Object.entries(probes)) {
       for (const name of [...normalCases, ...workerCases, ...solverCases[solver]]) {
-        const paired = normalCases.includes(name) || name === "unknown";
-        const runtimes = paired ? (repeat % 2 ? ["native", "wasi"] : ["wasi", "native"]) : ["wasi"];
+        const paired = normalCases.includes(name) || ["unknown", "software-fp"].includes(name);
+        const runtimes = paired || name === "unsupported-hwf" ? (repeat % 2 ? ["native", "wasi"] : ["wasi", "native"]) : ["wasi"];
         const results = {};
         for (const runtime of runtimes) {
           const probe = targets[runtime];
@@ -117,7 +135,7 @@ export async function measure({ manifestFile, out, repeats, aa, preliminary = fa
           try {
             if (runtime === "native") assert.ok(result.nativeMaxRssKiB > 0);
             assert.ok(Number.isFinite(result.elapsedMs) && result.elapsedMs > 0);
-            if (phase === "aa" && (paired || ["stale", "unsupported-alarm"].includes(name))) {
+            if (phase === "aa" && (paired || ["stale", "unsupported-alarm", "unsupported-hwf"].includes(name))) {
               const key = `${solver}-${runtime}-${name}`;
               if (previous.has(key)) compareSolverResults(previous.get(key), result);
               previous.set(key, result);
