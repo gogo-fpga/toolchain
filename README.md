@@ -10,11 +10,11 @@ T0 から T3 の編集・保存・合成・配置配線・ビットストリー�
 
 形式検証は、[固定ソース・依存・ライセンスの調査](docs/research/formal-sources.md)と[S15の事前基準](docs/experiments/S15-formal-verification.md)を登録しています。[Yosys SATの比較とIcarusによる反例の独立再実行](docs/research/formal-verification.md)、[GHDLのVHDL・PSL property保持](docs/experiments/S15-vhdl-formal.md)、[元のVHDLをGHDLで独立に再実行する検査](docs/experiments/S15-vhdl-native-replay.md)は限定した検査経路として実装中です。通常合成の出力は変えず、形式出力を明示した場合だけGHDLからYosysへ性質を渡します。SBY・Yices2・Z3などのソースを配布対象へ加えていますが、ブラウザーからのVHDL反例再実行、SMTソルバーのWASM実行・形式検証画面はまだ提供していません。
 
-[下位化Verilogとの比較](docs/experiments/S15-vhdl-lowered-replay.md)には、階層・名前付きライブラリー・初期値・reset・複数propertyを加え、元VHDLとIcarus native/WASMで値と最初の違反を照合します。X・未初期化・memory・組合せループは検査経路での未対応理由を記録し、空虚な有界結果を証明にしません。同一commitで69件を5回とA/Aの2回実行し、生CSV420行の全20列を監査しました。[ソルバーの予備ビルドと双方向通信の基盤](docs/experiments/S15-solver-build-and-transport.md)に加え、[実Yices2の応答比較](docs/experiments/S15-solver-protocol.md)を進めています。構文エラーでも終了0になる場合を区別し、bit-vector・array・長い値とworker異常系を予備検査しました。Z3と正式反復、ソルバーと画面を含むT6全体は未完了です。
+[下位化Verilogとの比較](docs/experiments/S15-vhdl-lowered-replay.md)には、階層・名前付きライブラリー・初期値・reset・複数propertyを加え、元VHDLとIcarus native/WASMで値と最初の違反を照合します。X・未初期化・memory・組合せループは検査経路での未対応理由を記録し、空虚な有界結果を証明にしません。同一commitで69件を5回とA/Aの2回実行し、生CSV420行の全20列を監査しました。
 
 書き込み部は Chromium 系ブラウザーの WebUSB を使います。実機の Tang Nano では試していません。
 
-Z3のnative予備buildも完了し、unknownと通常の浮動小数点を含む検査が通りました。Yices2 WASIの計算要求後の期限切れ・取消と、全31列の独立監査も予備確認しました。Z3 WASIのbuild、正式反復、ブラウザーでの形式検証は未完了です。
+[Yices2・Z3のnative/WASI正式比較](docs/experiments/S15-solver-native-wasi.md)は、各5回とA/A 2回、全329行31列・294負の対照の監査を実施しました。bit-vector・array・長い応答とworker異常系を実CLIで検査し、構文エラーの終了0やunknownを証明成功へ読み替えません。これはNodeの検査経路であり、SBY接続・配布・ブラウザーの形式検証画面を含むT6全体は未完了です。
 
 ## IDE 画面
 

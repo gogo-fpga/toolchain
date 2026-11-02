@@ -6,6 +6,8 @@
 
 固定したYices2とZ3のCLIをWASI Preview 1で動かし、既存のshimへ双方向入力を接続する方式を先に調べています。SMT-LIBの意味、parser、判定処理をJavaScriptへ移植しません。原本のC APIと公式のEmscripten経路も比較候補ですが、まだ製品の既定方式を変更していません。
 
+その後、Z3 WASIのclean buildも完了し、両solverのnative/WASIを同じ清浄な比較器commitで各5回・A/A 2回実行しました。全329行31列と294負の対照の独立監査が通っています。[正式条件・生CSV・資源・失敗と証拠](../experiments/S15-solver-native-wasi.md)を分けて保存します。上流CLIと既存workerの方式をP2で継続しますが、solverの既定は決めておらず、SBYや製品画面も未完了です。以下の「未確認」は各予備試行時点の制約を保持したものです。
+
 P2の初回予備ビルドでは以下の制約を確認しました。その後のYices2は、SDKの`libsetjmp.a`もリンクすると、予備WASMで単純なSMT入力の判定と値の取得を通りました。清浄なcommitからの再build、native比較と正式反復は残っており、形式検証機能の完成を示す結果ではありません。
 
 | 対象 | 確認した制約 | 対応と未確認の範囲 |
