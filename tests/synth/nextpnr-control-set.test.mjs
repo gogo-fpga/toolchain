@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import test, { before } from "node:test";
 
@@ -12,7 +12,130 @@ const sha256 = (content) => createHash("sha256").update(content).digest("hex");
 
 before(() => mkdirSync(path.join(root, "build"), { recursive: true }));
 
-test("nextpnr numeric metadata requires the actual unique scalar placer compile definition", () => {
+test("the isolated numeric probe records flags and never overwrites original linker dependencies", () => {
+  const directory = mkdtempSync(path.join(root, "build/t5-pnr-probe-check-"));
+  let passed = false;
+  try {
+    const build = path.join(directory, "build");
+    const target = path.join(build, "himbaechel/uarch/gowin");
+    const cmake = path.join(target, "CMakeFiles/nextpnr-himbaechel-gowin.dir");
+    mkdirSync(path.join(cmake, "common/place"), { recursive: true });
+    const source = path.join(directory, "source");
+    mkdirSync(path.join(source, "common/place"), { recursive: true });
+    writeFileSync(path.join(source, "common/place/placer_heap.cc"), "original source");
+    writeFileSync(path.join(build, "CMakeCache.txt"), `CMAKE_HOME_DIRECTORY:INTERNAL=${source}\n`);
+    mkdirSync(path.join(build, "share"));
+    const compiler = path.join(directory, "cxx");
+    writeFileSync(compiler, `#!/usr/bin/env python3
+import pathlib, sys
+args = sys.argv[1:]
+if args == ["--version"]:
+    print("isolated-probe-test")
+else:
+    pathlib.Path(args[args.index("-o") + 1]).write_text("candidate")
+    for arg in args:
+        if arg.startswith("-Wl,--dependency-file="):
+            pathlib.Path(arg.split("=", 1)[1]).write_text("candidate dependency")
+`);
+    chmodSync(compiler, 0o755);
+    const original = path.join(build, "nextpnr-himbaechel-gowin");
+    const dependency = path.join(cmake, "link.d");
+    writeFileSync(original, "original binary");
+    writeFileSync(dependency, "original dependency");
+    const object = "CMakeFiles/nextpnr-himbaechel-gowin.dir/common/place/placer_heap.cc.o";
+    writeFileSync(path.join(target, object), "original object");
+    writeFileSync(path.join(cmake, "flags.make"), "CXX_DEFINES = \nCXX_INCLUDES = \nCXX_FLAGS = -O3\n");
+    writeFileSync(path.join(cmake, "link.txt"), `${compiler} -Wl,--dependency-file=CMakeFiles/nextpnr-himbaechel-gowin.dir/link.d ${object} -o ../../../nextpnr-himbaechel-gowin\n`);
+    const out = path.join(directory, "candidate");
+    const args = [path.join(root, "scripts/build-pnr-scalar-probe.py"), "--build-dir", build,
+      "--out", out, "--fp-contract", "off", "--march", "x86-64-v3"];
+    const result = spawnSync("python3", args, { encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    const metadata = JSON.parse(readFileSync(path.join(out, "result.json")));
+    assert.ok(metadata.compile.includes("-ffp-contract=off"));
+    assert.ok(metadata.compile.includes("-march=x86-64-v3"));
+    assert.ok(metadata.link.includes(`-Wl,--dependency-file=${out}/link.d`));
+    assert.equal(readFileSync(path.join(out, "link.d"), "utf8"), "candidate dependency");
+    assert.equal(readFileSync(dependency, "utf8"), "original dependency");
+    assert.equal(readFileSync(original, "utf8"), "original binary");
+    assert.equal(readFileSync(path.join(target, object), "utf8"), "original object");
+    assert.equal(spawnSync("python3", args).status, 1, "Existing diagnostic output must not be overwritten");
+    assert.equal(spawnSync("python3", [...args, "--fp-contract", "invalid"]).status, 2);
+    passed = true;
+  } finally {
+    if (passed) rmSync(directory, { recursive: true, force: true });
+    else console.error(`Retained nextpnr probe evidence: ${directory}`);
+  }
+});
+
+test("diagnostic evidence audit checks every CSV cell, provenance, execution and strict layout", () => {
+  const directory = mkdtempSync(path.join(root, "build/t5-pnr-audit-check-"));
+  let passed = false;
+  try {
+    const input = path.join(directory, "input");
+    const shares = path.join(directory, "share");
+    mkdirSync(input);
+    mkdirSync(path.join(shares, "himbaechel/gowin"), { recursive: true });
+    const chipdb = path.join(shares, "himbaechel/gowin/chipdb-GW2A-18C.bin");
+    writeFileSync(chipdb, "fixture chipdb");
+    const binary = path.join(directory, "binary");
+    writeFileSync(binary, "fixture binary");
+    const digest = (value) => createHash("sha256").update(value).digest("hex");
+    const layout = JSON.stringify({ creator: "fixture", modules: { top: { cells: { cell: { attributes: { NEXTPNR_BEL: "X1Y1/LUT0" } } } } } });
+    const metadata = { board: "tangnano20k", repeats: 5, native_binary: binary, wasm_binary: binary,
+      shares: { native: shares, wasi: shares }, hashes: { native: digest("fixture binary"), wasi: digest("fixture binary"),
+        native_chipdb: digest("fixture chipdb"), wasi_chipdb: digest("fixture chipdb"),
+        native_build_info: null, wasi_build_info: null, netlist: digest("{}"), cst: digest("fixture cst") } };
+    const resources = { LUT4: { used: 1, total: 100 }, DFF: { used: 1, total: 100 }, BSRAM: { used: 0, total: 10 } };
+    const log = "Info: Device utilisation:\nInfo: LUT4: 1/100 1%\nInfo: DFF: 1/100 1%\nInfo: BSRAM: 0/10 0%\n\n";
+    const rows = [];
+    for (let repeat = 1; repeat <= 5; repeat++) for (const backend of ["native", "wasi"]) {
+      const run = path.join(input, `${backend}-${repeat}`);
+      mkdirSync(path.join(run, "constraints"), { recursive: true });
+      const row = { repeat, backend, status: "passed", layout_sha256: digest(layout), elapsed_ms: 1,
+        wasi_memory_bytes: backend === "wasi" ? 65536 : null, exit_status: 0, signal: null, execution_error: null };
+      rows.push(row);
+      for (const [name, content] of Object.entries({ "top.json": "{}", "constraints/board.cst": "fixture cst", "pnr.json": layout,
+        "stdout.log": "", "stderr.log": log, "result.json": JSON.stringify(row) })) writeFileSync(path.join(run, name), content);
+    }
+    const summary = { failed: false, rows, resources, cross_backend_same: true };
+    const csv = "repeat,backend,status,layout_sha256,elapsed_ms,wasi_memory_bytes,exit_status,signal,execution_error_name,execution_error_message\n"
+      + rows.map((row) => [row.repeat, row.backend, row.status, row.layout_sha256, row.elapsed_ms, row.wasi_memory_bytes, row.exit_status,
+        row.signal, null, null].map((value) => `"${value ?? ""}"`).join(",")).join("\n") + "\n";
+    writeFileSync(path.join(input, "metadata.json"), JSON.stringify(metadata));
+    writeFileSync(path.join(input, "summary.json"), JSON.stringify(summary));
+    writeFileSync(path.join(input, "results.csv"), csv);
+    let sequence = 0;
+    const run = (...extra) => spawnSync(process.execPath, [path.join(root, "scripts/audit-pnr-diagnostics.mjs"),
+      "--sample", `fixture=${input}`, "--out", path.join(directory, `out-${sequence++}`), ...extra], { encoding: "utf8" });
+    const valid = run();
+    assert.equal(valid.status, 0, valid.stderr);
+    const report = JSON.parse(readFileSync(path.join(directory, "out-0/audit.json")));
+    assert.equal(report.rows, 10);
+    assert.equal(report.columns, 11);
+    assert.deepEqual(report.samples.fixture.negative_controls, { changed_value: "rejected", changed_key_order: "rejected" });
+    assert.equal(run("--expect-mismatch", "fixture").status, 1);
+    assert.equal(run("--expect-mismatch", "missing").status, 1);
+    writeFileSync(path.join(input, "results.csv"), csv.replace('"passed"', '"failed"'));
+    assert.equal(run().status, 1, "Changed CSV status must not pass");
+    writeFileSync(path.join(input, "results.csv"), csv);
+    writeFileSync(path.join(input, "native-1/pnr.json"), layout.replace("LUT0", "LUT1"));
+    assert.equal(run().status, 1, "Changed placed cell must not pass");
+    writeFileSync(path.join(input, "native-1/pnr.json"), layout);
+    writeFileSync(binary, "changed binary");
+    assert.equal(run().status, 1, "Changed binary provenance must not pass");
+    writeFileSync(binary, "fixture binary");
+    rows[0].exit_status = 1;
+    writeFileSync(path.join(input, "summary.json"), JSON.stringify(summary));
+    assert.equal(run().status, 1, "Nonzero execution must not pass");
+    passed = true;
+  } finally {
+    if (passed) rmSync(directory, { recursive: true, force: true });
+    else console.error(`Retained nextpnr audit evidence: ${directory}`);
+  }
+});
+
+test("nextpnr numeric metadata requires scalar Eigen and explicit uncontracted placer arithmetic", () => {
   const directory = mkdtempSync(path.join(root, "build/t5-pnr-numerics-check-"));
   let passed = false;
   try {
@@ -31,9 +154,9 @@ spec.loader.exec_module(module)
 print(json.dumps(module.compiler_metadata(Path(${JSON.stringify(directory)}))))
 `], { encoding: "utf8" });
     };
-    const entry = { directory, file: "patched/placer_heap.cc", arguments: ["c++", "-DEIGEN_DONT_VECTORIZE", "-DEIGEN_MPL2_ONLY", "-c", source] };
-    const expected = { translation_unit: "common/place/placer_heap.cc", eigen_definitions: ["EIGEN_DONT_VECTORIZE", "EIGEN_MPL2_ONLY"] };
-    for (const candidate of [entry, { directory, file: source, command: `c++ -DEIGEN_DONT_VECTORIZE -DEIGEN_MPL2_ONLY -c ${JSON.stringify(source)}` }]) {
+    const entry = { directory, file: "patched/placer_heap.cc", arguments: ["c++", "-DEIGEN_DONT_VECTORIZE", "-DEIGEN_MPL2_ONLY", "-ffp-contract=off", "-c", source] };
+    const expected = { translation_unit: "common/place/placer_heap.cc", eigen_definitions: ["EIGEN_DONT_VECTORIZE", "EIGEN_MPL2_ONLY"], fp_contract: "off" };
+    for (const candidate of [entry, { directory, file: source, command: `c++ -DEIGEN_DONT_VECTORIZE -DEIGEN_MPL2_ONLY -ffp-contract=off -c ${JSON.stringify(source)}` }]) {
       const result = verify([candidate]);
       assert.equal(result.status, 0, result.stderr);
       assert.deepEqual(JSON.parse(result.stdout), expected);
@@ -50,6 +173,16 @@ print(json.dumps(module.compiler_metadata(Path(${JSON.stringify(directory)}))))
       const result = verify(entries);
       assert.equal(result.status, 1, `${result.stdout}\n${result.stderr}`);
       assert.match(result.stderr, /compile command|compile arguments|disable Eigen vectorization/);
+    }
+    for (const flags of [[], ["-ffp-contract=fast"], ["-ffp-contract=on"],
+      ["-ffp-contract=off", "-ffp-contract=fast"], ["-ffp-contract=fast", "-ffp-contract=off"],
+      ["-ffp-contract=off", "-ffp-contract=off"],
+      ...["-Ofast", "-ffast-math", "-funsafe-math-optimizations", "-fassociative-math", "-ffp-model=fast", "@flags"].map((flag) => ["-ffp-contract=off", flag]),
+    ]) {
+      const arguments_ = entry.arguments.filter((arg) => arg !== "-ffp-contract=off").concat(flags);
+      const result = verify([{ ...entry, arguments: arguments_ }]);
+      assert.equal(result.status, 1, `${result.stdout}\n${result.stderr}`);
+      assert.match(result.stderr, /disable floating-point contraction/);
     }
     passed = true;
   } finally {

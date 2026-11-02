@@ -77,7 +77,14 @@ def compiler_metadata(build_dir):
         arg == "-U" or arg.startswith("-UEIGEN_") for arg in arguments
     ):
         raise SystemExit("The nextpnr heap placer must disable Eigen vectorization")
-    return {"translation_unit": "common/place/placer_heap.cc", "eigen_definitions": definitions}
+    contraction = [arg for arg in arguments if arg.startswith("-ffp-contract=")]
+    if contraction != ["-ffp-contract=off"] or any(
+        arg in ("-Ofast", "-ffast-math", "-funsafe-math-optimizations", "-fassociative-math")
+        or arg.startswith("-ffp-model=") or arg.startswith("@") for arg in arguments
+    ):
+        raise SystemExit("The nextpnr heap placer must disable floating-point contraction without unsafe math flags")
+    return {"translation_unit": "common/place/placer_heap.cc", "eigen_definitions": definitions,
+            "fp_contract": "off"}
 
 
 def main():
