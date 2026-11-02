@@ -190,7 +190,7 @@ GHDL、NVC、Icarus Verilog など GPL のツールを WASM にビルドして R
 
 Z3 WASIのlink失敗とSDK例外library・fork登録の対処は、[ソルバー調査](docs/research/formal-solvers.md)と[S15の診断記録](docs/experiments/S15-z3-wasi-link.md)に保存しました。手動18条件を経てclean buildと[両solverの正式反復](docs/experiments/S15-solver-native-wasi.md)まで実施しました。
 
-T6は上流SBY・SMTBMCの再利用を選び、固定ソースと[S15の事前基準](docs/experiments/S15-formal-verification.md)を登録しました。Yosys SAT、元のVerilogをIcarusで独立に再実行する検査経路、明示したGHDL形式出力によるVHDL・PSL property保持を追加しました。PSLのコメント解析には上流と同じ2フラグが必要で、activation coverはassertと区別します。[GHDLの診断と初回の失敗](docs/experiments/S15-vhdl-formal.md)も保存します。元VHDLのnative検査経路とその5回反復も追加しましたが、下位化後の比較、追加fixture、SMTソルバー・画面統合と製品版の正式反復は未完了です。以下に方式と制限、初期調査との差、依存、GMPの取得失敗と署名鍵の期限切れも記録します。
+T6は上流SBY・SMTBMCの再利用を選び、[S15の事前基準](docs/experiments/S15-formal-verification.md)を登録しました。Yosys SAT、元VerilogのIcarus再実行、GHDLのVHDL・PSL property保持を追加しました。PSLのコメント解析には上流と同じ2フラグが必要で、activation coverはassertと区別します。[GHDLの診断と初回の失敗](docs/experiments/S15-vhdl-formal.md)、当初の未完了項目と後続の実装・反復、依存、GMPの取得失敗と署名鍵の期限切れを以下の主題別記録へ残します。
 
 大きな調査は `docs/research/` に分けて置きます。
 
@@ -212,6 +212,7 @@ T6は上流SBY・SMTBMCの再利用を選び、固定ソースと[S15の事前�
 | [形式検証ソルバーのビルドと実行方式](docs/research/formal-solvers.md) | WASI CLI・C API・公式WASMの比較候補、GMP・timer・丸め・版表示・native ABIの制約、字句境界、終了0の構文エラーと実応答比較 |
 | [原本SBY・SMTBMCのprocess境界](docs/experiments/S15-sby-process.md) | Pyodideの制約、SQLite、native SBY12条件、SMTBMC仮想processの16条件・AST照合、Yosys子workerと安全なファイル差分、初期の失敗記録 |
 | [SBY全体の仮想process接続](docs/experiments/S15-sby-runtime.md) | SbyPopen・virtual select・単一slot、argv制限、子の差分の適用、JsNull・SQLite WALの対処、両solver各6条件の予備比較と残件 |
+| [SBY全成果物・16列の独立監査](docs/experiments/S15-sby-artifact-audit.md) | 限定した環境差、全268成果物、再帰的終了、UNKNOWNのSQLite最終行不在、改変の拒否と予備失敗 |
 
 元VHDLの独立再実行は、GHDL標準のVPIと`--psl-report`を再利用する限定した検査経路を追加しました。清浄な同一commitで55件×5回とA/Aの2回が成功し、元ファイルとCSV全280行19列を照合しています。通常assertionとclocked PSLの評価位相、coverが既定では標準出力に現れないこと、root moduleのVPI列挙、生CSV・全ファイルのhash・失敗試行と未完了の範囲を[元VHDLによる再実行の実験記録](docs/experiments/S15-vhdl-native-replay.md)へ保存します。下位化後のVerilog比較、追加fixtureとT6全体は未完了です。
 

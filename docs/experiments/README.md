@@ -54,3 +54,4 @@
 | [S15 P2 native/WASI正式比較](S15-solver-native-wasi.md) | 両solverの実応答、worker異常系、5回・A/A、資源、圧縮サイズと証拠 | 全329行31列・294負の対照を監査。SBY・製品画面は未完了 |
 | [S15 P3 原本SBY・SMTBMCのprocess境界](S15-sby-process.md) | Pythonの能力診断、原本のBMC・prove・coverと輸送境界 | native SBY12条件、原本SMTBMCとPyodide/WASI16条件の予備比較・全13列監査が成功。初期の過程は保持し、SBY全体の接続は次の記録へ |
 | [S15 P3 SBY全体の仮想process接続](S15-sby-runtime.md) | SbyPopen、Yosys/Python子worker、仮想select、jobserver、SQLiteと差分 | 両solver各6条件でstatus・主要成果物・SQLite5表が予備一致。正式反復・全列の独立監査・画面は未完了 |
+| [S15 P3 SBY全成果物の独立監査](S15-sby-artifact-audit.md) | 全268成果物・CSV16列、限定した環境差、再帰的終了、改変の拒否 | 清浄commitで全12条件・316件が成功。UNKNOWNのSQLite最終行不在を保持。正式反復は未完了 |

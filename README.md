@@ -18,7 +18,7 @@ T0 から T3 の編集・保存・合成・配置配線・ビットストリー�
 
 [原本SMTBMCのPyodide接続](docs/experiments/S15-sby-process.md)は、process・pipe・待機だけを仮想化し、両solverのBMC・basecase・induction・coverをnativeと比較しています。予備16条件ではログ・VCD・YW・testbenchが一致し、13列CSVの独立監査も通りました。
 
-[SBY全体の仮想process接続](docs/experiments/S15-sby-runtime.md)も追加しました。両solver各6条件の予備比較では、status・終了コード・SQLite全5表と主要成果物がnativeと一致しています。BMCの有界PASS、proveのUNKNOWN、coverの到達・未到達を区別します。初期実装は`-j 1`に限ります。正式反復、全列の独立監査、元回路による反例検証、配布・画面統合は残っています。
+[SBY全体の仮想process接続](docs/experiments/S15-sby-runtime.md)も追加しました。両solver各6条件の予備比較では、status・終了コード・SQLite全5表と主要成果物がnativeと一致しています。BMCの有界PASS、proveのUNKNOWN、coverの到達・未到達を区別します。初期実装は`-j 1`に限ります。[全268成果物・16列の独立監査器](docs/experiments/S15-sby-artifact-audit.md)も追加しましたが、正式反復、元回路による反例検証、配布・画面統合は残っています。
 
 ## IDE 画面
 
