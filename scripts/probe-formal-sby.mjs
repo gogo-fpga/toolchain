@@ -26,12 +26,16 @@ const yosys = { wasm: new Uint8Array(readFileSync(path.join(values.synth, "yosys
   share: new Uint8Array(readFileSync(path.join(values.synth, "yosys-share.tar"))), shareSha256: asset("yosys-share.tar").sha256 };
 assert.equal(digest(yosys.wasm), yosys.sha256); assert.equal(digest(yosys.share), yosys.shareSha256);
 const baseline = JSON.parse(readFileSync(path.join(values.baseline, "results.json")));
+const nativeMetadata = JSON.parse(readFileSync(path.join(values.baseline, "metadata.json")));
+json("native-metadata.json", nativeMetadata);
 const metadata = { format: 1, preliminary: true, command: process.argv.slice(1), node: process.version,
   commit: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(),
   worktree: execFileSync("git", ["status", "--porcelain"], { cwd: root, encoding: "utf8" }),
   pyodidePackage: JSON.parse(readFileSync(path.join(root, "node_modules/pyodide/package.json"))).version,
+  nativeMetadataSha256: digest(readFileSync(path.join(out, "native-metadata.json"))),
   sources: sources.manifest, yosys: { sha256: yosys.sha256, shareSha256: yosys.shareSha256 }, snapshots: {}, probes: {} };
 const snapshots = ["scripts/probe-formal-sby.mjs", "scripts/read-sby-status-db.py", "scripts/probe-upstream-formal.mjs",
+  "scripts/audit-formal-sby.py", "scripts/sby-artifact-audit.py",
   "scripts/build-formal-python.py", "package-lock.json", ".gitmodules", "patches/sby-process.patch", "patches/yosys-smtio-process.patch",
   "web/formal_process.py", "web/formal-python-worker.mjs", "web/formal-wasi-worker.mjs",
   ...["formal-python-process", "formal-python-job", "formal-process-client", "formal-tool-process", "formal-tool-client",
@@ -41,12 +45,23 @@ const snapshots = ["scripts/probe-formal-sby.mjs", "scripts/read-sby-status-db.p
   "tests/web/solver-node-worker.mjs", "tests/web/solver-process-helpers.mjs"];
 for (const name of snapshots) { const bytes = readFileSync(path.join(root, name)); save(`snapshots/${name}`, bytes); metadata.snapshots[name] = digest(bytes); }
 for (const file of sources.sources) save(`assets/${file.path}`, file.bytes);
+save("inputs/yosys.wasm", yosys.wasm); save("inputs/yosys-share.tar", yosys.share);
+const nativeYosys = readFileSync(nativeMetadata.nativeCommands.yosys);
+assert.equal(digest(nativeYosys), nativeMetadata.yosys.sha256);
+save("inputs/yosys-native", nativeYosys);
 json("assets/manifest.json", sources.manifest); json("metadata.json", metadata);
 const encoder = new TextEncoder();
 const rows = [];
 for (const solver of ["yices2", "z3"].filter(name => !values.solver || name === values.solver)) {
   const probe = loadSolverProbe(probes[solver].wasi, solver, "wasi");
-  metadata.probes[solver] = { metadataSha256: probe.metadataSha256, sha256: probe.info.artifact.sha256 };
+  const nativeBuild = readFileSync(path.join(values.baseline, `${solver}-bin/metadata.json`));
+  const nativeInfo = JSON.parse(nativeBuild);
+  const nativeBinary = readFileSync(path.join(values.baseline, `${solver}-bin`, solver === "yices2" ? "yices-smt2" : "z3"));
+  assert.equal(digest(nativeBinary), nativeInfo.artifact.sha256);
+  metadata.probes[solver] = { metadataSha256: probe.metadataSha256, sha256: probe.info.artifact.sha256,
+    nativeMetadataSha256: digest(nativeBuild), nativeSha256: nativeInfo.artifact.sha256 };
+  save(`build/${solver}-native.json`, nativeBuild);
+  save(`inputs/${solver}-native`, nativeBinary); save(`inputs/${solver}.wasm`, probe.binary);
   json(`build/${solver}.json`, probe.info);
   for (const fixture of sbyCases.filter(item => !values.case || item.name === values.case)) {
     const label = `${solver}-${fixture.name}`;

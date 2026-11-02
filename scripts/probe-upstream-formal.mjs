@@ -46,13 +46,16 @@ export function probeNative({ manifestFile, out }) {
   const python = execFileSync("python3", ["-c", "import sys; print(sys.executable)"], { encoding: "utf8" }).trim();
   const pythonPath = ["vendor/click/src", "vendor/sby/sbysrc", "vendor/yosys/backends/smt2"].map(p => path.join(root, p));
   const yosys = path.join(root, "build/native/yosys");
+  const quoted = p => `'${p.replaceAll("'", "'\\''")}'`;
+  const nativeCommands = { yosys, "yosys-smtbmc": `${quoted(python)} ${quoted(path.join(root, "vendor/yosys/backends/smt2/smtbmc.py"))}`,
+    "yosys-witness": `${quoted(python)} ${quoted(path.join(root, "vendor/yosys/backends/smt2/witness.py"))}` };
   const sourceFiles = ["scripts/probe-upstream-formal.mjs", "tests/synth/formal-sby-cases.mjs"];
   for (const name of ["sby", "click", "yosys"]) {
     const prefix = name === "yosys" ? "vendor/yosys/backends/smt2" : name === "sby" ? "vendor/sby/sbysrc" : "vendor/click/src/click";
     sourceFiles.push(...filesBelow(path.join(root, prefix)).filter(p => p.endsWith(".py")).map(p => `${prefix}/${p}`));
   }
   const metadata = {
-    format: 1, preliminary: true, runtime: "native", command: process.argv.slice(1), node: process.version,
+    format: 1, preliminary: true, runtime: "native", command: process.argv.slice(1), node: process.version, nativeCommands,
     python: execFileSync(python, ["--version"], { encoding: "utf8" }).trim(),
     commit: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(),
     worktree: execFileSync("git", ["status", "--porcelain"], { cwd: root, encoding: "utf8" }),
@@ -73,10 +76,8 @@ export function probeNative({ manifestFile, out }) {
       mkdirSync(working);
       writeFileSync(path.join(working, "top.v"), fixture.source);
       writeFileSync(path.join(working, "job.sby"), sbyConfig(fixture, solver));
-      const quoted = p => `'${p.replaceAll("'", "'\\''")}'`;
       const args = [path.join(root, "vendor/sby/sbysrc/sby.py"), "--yosys", yosys,
-        "--smtbmc", `${quoted(python)} ${quoted(path.join(root, "vendor/yosys/backends/smt2/smtbmc.py"))}`,
-        "--witness", `${quoted(python)} ${quoted(path.join(root, "vendor/yosys/backends/smt2/witness.py"))}`,
+        "--smtbmc", nativeCommands["yosys-smtbmc"], "--witness", nativeCommands["yosys-witness"],
         "-j", "1", "-d", "result", "job.sby"];
       const env = { ...process.env, PYTHONPATH: pythonPath.join(path.delimiter),
         PATH: `${bin}${path.delimiter}${process.env.PATH}`, LC_ALL: "C", TZ: "UTC", MAKEFLAGS: "", PYTHONDONTWRITEBYTECODE: "1" };
