@@ -2,6 +2,8 @@
 
 [実験の一覧](README.md) / [形式検証の事前基準](S15-formal-verification.md) / [process境界とSMTBMCの予備記録](S15-sby-process.md)
 
+この記録は接続層と初期試行を保持します。その後の[全268成果物・16列の独立監査器](S15-sby-artifact-audit.md)は、JNY・JUnit・root logの限定した環境差、SQLiteのUNKNOWN最終行不在、再帰的終了と改変の拒否を別に記録します。正式反復と製品統合は引き続き未完了です。
+
 ## 目的と実装範囲
 
 SBY、Yosys、SMTBMC、solverを、ブラウザー用のprocess・pipe・filesystem境界で接続します。SMTの生成・応答解析、property評価、SQLiteへのstatus記録、BMC・prove・coverの最終判定は上流のPythonを維持します。原本の固定版、native比較条件、Pyodideの制約は親のprocess記録を参照します。
