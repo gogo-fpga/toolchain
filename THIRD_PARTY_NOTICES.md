@@ -18,6 +18,8 @@
 
 ソース6件は各vendorディレクトリー、GMPはsource archive内の `vendor/formal-archives/` に原archiveを収めます。MPFR、SymFPU、libpoly、CUDD、SAT backendは、この段階では追加配布せず、有効化もしません。実際に有効にするprofileごとにソースとライセンスを確認して追加します。
 
+Boolectorの隔離した診断ビルドでは、上流のsetup scriptが固定したCaDiCaLとBTOR2Toolsを取得します。どちらもMITで、著作権表示を含む原licenseとソースarchiveのhashを診断metadataへ記録します。CaDiCaLへのWASI適応patchは本体のSAT判定を変更せず、原licenseを維持します。詳細と製品配布の未確認範囲は [追加ソルバーの記録](docs/experiments/S15-extra-solver-builds.md)を参照してください。
+
 ## 既存の実行資材と開発依存
 
 以下の固定版を使用しています。コミットは `vendor/` の gitlink に記録した値です。

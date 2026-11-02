@@ -1,6 +1,6 @@
 # S15 P4 追加ソルバーの固定依存と診断ビルド
 
-- 状態: 事前基準と依存取得の記録。native/WASIのビルドは未実施
+- 状態: Boolector nativeの初回ビルドとWASIの予備ビルドが成功。SMTの正式比較・反復とBitwuzlaは未完了
 - 基準: [S15の共通基準](S15-formal-verification.md)、[候補と無効理由](../research/formal-capabilities.md)
 - 戻り先: [実験索引](README.md)、[形式検証の調査](../research/formal-solvers.md)
 
@@ -40,13 +40,46 @@ BitwuzlaとBoolectorを、固定した上流実装のままnative/WASIで動か�
 
 Meson 1.12.1のwheelはPyPIのSHA-256に一致し、同梱COPYINGはApache-2.0でした。runtimeの依存はなく、ninjaなどのextrasは指定しません。Mesonを製品のWASMへ含めるわけではありません。
 
+## Boolectorの初回ビルドと次の対照
+
+清浄なcommit `8db748d8006dd348152c2b737f266c70520a2d8c` でnative/WASIを順に実行しました。nativeはGCC/G++ 11.4.0、CMake 3.22.1で生成でき、版表示は3.2.4でした。バイナリーは2,861,824 bytes、SHA-256は `5306934dc6ffd626e8a02d577f4508985ada7e80af2912acd45349c6b9c7ceeb` です。これはビルドと版表示の診断であり、SMTの正しさや正式な比較を確認した結果ではありません。
+
+WASIはCaDiCaLのconfigureがC++のcompiler probeをリンクする時点で停止しました。`__cpp_exception`、`_Unwind_RaiseException`、`_Unwind_DeleteException` が未解決で、Btor2ToolsとBoolector本体のビルドには到達していません。終了状態 `error` と依存の原archive、license、configureログを残し、成功したnativeの結果と混同しません。
+
+原本のconfigureは `LDFLAGS` を渡さず、生成したtargetの実行も要求します。次の対照では `patches/cadical-wasi-cross.patch` を隔離したソースへ適用します。compiler probeのリンクにはSDKのlibunwind・setjmpを渡し、明示したcross buildではtargetをhostで実行しません。C++の機能は実際のコンパイルとリンクで確かめ、unlocked IOは無効にします。nativeの実行確認は残し、判定アルゴリズムには触れません。static archiveの生成にも指定したARを使います。WASIで判定できることや、このpatchの採用を先に確定したわけではありません。
+
 ## 再実行の入口
+
+### CaDiCaLのWASI境界と失敗試行
+
+初回のconfigure失敗に続き、同じbase commitの未コミット変更で次の予備試行を行いました。正式な性能比較や5回反復には数えません。各出力先は `build/S15/` 配下で、再利用していません。
+
+| 出力先 | 状態と停止箇所 | 次に変えた条件 |
+|---|---|---|
+| `boolector-wasi-cross-preliminary-02` | patchのhunk不一致 | 固定ソースから差分を作り直す |
+| `boolector-wasi-cross-preliminary-03` | CaDiCaLの `popen` / `pclose` が未宣言 | WASIの外部pipe要求を明示拒否する |
+| `boolector-wasi-cross-preliminary-04` | `rusage.ru_maxrss` がない | native RSSの未提供を明示する |
+| `boolector-wasi-cross-preliminary-05` | `signal.cpp` の `alarm` が未宣言 | OS alarm要求を明示拒否する |
+| `boolector-wasi-cross-preliminary-06` | WASIバイナリーの生成まで成功 | 清浄な同一commitで両runtimeを作り直す |
+
+予備06のWASMは2,116,590 bytes、SHA-256は `49f7d52682fe6e9142b75d58873eaf28a69d87dd654dea59aa9987ea902c4764` でした。これは生成の確認だけで、まだ実行・判定・SBY接続の確認ではありません。
+
+上記のcross設定に加え、[外部pipe](../../patches/cadical-wasi-pipes.patch)、[RSS](../../patches/cadical-wasi-resources.patch)、[alarm](../../patches/cadical-wasi-alarm.patch)を別のpatchにしました。外部pipeとOS alarmは診断をstderrへ出してabortし、成功したようには扱いません。solverを止める期限と取消はworker側の境界で別に検証します。CaDiCaLのRSS関数が返す0は未提供のsentinelで、測定値0ではありません。metadataの `cadical_native_rss_available: false` でも区別します。SATの判定処理は変更しません。
+
+依存の原licenseは取得したarchive内に保持します。CaDiCaLはArmin Biere、BTOR2ToolsはArmin Biere・Mathias Preiner・Aina Niemetzの著作権表示を含むMITの原文を確認しました。patchを適用したソースの提供時も、この原文を保持します。製品配布のlicense closureが完了したという意味ではありません。
+
+以後の試行ではdriverと適用patchのsnapshotも出力先に保存し、hashを記録します。過去のdriverも記録済みSHA-256に一致する原文を保全しました。最初の誤ったpatchによる部分適用とrejectも失敗記録として残します。
+
+### 清浄な版でのビルドとCLI診断
 
 ```sh
 python3 -m venv build/formal-build-tools
 build/formal-build-tools/bin/pip install --require-hashes -r requirements-formal-build.txt
 python3 scripts/build-solver-probe.py --solver boolector --runtime native --out build/S15/boolector-native-01
 python3 scripts/build-solver-probe.py --solver boolector --runtime wasi --out build/S15/boolector-wasi-01
+node scripts/probe-extra-solver-cli.mjs --native build/S15/boolector-native-01 --wasi build/S15/boolector-wasi-01 --out build/S15/boolector-cli-01
 ```
 
 `--cmake` と `--jobs` でhostツールのパスと並列数を明示できます。対応していないsolver名は拒否します。Bitwuzlaのビルド接続と正式反復は未完了です。Tang Nano実機での動作は本リポジトリでは試していません。
+
+CLI診断は清浄なbuild metadataとbinary hashを先に照合し、version、help、値取得とpush/pop、EOF、構文エラーの5条件をnativeと実workerで交互に実行します。WASIは7 byte bufferへ3 byteずつ書き、stdout/stderrの全byteと終了コードを比較します。Boolectorのsat終了10を通常終了0へ読み替えません。構文エラーの終了1も独立して検査します。生CSVと各stream・結果JSONは出力先へ保存します。これは予備CLI診断であり、全列の独立監査・正式反復・SMTBMCの検証を代替しません。
