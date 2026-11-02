@@ -20,6 +20,8 @@ T0 から T3 の編集・保存・合成・配置配線・ビットストリー�
 
 [SBY全体の仮想process接続](docs/experiments/S15-sby-runtime.md)も追加しました。BMCの有界PASS、proveのUNKNOWN、coverの到達・未到達を区別し、初期実装は`-j 1`に限ります。[全268成果物・16列の独立監査](docs/experiments/S15-sby-artifact-audit.md)に加え、[清浄な同一commitの正式5回・A/A 2回](docs/experiments/S15-sby-repeated.md)で両solver各6条件が一致し、生CSV全84行19列と反復間の全成果物hashを照合しました。[worker異常対照](docs/experiments/S15-sby-controls.md)の23条件と[原本のwitness変換](docs/experiments/S15-sby-witness.md)の2形式も、正式5回・A/A 2回を終え、全列と全workerの終了を独立監査しました。witnessは形式変換の境界の試験であり、元回路による反例検証、配布・画面統合は残っています。
 
+[形式検証の候補一覧と無効理由](docs/research/formal-capabilities.md)のデータを追加しています。上流のSMT全9選択肢・SBY全6エンジンと内蔵SATを残し、検査経路での動作と製品資材の準備を区別します。Bitwuzla・Boolectorのビルド、候補の画面表示とT6全体は未完了です。
+
 ## IDE 画面
 
 IDE は、左にプロジェクトのファイル一覧、中央に HDL エディターとログ・問題・成果物・波形、右にボード情報と書き込み設定を表示します。プロジェクトと設計ファイルはブラウザー内の OPFS に保存し、ZIP で書き出し・読み込みができます。設計データをサーバーへ送信せず、合成・配置配線・ビットストリーム作成をブラウザー内で実行します。
