@@ -54,6 +54,24 @@ Yices2の予備WASMは1,970,068 byte、SHA-256は`911dd45e24c6a15ff6e4114ecb2b4b
 
 初回の予備ビルドは正式反復ではありません。WASI SDKのsetjmpヘッダーは、例外処理を使う`-mllvm -wasm-enable-sjlj`を要求します。Yices2の元のparser・contextにはsetjmp/longjmpがあるため、この機能を使って適合性を調べます。例外処理を省いて成功扱いにはしません。上流のalarmやsignalを黙って成功させる代用品も作りません。
 
+## 応答の字句境界とnative参照版の追加調査
+
+`web/lib/smt-response-framer.mjs`はSMT-LIB 2.6系の応答をbyte列から区切ります。括弧の深さ、文字列の二重引用符、縦棒付きsymbol、行末までのcommentだけを扱い、SMT構文や式の意味、sat・unsatの妥当性は判定しません。根拠は固定Yices2の`src/frontend/smt2/smt2_lexer.c`の`smt2_read_string_var`と`next_smt2_token`です。旧SMT-LIB 2.0のbackslashによる引用符escapeは、このprofileの対象外です。
+
+分割したUTF-8は検証を継続し、不正な列、閉じていない括弧・引用、制御byteを拒否します。文字列は次のbyteまたはEOFで引用符の二重化を判別します。応答ごと・全体のbyte数、深さ、応答数にも上限を設け、失敗後やEOF後の再利用を拒否します。既定の上限は8 MiB、深さ512、4096応答です。元の文字列とcommentは応答内に保持します。
+
+単体12件では、全byte境界の分割、1 byteずつの入力、日本語、二重引用符、長いmodel、上限、破損、途中欠落、EOFを検査しました。これは字句境界の単体検査です。実solverのnative/WASM比較、5回反復、実ブラウザーでの確認やSMTの意味検証とは区別します。正常な応答を先に受け取っても、その後の破損やprocess異常を無視して成功にしてはいけません。
+
+Z3の`p2-z3-native-2`は、全compile後のlinkで`std::length_error`のdestructorが未解決となり、libc++abiが`DSO missing from command line`で停止しました。失敗ログ・元のdriver・metadataを残し、生CSVへ追加しました。compile用のincludeとlink用の標準ライブラリー設定を混在させた警告も保持します。`std::format`と例外の小さな対照では、同じobjectを明示ABIなしでlinkすると失敗し、`-lc++abi -lunwind`付きではlinkと実行が成功し、`format:21`を出力しました。これはZ3本体の成功ではありません。
+
+driverに`--cxx-link-flags`と`--cxx-libraries`を加え、CMakeの実行ファイルlink設定と標準ライブラリーへ分けて渡します。Yices2 WASIは、上流のMakefileがobjectの後ろへ置く`LIBS`にSDKの`-lsetjmp`を渡します。GMPの設定と上流のコードは変えません。このdriverでのclean buildと正式比較は、まだ完了していません。再検査は次のコマンドです。
+
+```sh
+node --test tests/web/smt-response-framer.test.mjs
+python3 -m py_compile scripts/build-solver-probe.py
+python3 scripts/build-solver-probe.py --help
+```
+
 ## 予備試行の証拠と再実行
 
 CSVの全21行13列を読み、全行のlog hashを再計算して一致を確認しました。完了した83ファイルの[path・byte数・SHA-256の目録](S15-solver-preliminary-files.csv)も保存しました。証拠ZIPは`S15-solver-preliminary-evidence-v3.zip`、432,778 byte、SHA-256は`2a116affce900ef17efc36d290953e81b4695b54d8473fcd0299c85ef8a4f100`です。ZIP内の全目録項目を再読して、byte数とhashを照合しました。初回のdriver、失敗したcompile・link・worker、修正後の対照、適用したpatchを含みます。実行中のZ3 native再buildのlogとmetadataは、変わり続けるため含めていません。
