@@ -116,4 +116,4 @@ CSVのSHA-256は `579d7edb330fc9516be8ad3aba300ed5bf27a98daa2a278666c9e632f393ac
 
 採用する設定はheap placer翻訳単位だけです。compile commandsから `EIGEN_DONT_VECTORIZE` と `-ffp-contract=off` が各1個あることを検査し、競合する縮約設定、unsafe math、response fileを拒否します。版、ソースpin、既存の順序固定パッチ、JSONの厳密比較、製品の対応ボードは変えません。
 
-CIのcache保存keyをrestoreと同じ入力へ揃え、次回の失敗時には `build/t5-library-flow-*` の入力とログを7日間保存します。取得した元の失敗や未確認の範囲を成功へ書き換えません。提出commitでの全ボード回帰は別に記録します。T6全体は未完了です。Tang Nano実機は本リポジトリでは試していません。
+CIのcache保存keyをrestoreと同じ入力へ揃え、次回の失敗時には `build/t5-library-flow-*` の入力とログを7日間保存します。取得した元の失敗や未確認の範囲を成功へ書き換えません。[提出commitの全60組回帰と全列監査](S14A-final-regression.md)は別に記録しました。HDL32組成功、CPU18組成功・6組容量超過・4組frontend非対応です。修正後CI全体とT6全体は未完了です。Tang Nano実機は本リポジトリでは試していません。
