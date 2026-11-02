@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import configparser
 import hashlib
 import io
 import json
@@ -14,6 +15,7 @@ import re
 import shlex
 import shutil
 import subprocess
+import sys
 import tarfile
 import time
 
@@ -157,6 +159,171 @@ def build_boolector(args, output, source, metadata, run, environment, compiler, 
     return output / "objects/bin/boolector"
 
 
+def bitwuzla_dependencies(source):
+    result = {}
+    for name, section in (("cadical", "wrap-file"), ("symfpu", "wrap-git")):
+        path = source / "subprojects" / f"{name}.wrap"
+        parser = configparser.ConfigParser(interpolation=None)
+        parser.read_string(path.read_text())
+        values = dict(parser[section])
+        if section == "wrap-file":
+            if (not re.fullmatch(r"[A-Za-z0-9_.-]+", values["directory"])
+                    or values["directory"] in (".", "..")
+                    or not re.fullmatch(r"[A-Za-z0-9_.-]+\.tar\.gz", values["source_filename"])
+                    or not re.fullmatch(r"[0-9a-f]{64}", values["source_hash"])
+                    or not values["source_url"].startswith("https://github.com/")):
+                raise ValueError("Invalid pinned CaDiCaL wrap")
+        elif (not re.fullmatch(r"[0-9a-f]{40}", values["revision"])
+              or not re.fullmatch(r"https://github.com/[\w-]+/[\w.-]+\.git", values["url"])):
+            raise ValueError("Invalid pinned SymFPU wrap")
+        if values["patch_directory"] != name:
+            raise ValueError("Unexpected Meson overlay")
+        result[name] = {**values, "wrap_sha256": digest(path)}
+    return result
+
+
+def check_bitwuzla_meson_dependencies(entries, prefix, versions):
+    found = {entry["name"]: entry for entry in entries}
+    if len(found) != len(entries) or set(found) - {"gmp", "mpfr", "threads"}:
+        raise ValueError("Unexpected external Bitwuzla dependency")
+    for name in ("gmp", "mpfr"):
+        entry = found.get(name, {})
+        libraries = [str(prefix / f"lib/lib{name}.a")]
+        if name == "mpfr":
+            libraries.append(str(prefix / "lib/libgmp.a"))
+        if (entry.get("version") != versions[name]
+                or entry.get("compile_args") != [f"-I{prefix}/include"]
+                or entry.get("link_args") != libraries):
+            raise ValueError(f"Meson did not select the staged {name} headers and libraries")
+    return entries
+
+
+def build_bitwuzla(args, output, source, metadata, run, environment, compiler, compiler_cxx, c_flags, link_flags, sdk):
+    metadata["meson"] = subprocess.check_output([args.meson, "--version"], text=True)
+    metadata["ninja"] = subprocess.check_output(["ninja", "--version"], text=True)
+    metadata["pkg_config"] = subprocess.check_output(["pkg-config", "--version"], text=True)
+    cxx_flags = c_flags.replace(" -std=gnu17", "")
+    if args.runtime == "native":
+        cxx_flags = f"{cxx_flags} {args.cxx_flags}".strip()
+        link_flags = args.cxx_link_flags
+    else:
+        link_flags = f"-fwasm-exceptions {link_flags}"
+    prefix = output / "dependencies"
+    env = {**environment, "CC": compiler, "CXX": compiler_cxx, "CFLAGS": c_flags,
+           "CXXFLAGS": cxx_flags, "LDFLAGS": link_flags,
+           "GIT_CEILING_DIRECTORIES": str(output),
+           "PKG_CONFIG_LIBDIR": str(prefix / "lib/pkgconfig"), "PKG_CONFIG_PATH": ""}
+    if sdk:
+        env.update(AR=str(sdk / "bin/llvm-ar"), RANLIB=str(sdk / "bin/llvm-ranlib"))
+        env["LDFLAGS"] = f"{link_flags} -lunwind -lsetjmp"
+    for name in ("gmp", "mpfr"):
+        version, sha256, asset, _url = pin("archive-pin", name).split("\t")
+        archive = ROOT / "vendor/formal-archives" / asset
+        if not archive.exists():
+            archive = ROOT / "build/cache" / asset
+        if digest(archive) != sha256:
+            raise ValueError(f"{name} archive pin mismatch")
+        metadata[name] = {"version": version, "archive_sha256": sha256}
+        arithmetic = output / f"{name}-source"
+        objects = output / f"{name}-objects"
+        arithmetic.mkdir()
+        objects.mkdir()
+        shutil.copyfile(archive, output / asset)
+        run(f"{name}-extract", ["tar", "-xJf", archive, "--strip-components=1", "-C", arithmetic])
+        metadata[name]["licenses"] = {p.name: digest(p) for p in arithmetic.glob("COPYING*") if p.is_file()}
+        if not metadata[name]["licenses"]:
+            raise ValueError(f"Missing {name} license")
+        options = [f"--prefix={prefix}", "--disable-shared", "--enable-static"]
+        if name == "gmp":
+            options += ["--disable-assembly", "--enable-cxx"]
+        else:
+            options += [f"--with-gmp={prefix}"]
+            if sdk:
+                options += ["--disable-thread-safe"]
+        if sdk:
+            options += ["--host=wasm32-unknown-wasi"]
+        run(f"{name}-configure", [arithmetic / "configure", *options], objects, env)
+        run(f"{name}-build", ["make", f"-j{args.jobs}"], objects, env)
+        run(f"{name}-install", ["make", "install"], objects, env)
+        metadata[name]["library_sha256"] = digest(prefix / f"lib/lib{name}.a")
+        headers = ("gmp.h", "gmpxx.h") if name == "gmp" else ("mpfr.h",)
+        metadata[name]["headers"] = {header: digest(prefix / "include" / header) for header in headers}
+
+    wraps = bitwuzla_dependencies(source)
+    metadata["wraps"] = wraps
+    cadical_wrap = wraps["cadical"]
+    archive = output / cadical_wrap["source_filename"]
+    run("cadical-download", ["curl", "--fail", "--location", "--output", archive, cadical_wrap["source_url"]])
+    if digest(archive) != cadical_wrap["source_hash"]:
+        raise ValueError("CaDiCaL wrap archive hash mismatch")
+    unpacked = output / "cadical-extract"
+    unpacked.mkdir()
+    with tarfile.open(archive) as entries:
+        entries.extractall(unpacked, filter="data")
+    cadical = source / "subprojects" / cadical_wrap["directory"]
+    shutil.move(unpacked / cadical_wrap["directory"], cadical)
+    metadata.setdefault("dependencies", {})["cadical"] = {
+        "url": cadical_wrap["source_url"], "archive_sha256": digest(archive),
+        "licenses": {p.name: digest(p) for p in cadical.glob("LICENSE*") if p.is_file()}}
+    if not metadata["dependencies"]["cadical"]["licenses"]:
+        raise ValueError("Missing CaDiCaL license")
+    symfpu = stage_dependency("symfpu", {"url": wraps["symfpu"]["url"],
+                                         "commit": wraps["symfpu"]["revision"]}, output, metadata, run)
+    symfpu_target = source / "subprojects/symfpu"
+    shutil.move(symfpu, symfpu_target)
+    for name, target in (("cadical", cadical), ("symfpu", symfpu_target)):
+        overlay = source / "subprojects/packagefiles" / name
+        files = sorted(p for p in overlay.rglob("*") if p.is_file())
+        if not files or any(p.is_symlink() for p in files):
+            raise ValueError("Missing or unsafe upstream Meson overlay")
+        metadata["dependencies"][name]["overlay"] = {
+            str(p.relative_to(overlay)): digest(p) for p in files}
+        shutil.copytree(overlay, target, dirs_exist_ok=True)
+
+    if sdk:
+        apply_source_patch("cadical-wasi-process-boundary.patch", cadical, output, metadata, run, "cadical-process-patch")
+        apply_source_patch("cadical-wasi-random-seed.patch", cadical, output, metadata, run, "cadical-random-patch")
+        apply_source_patch("bitwuzla-wasi-time-limit.patch", source, output, metadata, run, "bitwuzla-time-limit-patch")
+        apply_source_patch("bitwuzla-wasi-rss.patch", source, output, metadata, run, "bitwuzla-rss-patch")
+        metadata["cadical_native_rss_available"] = False
+        metadata["bitwuzla_native_rss_available"] = False
+        metadata["cadical_process_clock"] = "WASI SDK wall-clock emulation, not native CPU time"
+
+    machine = output / "meson-machine.ini"
+    binaries = {"c": compiler, "cpp": compiler_cxx, "ar": env.get("AR", "ar"),
+                "strip": str(sdk / "bin/llvm-strip") if sdk else "strip", "pkg-config": "pkg-config"}
+    if sdk:
+        adapter = output / "wasi-meson-compiler.py"
+        shutil.copyfile(ROOT / "scripts/wasi-meson-compiler.py", adapter)
+        metadata["meson_compiler_adapter_sha256"] = digest(adapter)
+        binaries.update(c=[sys.executable, str(adapter), compiler], cpp=[sys.executable, str(adapter), compiler_cxx])
+    settings = {"c_args": shlex.split(c_flags), "cpp_args": shlex.split(cxx_flags),
+                "c_link_args": shlex.split(link_flags),
+                "cpp_link_args": shlex.split(link_flags) + (["-lunwind", "-lsetjmp"] if sdk else shlex.split(args.cxx_libraries))}
+    text = "[binaries]\n" + "".join(f"{key} = {value!r}\n" for key, value in binaries.items())
+    text += "[built-in options]\n" + "".join(f"{key} = {value!r}\n" for key, value in settings.items())
+    if sdk:
+        text += "[host_machine]\nsystem = 'wasi'\ncpu_family = 'wasm32'\ncpu = 'wasm32'\nendian = 'little'\n"
+        text += f"[properties]\nneeds_exe_wrapper = true\npkg_config_libdir = {str(prefix / 'lib/pkgconfig')!r}\n"
+    machine.write_text(text)
+    metadata["meson_machine_sha256"] = digest(machine)
+    run("configure", [args.meson, "setup", output / "objects", source,
+                      "--cross-file" if sdk else "--native-file", machine, "--wrap-mode=nodownload",
+                      "-Dtesting=disabled", "-Dunit_testing=disabled", "-Ddefault_library=static",
+                      "-Doptimization=2", "-Dstrip=false"], env=env)
+    entries = json.loads((output / "objects/meson-info/intro-dependencies.json").read_text())
+    metadata["meson_dependencies"] = check_bitwuzla_meson_dependencies(
+        entries, prefix, {name: metadata[name]["version"] for name in ("gmp", "mpfr")})
+    run("build", [args.meson, "compile", "-C", output / "objects", "-j", str(args.jobs), "-v"], env=env)
+    metadata["libraries"] = {}
+    for library in sorted((output / "objects").rglob("*.a")) + sorted((prefix / "lib").glob("*.a")):
+        metadata["libraries"][str(library.relative_to(output))] = {
+            "bytes": library.stat().st_size, "sha256": digest(library)}
+    if not (output / "objects/subprojects" / cadical_wrap["directory"] / "src/libcadical.a").is_file():
+        raise ValueError("Expected the staged CaDiCaL library, not a system dependency")
+    return output / "objects/src/main/bitwuzla"
+
+
 def build(args):
     output = args.out.absolute()
     if output.exists() or output.is_symlink():
@@ -178,6 +345,7 @@ def build(args):
             "CC", "CXX", "AR", "RANLIB", "STRIP", "CPPFLAGS", "CFLAGS", "CXXFLAGS",
             "LDFLAGS", "LIBS", "LC_ALL", "TZ", "SOURCE_DATE_EPOCH",
             "GIT_CEILING_DIRECTORIES",
+            "PKG_CONFIG_LIBDIR", "PKG_CONFIG_PATH",
         ) if key in selected_env}
         metadata["commands"].append(record)
         (output / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
@@ -254,6 +422,9 @@ def build(args):
         elif args.solver == "boolector":
             binary = build_boolector(args, output, source, metadata, run, environment,
                                      compiler, compiler_cxx, c_flags, link_flags, sdk)
+        elif args.solver == "bitwuzla":
+            binary = build_bitwuzla(args, output, source, metadata, run, environment,
+                                    compiler, compiler_cxx, c_flags, link_flags, sdk)
         else:
             gmp_version, gmp_hash, gmp_asset, _url = pin("archive-pin", "gmp").split("\t")
             archive = ROOT / "vendor/formal-archives" / gmp_asset
@@ -313,10 +484,11 @@ def build(args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--solver", choices=("yices2", "z3", "boolector"), required=True)
+    parser.add_argument("--solver", choices=("yices2", "z3", "boolector", "bitwuzla"), required=True)
     parser.add_argument("--runtime", choices=("native", "wasi"), required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--cmake", default="cmake")
+    parser.add_argument("--meson", default="meson")
     parser.add_argument("--jobs", type=int, default=1)
     parser.add_argument("--patch", type=Path, action="append")
     parser.add_argument("--cxx-flags", default=os.environ.get("CXXFLAGS", ""))

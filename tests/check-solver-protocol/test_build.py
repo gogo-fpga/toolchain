@@ -18,6 +18,60 @@ SPEC.loader.exec_module(BUILD)
 
 
 class BuildTest(unittest.TestCase):
+    def test_bitwuzla_rejects_host_or_unexpected_meson_dependencies(self):
+        prefix = Path("/staged")
+        entries = [{"name": name, "version": "fixture", "compile_args": ["-I/staged/include"],
+                    "link_args": [f"/staged/lib/lib{name}.a", *(["/staged/lib/libgmp.a"] if name == "mpfr" else [])]}
+                   for name in ("gmp", "mpfr")]
+        versions = dict(gmp="fixture", mpfr="fixture")
+        self.assertEqual(BUILD.check_bitwuzla_meson_dependencies(entries, prefix, versions), entries)
+        for name, key, value in (("gmp", "version", "host"), ("gmp", "compile_args", ["-I/usr/include"]),
+                                  ("mpfr", "link_args", ["-lmpfr", "-lgmp"])):
+            changed = [{**item, **({key: value} if item["name"] == name else {})} for item in entries]
+            with self.subTest(name=name, key=key), self.assertRaises(ValueError):
+                BUILD.check_bitwuzla_meson_dependencies(changed, prefix, versions)
+        for changed in (entries[:1], entries + [entries[0]], entries + [{"name": "kissat"}]):
+            with self.subTest(entries=changed), self.assertRaises(ValueError):
+                BUILD.check_bitwuzla_meson_dependencies(changed, prefix, versions)
+
+    def test_wasi_meson_adapter_only_removes_exact_elf_group_flags(self):
+        spec = importlib.util.spec_from_file_location("wasi_meson", ROOT / "scripts/wasi-meson-compiler.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        kept = ["a.cpp", "-Wl,--fatal-warnings", "-Wl,--no-entry", "-lfoo", "-o", "output.wasm",
+                "-Wl,--start-group,other", "@response-file", "--unexpected"]
+        self.assertEqual(module.compiler_arguments(["-Wl,--start-group", *kept, "-Wl,--end-group"]), kept)
+
+    def test_bitwuzla_dependencies_come_from_upstream_wraps(self):
+        source = ROOT / "vendor/bitwuzla"
+        actual = BUILD.bitwuzla_dependencies(source)
+        self.assertEqual(set(actual), {"cadical", "symfpu"})
+        for name in actual:
+            self.assertEqual(actual[name]["wrap_sha256"], BUILD.digest(source / f"subprojects/{name}.wrap"))
+            self.assertEqual(actual[name]["patch_directory"], name)
+
+    def test_bitwuzla_wraps_reject_unpinned_and_unsafe_dependencies(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "subprojects").mkdir()
+            for name in ("cadical", "symfpu"):
+                (root / f"subprojects/{name}.wrap").write_bytes((ROOT / f"vendor/bitwuzla/subprojects/{name}.wrap").read_bytes())
+            for name, key, value in (("symfpu", "revision", "main"), ("symfpu", "url", "http://example.test/repo.git"),
+                                     ("symfpu", "patch_directory", "../symfpu"),
+                                     ("cadical", "source_hash", "0"), ("cadical", "directory", ".."),
+                                     ("cadical", "directory", "../outside"),
+                                     ("cadical", "source_filename", "../archive.tar.gz"),
+                                     ("cadical", "source_url", "http://example.test/archive.tar.gz")):
+                path = root / f"subprojects/{name}.wrap"
+                original = path.read_text()
+                changed = "\n".join(f"{key} = {value}" if line.startswith(f"{key} =") else line
+                                    for line in original.splitlines()) + "\n"
+                with self.subTest(name=name, key=key, value=value):
+                    path.write_text(changed)
+                    with self.assertRaises(ValueError):
+                        BUILD.bitwuzla_dependencies(root)
+                    path.write_text(original)
+
     def test_upstream_setup_pin_is_literal_and_unique(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

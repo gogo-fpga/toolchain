@@ -11,9 +11,11 @@ globalThis.crossOriginIsolated = true;
 
 const { values } = parseArgs({ options: {
   native: { type: "string" }, wasi: { type: "string" }, out: { type: "string" },
+  solver: { type: "string", default: "boolector" },
 } });
 assert.ok(values.native && values.wasi && values.out, "Required: --native --wasi --out");
-const probes = [loadSolverProbe(values.native, "boolector", "native"), loadSolverProbe(values.wasi, "boolector", "wasi")];
+assert.ok(["boolector", "bitwuzla"].includes(values.solver), "Unsupported solver");
+const probes = [loadSolverProbe(values.native, values.solver, "native"), loadSolverProbe(values.wasi, values.solver, "wasi")];
 assert.equal(probes[0].info.base_commit, probes[1].info.base_commit);
 const output = path.resolve(values.out);
 mkdirSync(output);
@@ -23,17 +25,30 @@ const columns = ["runtime", "case", "status", "exit_code", "signal", "elapsed_ms
   "input_sha256", "stdout_sha256", "stderr_sha256", "binary_sha256", "build_commit", "metadata_sha256", "write_error"];
 const results = path.join(output, "results.csv");
 writeFileSync(results, csv(columns), { flag: "wx" });
+const solverArgs = values.solver === "boolector" ? ["--smt2", "-i"] : ["--lang=smt2"];
+const satExit = values.solver === "boolector" ? 10 : 0;
 const cases = [
   { name: "version", args: ["--version"], input: "", exit: 0 },
   { name: "help", args: ["--help"], input: "", exit: 0 },
-  { name: "values-push-pop", args: ["--smt2", "-i"], exit: 10,
+  { name: "values-push-pop", args: solverArgs, exit: satExit,
     input: "(set-option :produce-models true)(set-logic QF_BV)(declare-fun x () (_ BitVec 8))(assert (= x #x2a))(check-sat)(get-value (x))(push 1)(assert (= x #x2b))(check-sat)(pop 1)(check-sat)\n",
     stdout: "sat\n((x #b00101010))\nunsat\nsat\n" },
-  { name: "eof", args: ["--smt2", "-i"], input: "(set-logic QF_BV)(check-sat)\n", exit: 10, stdout: "sat\n" },
-  { name: "syntax", args: ["--smt2", "-i"], input: "(set-logic QF_BV)(not-a-command)\n", exit: 1 },
+  { name: "eof", args: solverArgs, input: "(set-logic QF_BV)(check-sat)\n", exit: satExit, stdout: "sat\n" },
+  { name: "syntax", args: solverArgs, input: "(set-logic QF_BV)(not-a-command)\n", exit: 1 },
 ];
+if (values.solver === "bitwuzla") {
+  for (const [mode, expected] of [["RNE", "#x3f800000"], ["RNA", "#x3f800001"], ["RTP", "#x3f800001"],
+    ["RTN", "#x3f800000"], ["RTZ", "#x3f800000"]]) {
+    cases.push({ name: `fp-round-${mode}`, args: solverArgs, exit: 0, stdout: "unsat\n",
+      input: `(set-logic QF_FP)(assert (not (= (fp.add ${mode} ((_ to_fp 8 24) #x3f800000) ((_ to_fp 8 24) #x33800000)) ((_ to_fp 8 24) ${expected}))))(check-sat)\n` });
+  }
+  cases.push({ name: "fp-nan", args: solverArgs, exit: 0, stdout: "unsat\n",
+    input: "(set-logic QF_FP)(assert (not (fp.isNaN (fp.div RNE (_ +zero 8 24) (_ +zero 8 24)))))(check-sat)\n" });
+  cases.push({ name: "array-store", args: solverArgs, exit: 0, stdout: "unsat\n",
+    input: "(set-logic QF_ABV)(declare-fun a () (Array (_ BitVec 8) (_ BitVec 8)))(assert (not (= (select (store a #x2a #x7f) #x2a) #x7f)))(check-sat)\n" });
+}
 const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
-json("setup.json", { format: 1, purpose: "Diagnostic CLI comparison, not formal qualification", commit,
+json("setup.json", { format: 1, purpose: "Diagnostic CLI comparison, not formal qualification", solver: values.solver, commit,
   argv: process.argv.slice(2), node: process.version, cases,
   builds: probes.map(probe => ({ ...probe.info, metadata_sha256: probe.metadataSha256 })) });
 
@@ -53,7 +68,7 @@ async function run(probe, fixture) {
     const out = [];
     const err = [];
     const handle = startSolverProcess({ wasm: probe.binary, sha256: probe.info.artifact.sha256,
-      args: ["boolector", ...fixture.args], capacity: 7, timeoutMs: 30000,
+      args: [values.solver, ...fixture.args], capacity: 7, timeoutMs: 30000,
       onStdout: bytes => out.push(Buffer.from(bytes)), onStderr: bytes => err.push(Buffer.from(bytes)),
       workerFactory: () => nodeSolverWorker() });
     try {
@@ -87,7 +102,7 @@ async function run(probe, fixture) {
   }
   if (fixture.stdout !== undefined) assert.equal(stdout.toString(), fixture.stdout);
   if (fixture.name === "version") assert.equal(stdout.toString().trim(), probe.info.source.version);
-  if (fixture.name === "help") assert.match(stdout.toString(), /^usage: boolector /);
+  if (fixture.name === "help") assert.match(stdout.toString(), values.solver === "boolector" ? /^usage: boolector / : /^Usage:\n  bitwuzla /);
   return { stdout, stderr };
 }
 
