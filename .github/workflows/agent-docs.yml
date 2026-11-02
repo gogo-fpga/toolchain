@@ -71,5 +71,10 @@ jobs:
       - name: 文書の大きさ検査のテスト
         run: sh tests/check-document-size/run.sh
 
-      - name: ソルバー応答の監査器の単体テスト
+      - name: 能力一覧の検査に使う Node.js を設定
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: ソルバー応答の監査器と能力一覧の単体テスト
         run: python3 -m unittest discover -s tests/check-solver-protocol
