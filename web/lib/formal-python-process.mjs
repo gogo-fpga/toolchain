@@ -1,13 +1,15 @@
 import { attachBytePipe } from "./byte-pipe.mjs";
 import { startSolverProcess } from "./solver-process.mjs";
 import { safePath } from "./verified-assets.mjs";
+import { startFormalToolProcess } from "./formal-tool-process.mjs";
 
 const FAILURE_STATUSES = new Set(["setup-error", "integrity-error", "runtime-error"]);
 
-export function startFormalPython({ sources, manifest, entrypoint, args, files, solvers,
+export function startFormalPython({ sources, manifest, entrypoint, args, files, solvers, yosys, cwd = null,
   timeoutMs = 30_000, onStdout = () => {}, onStderr = () => {},
   workerFactory = () => new Worker(new URL("../formal-python-worker.mjs", import.meta.url), { type: "module" }),
   solverWorkerFactory,
+  wasiWorkerFactory,
 }) {
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 300_000) throw new RangeError("Invalid formal deadline");
   if (typeof onStdout !== "function" || typeof onStderr !== "function") throw new TypeError("Invalid formal callbacks");
@@ -22,6 +24,7 @@ export function startFormalPython({ sources, manifest, entrypoint, args, files, 
   const results = [];
   const started = performance.now();
   let terminal = false;
+  let rootExiting = false;
   let outputBytes = 0;
   let resolve;
   const completion = new Promise(done => { resolve = done; });
@@ -98,11 +101,65 @@ export function startFormalPython({ sources, manifest, entrypoint, args, files, 
     } catch (error) { child.abort(); throw error; }
   }
 
+  function spawnTool(data) {
+    if (entrypoint !== "sby" || identities.has(data.processId) || typeof data.processId !== "string" ||
+        !data.processId.startsWith(jobId + ":") || identities.size >= 256) throw new Error("Invalid SBY process identity");
+    identities.add(data.processId);
+    if (!(data.control instanceof SharedArrayBuffer) || data.control.growable || data.control.byteLength !== 8) throw new Error("Invalid SBY process control");
+    const control = new Int32Array(data.control);
+    if (Atomics.load(control, 0) !== 0 || Atomics.load(control, 1) !== 0) throw new Error("Invalid initial SBY process control");
+    const output = attachBytePipe(data.channels.stdout, "writer");
+    const stderr = attachBytePipe(data.channels.stderr, "writer");
+    const delta = attachBytePipe(data.channels.delta, "writer");
+    let process;
+    let writes = Promise.resolve();
+    let bytesWritten = 0;
+    const mergedOutput = bytes => {
+      bytesWritten += bytes.length;
+      if (bytesWritten > 8 * 1024 * 1024) throw new Error("SBY child output limit");
+      writes = writes.then(() => output.writeAsync(bytes));
+      void writes.catch(() => {});
+      return writes;
+    };
+    const child = { expectedTermination: false, abort() {
+      Atomics.store(control, 0, 2); Atomics.notify(control, 0);
+      for (const endpoint of [output, stderr, delta]) endpoint.cancel();
+      process?.cancel();
+    } };
+    active.set(data.processId, child);
+    try {
+      process = startFormalToolProcess({ data, sources, manifest, solvers, yosys,
+        pythonFactory: startFormalPython, workerFactory, solverWorkerFactory, wasiWorkerFactory,
+        timeoutMs: Math.max(1, Math.ceil(timeoutMs - (performance.now() - started))),
+        onStdout: mergedOutput, onStderr: mergedOutput });
+      child.completion = process.completion.then(async result => {
+        const { frame, files: unusedFiles, ...metadata } = result;
+        results.push({ processId: data.processId, args: data.args, role: "tool", expectedTermination: child.expectedTermination, ...metadata });
+        if (terminal || child.expectedTermination) return;
+        if (result.status !== "exited" || result.integrityVerified !== true ||
+            !Number.isInteger(result.exitCode) || result.exitCode < 0 || result.exitCode > 255 || !(frame instanceof Uint8Array)) {
+          child.abort(); return;
+        }
+        await writes;
+        for (let offset = 0; offset < frame.length; offset += 1024 * 1024) await delta.writeAsync(frame.subarray(offset, offset + 1024 * 1024));
+        output.end(); stderr.end(); delta.end();
+        Atomics.store(control, 1, result.exitCode);
+        Atomics.store(control, 0, 1); Atomics.notify(control, 0);
+      }).catch(error => {
+        if (!terminal && !child.expectedTermination) finish("transport-error", { error: String(error.message).slice(0, 1024) });
+      }).finally(() => active.delete(data.processId));
+    } catch (error) { child.abort(); throw error; }
+  }
+
   function message({ data }) {
-    if (terminal || data?.jobId !== jobId) return;
+    if (terminal || rootExiting || data?.jobId !== jobId) return;
     try {
       if (data.type === "spawn-solver") spawn(data);
-      else if (data.type === "stop-process") active.get(data.processId)?.abort();
+      else if (data.type === "spawn-process") spawnTool(data);
+      else if (data.type === "stop-process") {
+        const child = active.get(data.processId);
+        if (child) { child.expectedTermination = true; child.abort(); }
+      }
       else if (data.type === "stdout" || data.type === "stderr") {
         if (typeof data.text !== "string") throw new Error("Invalid formal log");
         outputBytes += new TextEncoder().encode(data.text).length;
@@ -117,9 +174,15 @@ export function startFormalPython({ sources, manifest, entrypoint, args, files, 
           paths.add(file.path); bytes += file.bytes.length;
           if (bytes > 32 * 1024 * 1024) throw new Error("Formal result file limit");
         }
-        if (active.size || results.some(result => result.status !== "exited" || !result.integrityVerified || result.exitCode !== 0)) {
-          finish("transport-error", { error: "Formal subprocess did not terminate cleanly", exitCode: data.exitCode });
-        } else finish("exited", data);
+        const pending = [...active.values()];
+        if (pending.some(child => !child.expectedTermination)) throw new Error("Formal subprocess is still active at root exit");
+        rootExiting = true;
+        void Promise.allSettled(pending.map(child => child.completion)).then(() => {
+          if (results.some(result => !result.expectedTermination && (result.status !== "exited" || !result.integrityVerified ||
+              (result.role !== "tool" && result.exitCode !== 0)))) {
+            finish("transport-error", { error: "Formal subprocess did not terminate cleanly", exitCode: data.exitCode });
+          } else finish("exited", data);
+        });
       } else if (data.type === "failure" && FAILURE_STATUSES.has(data.status) && typeof data.error === "string" && data.error.length <= 1024) finish(data.status, { error: data.error });
       else throw new Error("Invalid formal worker message");
     } catch (error) { finish("protocol-error", { error: String(error.message).slice(0, 1024) }); }
@@ -129,7 +192,7 @@ export function startFormalPython({ sources, manifest, entrypoint, args, files, 
   worker.addEventListener("message", message);
   worker.addEventListener("error", error);
   worker.addEventListener("messageerror", decodingError);
-  try { worker.postMessage({ jobId, sources, manifest, entrypoint, args, files }); }
+  try { worker.postMessage({ jobId, sources, manifest, entrypoint, args, files, cwd }); }
   catch (error) { finish("setup-error", { error: String(error.message).slice(0, 1024) }); }
   return Object.freeze({ jobId, completion, cancel() { finish("cancelled"); } });
 }
