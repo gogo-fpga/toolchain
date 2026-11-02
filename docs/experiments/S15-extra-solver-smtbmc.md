@@ -45,6 +45,16 @@
 
 修正後の作業中の予備試行では、両候補のSMTBMC各8条件、SBY各6条件が一致しました。SBYはstatus、分類、SQLite全5表と主要成果物を比較しています。これは作業中の検査であり、清浄な提出commitの検証や、全列を導出する独立監査、正式反復の成功とは扱いません。単体はWeb 272件、Python 98件が成功しています。AST照合と偽の判定を拒否する検査も含みます。
 
+### 清浄な接続commitの再検査
+
+`7345f8b75072364f21b127abe1002fc62719de2a` の清浄な作業treeでPython資材を再生成し、nativeの起動先を検査してから両候補を逐次比較しました。[直接SMTBMCの生CSV](S15-extra-solver-smtbmc-preliminary.csv)は全16行13列、[SBYの生CSV](S15-extra-solver-sby-preliminary.csv)は全12行16列です。全行でerror欄は空です。SMTBMCはnative/Pyodideの終了codeとstdout hash、反例の全byteが一致し、SBYは6条件の分類、SQLite全5表と主要成果物が一致しました。各solverのSBY成果物数は134、比較対象は80であり、両候補の合計は268成果物・160比較です。
+
+同じcommitでPython 98件・Web 272件・実Yosys子worker 3件の計373件が成功しました。Node構文、Python compile、pin、JIS、link、文書サイズも検査しています。これは正式反復ではなく、全列の独立監査を通した記録でもありません。CSVを公開したことだけで適合性認定とは扱いません。
+
+実行ディレクトリーは `build/S15/p4-{bitwuzla,boolector}-{native,smtbmc,sby}-7345f8b`、Python資材は `build/S15/p4-extra-python-assets-7345f8b` です。各ディレクトリーのmetadataに計測commit、清浄な作業tree、全snapshot、native起動先、資材hashを保持しています。失敗した初期試行は上書きしていません。
+
+RESEARCH.mdは追記時に40,000バイトを超えたため、旧見出しとリンクを残し、Yosys/nextpnrのビルド設定・比較規則・測定履歴を[独立した調査](../research/yosys-nextpnr-wasi.md)へ移しました。原典、過去の失敗、その後の修正、測定値を保持しています。
+
 ### 再実行の形
 
 診断manifestは、各solverの `native` と `wasi` に前段のbuildディレクトリーを指定するJSONです。出力先は未使用の名前にし、例の `bitwuzla` を `boolector` に替えて両候補を実行します。

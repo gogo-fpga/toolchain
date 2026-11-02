@@ -22,6 +22,8 @@ Boolectorの隔離した診断ビルドでは、上流のsetup scriptが固定�
 
 Bitwuzlaの隔離したMeson診断は、上流wrapで固定したCaDiCaL（MIT）とSymFPU（BSD）、GMP・MPFRの原archiveを取得します。原license、ソース・overlay・patchのhashをmetadataに保持します。診断binaryを製品配布へ追加する変更ではありません。[Bitwuzlaの記録](docs/experiments/S15-bitwuzla-build.md)に、依存の分離と非対応なWASI境界を記録しています。[CLIの正式反復と独立監査](docs/experiments/S15-bitwuzla-cli-qualification.md)では、依存元archiveと原license・overlay・静的libraryも照合しています。SMTBMC/SBYと製品配布の認定は別に行います。
 
+[原本SMTBMC/SBYへの追加候補接続](docs/experiments/S15-extra-solver-smtbmc.md)は、既存の固定buildとPython原本を使い、process別名、help出力、stderr、終了codeの境界だけを変更します。SMTの解析や証明の判定は移植せず、原license・著作権表示を保持します。この予備接続でも両候補を製品資材には追加しません。
+
 ## 既存の実行資材と開発依存
 
 以下の固定版を使用しています。コミットは `vendor/` の gitlink に記録した値です。
