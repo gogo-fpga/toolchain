@@ -95,3 +95,5 @@ python3 evidence-restored/scripts/measure-formal-sby.py \
 ### 採否と残件
 
 事前基準を満たしたため、原本SBYのこの12条件についてprocess境界と成果物回収の接続を採用します。これはBMCのPASSを証明へ昇格させる根拠ではなく、source pinとこの条件集合を超えた全回路の正しさも意味しません。worker異常対照、witnessの実変換、元回路の反例検査、製品の配布・画面統合、CI全体は引き続き残件です。
+
+その後の[worker異常対照](S15-sby-controls.md)と[witness変換](S15-sby-witness.md)では、別の清浄commitで各5回とA/A 2回を完走しました。当時の本記録は保持し、新しい生CSV・証拠・採否をそれぞれの記録へ分けています。元回路の反例検査、製品の配布・画面統合、CI全体は引き続き残件です。

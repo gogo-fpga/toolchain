@@ -2,13 +2,13 @@
 
 [調査の索引](../../RESEARCH.md#7-分割した調査) / [固定ソースと配布条件](formal-sources.md) / [S15の事前基準](../experiments/S15-formal-verification.md)
 
-原本のprocess調査を経て、[SBY全体の仮想process接続](../experiments/S15-sby-runtime.md)を追加しました。初期実装は単一slotのBMC・prove・coverに限定し、両solver各6条件でstatus・主要成果物・SQLiteを予備比較しています。Pythonの判定処理は維持します。JsNull、SQLite WAL、作業領域の競合とcommand制限の調査、失敗試行も同記録に保存します。正式反復、全列の独立監査、配布と画面統合は未完了です。
+原本のprocess調査を経て、[SBY全体の仮想process接続](../experiments/S15-sby-runtime.md)を追加しました。初期実装は単一slotのBMC・prove・coverに限定し、Pythonの判定処理は維持します。JsNull、SQLite WAL、作業領域の競合とcommand制限の調査、失敗試行も同記録に保存します。その後の[正式5回・A/A 2回](../experiments/S15-sby-repeated.md)は全84行19列・全成果物が一致しました。[異常対照23条件](../experiments/S15-sby-controls.md)と[原本のwitness変換2形式](../experiments/S15-sby-witness.md)も、別の清浄commitで各5回とA/A 2回を終え、全列を独立監査しました。配布と画面統合は未完了です。
 
 ## 結論と確認範囲
 
 T6では upstream の SBY と `yosys-smtbmc` を再利用します。SMT式の生成、BMC、帰納法、モデルとVCDの生成を独自に書き換えません。Yices2とZ3を優先して比較し、BitwuzlaとBoolectorも候補として残します。Yosys内蔵SATは比較経路であり、SMT対応の代わりにはしません。
 
-P0でソースの静的調査と依存確認を行い、S15の事前基準をコミットしました。P1ではYosys内蔵SATと反例の比較経路を追加し、各節に検査範囲を記録しました。P2の[ソルバー予備ビルド](formal-solvers.md)は調査中で、WASM実行と双方向通信の正式な5回反復、ブラウザーの形式検証画面は未完了です。固定ソースの登録だけで、ソルバーを利用可能にはしません。
+P0でソースの静的調査と依存確認を行い、S15の事前基準をコミットしました。P1ではYosys内蔵SATと反例の比較経路を追加し、各節に検査範囲を記録しました。P2の[ソルバー予備ビルド](formal-solvers.md)の失敗と調査を経て、[native/WASI正式比較](../experiments/S15-solver-native-wasi.md)の全329行31列を監査しました。ブラウザーの形式検証画面は未完了です。以下の経緯にある「未完了」は各段階の記録として残し、最新の結果と区別します。固定ソースの登録だけで、ソルバーを利用可能にはしません。
 
 ## 上流の再利用と輸送層
 
@@ -76,6 +76,14 @@ SAT経路は、準備、前提の整合性確認、証明を別の実行に分�
 Icarusの`formal: true`は再実行専用の明示設定です。この場合だけgeneration 2012と`FORMAL=1`を使い、通常のVerilogシミュレーションの設定は変えません。一般的なSystemVerilogやSVAの対応を意味しません。ブラウザーのworker・入力snapshotとの接続、VHDL原文での再実行、vacuity検出は未完了です。
 
 `tests/synth/formal-replay.test.mjs`は、native/WASI Yosysの各反例をnative/WASM Icarusで独立に再実行し、stdout/stderr・違反property・VCD全バイトを照合します。N-1/N/N+1、両clock極性、帰納法の基底部、`FORMAL`内の組合せassertion、reset列を対象にし、壊した出力値とreset列をWASMで拒否させます。build-infoの原版・バイナリーhashと実行したvvpの版も照合します。正式な5回反復ではなく、[S15 P1の診断記録](../experiments/S15-formal-replay.md)として保存します。
+
+## VHDL反例の再実行と比較の経緯
+
+以下はRESEARCH.mdから移した調査時点の原記録です。「未完了」はそれぞれの段階の記録であり、現在の全体の完了を示すものではありません。
+
+元VHDLの独立再実行は、GHDL標準のVPIと`--psl-report`を再利用する限定した検査経路を追加しました。清浄な同一commitで55件×5回とA/Aの2回が成功し、元ファイルとCSV全280行19列を照合しています。通常assertionとclocked PSLの評価位相、coverが既定では標準出力に現れないこと、root moduleのVPI列挙、生CSV・全ファイルのhash・失敗試行と未完了の範囲を[元VHDLによる再実行の実験記録](../experiments/S15-vhdl-native-replay.md)へ保存します。下位化後のVerilog比較、追加fixtureとT6全体は未完了です。
+
+その後、[下位化Verilog比較](../experiments/S15-vhdl-lowered-replay.md)を追加しました。上流YosysでIcarus用モデルを出力し、assertion再実行からだけcoverを除き、元のcoverとPSLレポートを保持します。propertyのkind・A/EN別名と元ソースを対応付け、準備後のstate bit・初期値・clock、全ポートを照合します。通常assertionの診断密度は実行系で異なるため、最初の違反と全違反の包含を比較します。階層・名前付きライブラリーを含む10成功fixtureと5境界fixture、全60行20列の監査が予備検査で通りました。未知の初期値、memory、循環、空虚な条件は成功と区別します。[初回の失敗・process footerの制約](../experiments/S15-vhdl-lowered-failures.md)も保存します。その後、清浄な同一commitで69件を5回とA/Aの2回実行し、CSV420行の全20列とソース・実行系のhashを監査しました。GHDL VCDの日時と所要時間以外は反復間で一致しました。SMTソルバー、worker/UIとT6全体は引き続き未完了です。
 
 ## 判定とブラウザー統合
 

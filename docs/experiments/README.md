@@ -6,6 +6,8 @@
 
 | 記録 | 内容 | 状態 |
 |---|---|---|
+| [S15 SBY子workerの停止と輸送の対照](S15-sby-controls.md) | 実ソルバーのstdin待機、全worker停止、delta改変とroot競合、非対応オプション | 正式5回・A/A 2回、全161行14列・966出力・707 workerを独立監査。ZIPからの全件復元も成功 |
+| [S15 SbyPopenのwitness変換](S15-sby-witness.md) | AIGER・BTORの形式境界、原本の子worker、nativeとの全byte比較 | 正式5回・A/A 2回、全14行9列・42出力・21 workerを監査。回路の反例検証とは別 |
 | [S3A Pyodide gowin_pack のビットストリーム比較](S3A-pyodide-gowin-pack.md) | native と Pyodide の `.fs` 出力、実行時間、配布 asset の比較 | 完了 |
 | [S4A ブラウザー内ビルドの測定](S4A-browser-build.md) | Chromium 内の4ボード build、時間、memoryBytes の比較 | 完了 |
 | [S4B 大きい資材の圧縮形式と展開時間の比較](S4B-compressed-assets.md) | gzip、zstd、xz の大きさと Chromium での展開時間 | 完了 |
@@ -51,8 +53,8 @@
 | [S15 P2 ソルバーのビルドと双方向通信](S15-solver-build-and-transport.md) | 固定Yices2・Z3、stdin/stdout、終了・異常系、native/WASMの採否基準 | 初期の失敗と予備輸送を保持。clean buildと正式反復は下記へ分離 |
 | [S15 P2 実ソルバーの応答と終了](S15-solver-protocol.md) | bit-vector・array・長い応答、計算要求後の停止、hardware丸めの境界と全列監査 | 事前基準と予備21実行などの履歴。正式結果は下記へ分離 |
 | [S15 P2 Z3 WASIのlink](S15-z3-wasi-link.md) | SDKの例外library、fork登録と単一threadのyield、buildと計測の履歴分離 | link失敗と手動18条件を保持。その後のclean buildは成功 |
-| [S15 P2 native/WASI正式比較](S15-solver-native-wasi.md) | 両solverの実応答、worker異常系、5回・A/A、資源、圧縮サイズと証拠 | 全329行31列・294負の対照を監査。SBY・製品画面は未完了 |
+| [S15 P2 native/WASI正式比較](S15-solver-native-wasi.md) | 両solverの実応答、worker異常系、5回・A/A、資源、圧縮サイズと証拠 | 全329行31列・294負の対照を監査。SBY接続は後続のP3へ分離。製品画面は未完了 |
 | [S15 P3 原本SBY・SMTBMCのprocess境界](S15-sby-process.md) | Pythonの能力診断、原本のBMC・prove・coverと輸送境界 | native SBY12条件、原本SMTBMCとPyodide/WASI16条件の予備比較・全13列監査が成功。初期の過程は保持し、SBY全体の接続は次の記録へ |
-| [S15 P3 SBY全体の仮想process接続](S15-sby-runtime.md) | SbyPopen、Yosys/Python子worker、仮想select、jobserver、SQLiteと差分 | 両solver各6条件でstatus・主要成果物・SQLite5表が予備一致。正式反復・全列の独立監査・画面は未完了 |
-| [S15 P3 SBY全成果物の独立監査](S15-sby-artifact-audit.md) | 全268成果物・CSV16列、限定した環境差、再帰的終了、改変の拒否 | 清浄commitで全12条件・316件が成功。UNKNOWNのSQLite最終行不在を保持。正式反復は未完了 |
-| [S15 P3 SBY正式反復](S15-sby-repeated.md) | 同一commitでA/A 2回と正式5回、全84行・19列・反復間hash | 全1,876成果物が一致。全7,411ファイルをZIP復元後にも独立監査。worker異常対照・画面統合は残件 |
+| [S15 P3 SBY全体の仮想process接続](S15-sby-runtime.md) | SbyPopen、Yosys/Python子worker、仮想select、jobserver、SQLiteと差分 | 両solver各6条件でstatus・主要成果物・SQLite5表が予備一致。後続の独立監査・正式反復へ継続。画面は未完了 |
+| [S15 P3 SBY全成果物の独立監査](S15-sby-artifact-audit.md) | 全268成果物・CSV16列、限定した環境差、再帰的終了、改変の拒否 | 清浄commitで全12条件・316件が成功。UNKNOWNのSQLite最終行不在を保持。正式反復は次の記録へ分離 |
+| [S15 P3 SBY正式反復](S15-sby-repeated.md) | 同一commitでA/A 2回と正式5回、全84行・19列・反復間hash | 全1,876成果物が一致。全7,411ファイルをZIP復元後にも独立監査。異常対照は別記録へ継続。画面統合は残件 |
