@@ -42,6 +42,8 @@ AIGER・BTORの[witness変換試験](../experiments/S15-sby-witness.md)は形式
 
 ## BitwuzlaとBoolectorで残る境界
 
+[BitwuzlaのMeson診断](../experiments/S15-bitwuzla-build.md)は、上流wrapの固定依存とWASI境界を記録します。予備WASI本体の生成だけでは製品catalogの状態を変更しません。清浄なnative/WASI比較と整数幅の警告、原本SMTBMC/SBYの認定は残件です。
+
 Bitwuzla本体の固定版[COPYING](https://github.com/bitwuzla/bitwuzla/blob/8d1eb01093ae54d9b4586456b69c3bf31000a4c2/COPYING)とBoolector本体の固定版[COPYING](https://github.com/Boolector/boolector/blob/393cdfba3735d334bb4e6525500b8a0280dd41e6/COPYING)はMITです。本体の条件だけで、依存を含むバイナリーを配布可能とは判定しません。
 
 - BitwuzlaはGMP 6.3以上、MPFR 4.2.1以上、SymFPUとSAT backendを必要とします。既定はCaDiCaLで、Meson 0.64以上、C++17を要求します。wrapの取得先・固定revision・archive hashは[依存の原記録](formal-sources.md#ビルドprofileと無効な依存)からたどれます。別の固定値を能力一覧のコードへ複製しません。
