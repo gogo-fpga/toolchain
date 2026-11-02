@@ -49,3 +49,7 @@ node --test tests/web/formal-smt-replay.test.mjs tests/web/formal-trace-compare.
 予備試行では、定数netを元HDLの信号として参照する誤り、階層内のclock別名の扱い、PI順序とPython hash依存の順序差を検出した。定数はliteralで照合し、clock別名は同じRTLIL bitの場合だけ受理する。比較時の正規化はPI順序に限定し、native/Pyodideに同じhash seedを渡す。
 
 改変対照の初回は、保存した再実行ファイルの位置を取り違えて停止した。2回目は資材manifestのキー名の取り違えで停止した。どちらも監査成功に数えず、ログを保持して修正した。nativeの診断を追加監査する際には、ivlppの標準出力が前処理済みソースである点を見落とした。前処理出力と実行出力を区別し、実行出力・各段階の終了code・全stderrを照合するよう訂正した。
+
+最初の正式測定は、commit `f92110b` でA/A 1回目のYices2・Z3の個別監査まで通った。その後の点検で、Pythonでは `false == 0`、`true == 1` となり、終了codeや1 sampleの検証値を型違いで代用できる監査器の不備を見つけた。測定を中断して証拠を保全し、実行codeの整数型とplan・検証JSONの型を含む一致を必須化した。旧commitの `replay_result` を負の対照として実行し、2件の見逃しを確認した。中断したA/Aは正式結果に流用せず、修正後の清浄commitから全反復をやり直す。
+
+改変対照は型違い、property診断時刻、native compileの終了・警告、native最終stdoutの改変を加え、79件へ増やした。Yices2の予備証拠では79件すべてを拒否し、原状復帰後の監査も通った。

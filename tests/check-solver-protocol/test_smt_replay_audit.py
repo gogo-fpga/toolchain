@@ -1,5 +1,6 @@
 import copy
 import importlib.util
+import json
 from pathlib import Path
 import unittest
 
@@ -10,6 +11,46 @@ SPEC.loader.exec_module(AUDIT)
 
 
 class SmtReplayAuditTest(unittest.TestCase):
+    def test_replay_execution_and_verification_reject_boolean_integers_and_wrong_diagnostic_time(self):
+        class MemoryEvidence:
+            def read(self, name):
+                return self.files[name]
+
+            def data(self, name):
+                return json.loads(self.read(name))
+
+        evidence = MemoryEvidence()
+        prefix = "replay-wasm/"
+        stdout = ("FORMAL_REPLAY_DRIVE 1\nERROR: top.v:3: \n       Time: 0  Scope: __formal_replay.dut\n"
+                  "FORMAL_REPLAY_CHECK 1\nFORMAL_REPLAY_DONE\n").encode()
+        evidence.files = {
+            prefix + "execution.json": b'{"status":0,"elapsedMs":1}',
+            prefix + "verification.json": b'{"status":"verified","steps":1,"failures":[{"id":"P","step":1,"source":"top.v:3.1-3.9"}]}',
+            prefix + "stdout.log": stdout,
+            prefix + "stderr.log": b"",
+            prefix + "replay.vcd": self.waveform().replace(b"#2000\n1!\nb1 #\n#3000\n0!\n#4000", b"#1000"),
+        }
+        plan = {"steps": 1, "endTimeNs": 1, "clock": None, "edge": "posedge", "content": "read-only replay",
+                "locations": [{"id": "P", "kind": "assert", "path": "top.v", "line": 3, "source": "top.v:3.1-3.9"}]}
+        signals = {"q": {"clock": None}}
+        values = {"q": ["000"]}
+
+        def audit():
+            return AUDIT.replay_result(evidence, prefix, plan, signals, values, [])
+
+        self.assertEqual(audit()["actual"], "verified")
+        controls = [
+            ("execution.json", lambda raw: raw.replace(b'"status":0', b'"status":false')),
+            ("verification.json", lambda raw: raw.replace(b'"steps":1', b'"steps":true')),
+            ("stdout.log", lambda raw: raw.replace(b"Time: 0", b"Time: 2000")),
+        ]
+        for name, modify in controls:
+            original = evidence.files[prefix + name]
+            evidence.files[prefix + name] = modify(original)
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                audit()
+            evidence.files[prefix + name] = original
+
     def waveform(self):
         return b"""$timescale 1ps $end
 $scope module __formal_replay $end

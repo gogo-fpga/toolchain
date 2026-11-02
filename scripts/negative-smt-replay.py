@@ -8,6 +8,7 @@ import io
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -59,6 +60,15 @@ def mutations(solver):
         ("replay-exit", group + "replay-wasm/execution.json", lambda raw: changed_json(raw, lambda value: value.update(status=1))),
         ("replay-verification", group + "replay-native/verification.json", lambda raw: changed_json(raw, lambda value: value.update(steps=0))),
         ("missing-waveform", group + "replay-native/replay.vcd", lambda raw: None),
+        ("execution-status-type", group + "replay-wasm/execution.json", lambda raw: changed_json(raw, lambda value: value.update(status=False))),
+        ("verification-step-type", f"{solver}-combinational/pyodide-formal_trace/replay-wasm/verification.json", lambda raw: changed_json(raw, lambda value: value.update(steps=True))),
+        ("plan-step-type", f"{solver}-combinational/pyodide-formal_trace/plan.json", lambda raw: changed_json(raw, lambda value: value.update(steps=True))),
+        ("process-code-type", f"{solver}-no-property/pyodide-formal_trace/process.json", lambda raw: changed_json(raw, lambda value: value.update(exitCode=False))),
+        ("format-type", "metadata.json", lambda raw: changed_json(raw, lambda value: value.update(format=True))),
+        ("diagnostic-time", group + "replay-wasm/stdout.log", lambda raw: re.sub(rb"(Time:\s*)\d+", rb"\g<1>999999", raw)),
+        ("native-compile-exit", group + "replay-native/ivl.json", lambda raw: changed_json(raw, lambda value: value.update(status=1))),
+        ("native-compile-warning", group + "replay-native/ivl.stderr", lambda raw: raw + b"unexpected warning\n"),
+        ("native-run-output", group + "replay-native/vvp.stdout", lambda raw: raw + b"unexpected output\n"),
         ("unexpected-artifact", group + "files/unexpected", lambda raw: b"unexpected"),
         ("missing-row", "results.json", lambda raw: changed_json(raw, lambda value: value["rows"].pop())),
         ("duplicate-row", "results.json", lambda raw: changed_json(raw, lambda value: value["rows"].__setitem__(-1, value["rows"][0]))),

@@ -191,7 +191,7 @@ def expected_plan(document, capture, case):
 
 def replay_result(evidence, prefix, plan, signals, values, observations):
     execution = evidence.data(prefix + "execution.json")
-    require(execution["status"] == 0 and TRACE.positive(execution["elapsedMs"]), "normal replay execution")
+    require(type(execution["status"]) is int and execution["status"] == 0 and TRACE.positive(execution["elapsedMs"]), "normal replay execution")
     stdout, stderr, wave = (evidence.read(prefix + name) for name in ["stdout.log", "stderr.log", "replay.vcd"])
     require(not stderr.strip(), "replay stderr diagnostics")
     if prefix.endswith("replay-native/"):
@@ -256,7 +256,7 @@ def replay_result(evidence, prefix, plan, signals, values, observations):
         failures.append({"id": prop["id"], "step": step, "source": prop["source"]})
     require(failures, "missing independent property violation")
     verification = {"status": "verified", "steps": plan["steps"], "failures": failures}
-    require(evidence.data(prefix + "verification.json") == verification, "verification derived from independent evidence")
+    require(TRACE.encoded(evidence.data(prefix + "verification.json")) == TRACE.encoded(verification), "verification derived from independent evidence")
     return {"runtime": prefix.rstrip("/").split("-")[-1], "expected": "verified", "actual": "verified", "exitCode": 0, "elapsedMs": execution["elapsedMs"],
             "steps": plan["steps"], "failures": compact(failures), "replaySha256": digest(plan["content"].encode()), "stdoutSha256": digest(stdout), "stderrSha256": digest(stderr), "vcdSha256": digest(wave), "error": None}
 
@@ -264,7 +264,7 @@ def replay_result(evidence, prefix, plan, signals, values, observations):
 def audit(directory, formal=False):
     evidence = Evidence(directory)
     meta, result = evidence.data("metadata.json"), evidence.data("results.json")
-    require(meta["format"] == 1 and type(meta["preliminary"]) is bool and result["preliminary"] is meta["preliminary"], "matching replay mode")
+    require(type(meta["format"]) is int and meta["format"] == 1 and type(meta["preliminary"]) is bool and result["preliminary"] is meta["preliminary"], "matching replay mode")
     formal = formal or not meta["preliminary"]
     require(not formal or meta["worktree"] == "" and meta["preliminary"] is False, "clean formal replay harness")
     require(meta["cases"] == CASES and TRACE.SOLVERS.select(meta["solvers"]), "complete fixture and solver inventory")
@@ -274,7 +274,7 @@ def audit(directory, formal=False):
     for name, sha in meta.get("baselineHashes", {}).items():
         require(digest(evidence.read("baseline/" + name)) == sha, "native baseline hash")
     baseline = evidence.data("baseline/metadata.json")
-    require(meta["baseline"] == baseline, "native baseline identity")
+    require(TRACE.encoded(meta["baseline"]) == TRACE.encoded(baseline), "native baseline identity")
     require(not formal or baseline["worktree"] == "" and baseline["preliminary"] is False and baseline["commit"] == meta["commit"], "matching clean baseline")
     if formal:
         require(set(meta["baselineHashes"]) == {"metadata.json", "results.json"}, "complete native baseline hashes")
@@ -356,7 +356,7 @@ def audit(directory, formal=False):
                 for entrypoint in ["smtbmc", "formal_trace"]:
                     prefix = f"{solver}-{case}/{origin}-{entrypoint}/"
                     process = evidence.data(prefix + "process.json")
-                    require(process["status"] == "exited" and process["exitCode"] == code and TRACE.positive(process["elapsedMs"]), "normal original SMTBMC termination")
+                    require(process["status"] == "exited" and type(process["exitCode"]) is int and process["exitCode"] == code and TRACE.positive(process["elapsedMs"]), "normal original SMTBMC termination")
                     args = ["-s", "yices" if solver == "yices2" else solver, "--presat", "--noprogress"] + (["--unroll"] if solver == "yices2" else [])
                     args += ["-t", str(DEPTHS.get(case, 6)), "--dump-vcd", "trace.vcd", "--dump-yw", "trace.yw", "--dump-vlogtb", "trace_tb.v", "model.smt2"]
                     require(process["args"] == args and process.get("error") is None, "original SMTBMC argument and depth identity")
@@ -392,7 +392,7 @@ def audit(directory, formal=False):
                         derived.append({**fields, "runtime": "none", "expected": "rejected", "actual": "rejected", "exitCode": code, "elapsedMs": process["elapsedMs"], "error": REJECTED[case]})
                         continue
                     plan, signals, values, observations = expected_plan(document, capture, case)
-                    require(evidence.data(prefix + "plan.json") == plan and evidence.read(prefix + "replay.v") == plan["content"].encode(), "complete independently derived read-only replay testbench")
+                    require(TRACE.encoded(evidence.data(prefix + "plan.json")) == TRACE.encoded(plan) and evidence.read(prefix + "replay.v") == plan["content"].encode(), "complete independently derived read-only replay testbench")
                     for runtime in ["native", "wasm"]:
                         derived.append({**fields, **replay_result(evidence, prefix + "replay-" + runtime + "/", plan, signals, values, observations)})
             require(captures[0] == captures[1], "native and Pyodide capture bytes")

@@ -50,7 +50,7 @@ class SmtReplayCampaignTest(unittest.TestCase):
         mutations = NEGATIVE.mutations("yices2")
         controls = {label for label, name, modify in mutations}
         self.assertEqual(len(controls), len(mutations))
-        self.assertEqual(len(controls), 70)
+        self.assertEqual(len(controls), 79)
         for column in CAMPAIGN.AUDIT.COLUMNS:
             self.assertIn("csv-" + column, controls)
             self.assertIn("json-" + column, controls)
