@@ -48,6 +48,13 @@ export function startFormalPython({ sources, manifest, entrypoint, args, files, 
     });
   }
 
+  function log(type, text) {
+    if (typeof text !== "string") throw new Error("Invalid formal log");
+    outputBytes += new TextEncoder().encode(text).length;
+    if (outputBytes > 8 * 1024 * 1024) { finish("output-limit"); return; }
+    (type === "stdout" ? onStdout : onStderr)(text);
+  }
+
   function spawn(data) {
     if (identities.has(data.processId) || typeof data.processId !== "string" ||
         !data.processId.startsWith(jobId + ":") || identities.size >= 256) throw new Error("Invalid virtual process identity");
@@ -72,13 +79,20 @@ export function startFormalPython({ sources, manifest, entrypoint, args, files, 
     active.set(data.processId, child);
     try {
       if (!Array.isArray(data.args) || !Object.hasOwn(solvers, data.args[0])) throw new Error("Unsupported virtual solver");
+      const mergeStderr = data.mergeStderr === undefined ? true : data.mergeStderr;
+      if (typeof mergeStderr !== "boolean") throw new Error("Invalid virtual solver stderr mode");
+      const configuredCodes = solvers[data.args[0]].exitCodes;
+      if (configuredCodes !== undefined && !Array.isArray(configuredCodes)) throw new Error("Invalid solver exit code policy");
+      const exitCodes = [...(configuredCodes ?? [0])];
+      if (!exitCodes.length || exitCodes.length > 16 || new Set(exitCodes).size !== exitCodes.length ||
+          !exitCodes.every(code => Number.isInteger(code) && code >= 0 && code <= 255)) throw new Error("Invalid solver exit code policy");
+      const decoder = new TextDecoder();
       process = startSolverProcess({ ...solvers[data.args[0]], args: data.args,
         timeoutMs: Math.max(1, Math.ceil(timeoutMs - (performance.now() - started))),
         workerFactory: solverWorkerFactory,
         onStdout: mergedOutput,
-        onStderr: mergedOutput,
+        onStderr: mergeStderr ? mergedOutput : bytes => log("stderr", decoder.decode(bytes, { stream: true })),
       });
-      // The two solver streams share one writer, just as subprocess.STDOUT does.
       void (async () => {
         try {
           for (;;) {
@@ -89,7 +103,8 @@ export function startFormalPython({ sources, manifest, entrypoint, args, files, 
         } catch (error) { if (active.has(data.processId)) process.cancel(); }
       })();
       child.completion = process.completion.then(result => {
-        results.push({ processId: data.processId, args: data.args, ...result });
+        if (!mergeStderr && !terminal) log("stderr", decoder.decode());
+        results.push({ processId: data.processId, args: data.args, ...result, exitCodes });
         if (terminal) return;
         if (result.status !== "exited" || !result.integrityVerified) child.abort();
         else {
@@ -161,10 +176,7 @@ export function startFormalPython({ sources, manifest, entrypoint, args, files, 
         if (child) { child.expectedTermination = true; child.abort(); }
       }
       else if (data.type === "stdout" || data.type === "stderr") {
-        if (typeof data.text !== "string") throw new Error("Invalid formal log");
-        outputBytes += new TextEncoder().encode(data.text).length;
-        if (outputBytes > 8 * 1024 * 1024) { finish("output-limit"); return; }
-        (data.type === "stdout" ? onStdout : onStderr)(data.text);
+        log(data.type, data.text);
       } else if (data.type === "exit" && Number.isInteger(data.exitCode) && data.exitCode >= 0 && data.exitCode <= 255 && data.integrityVerified === true) {
         if (!Array.isArray(data.files) || data.files.length > 4096) throw new Error("Invalid formal result files");
         const paths = new Set();
@@ -179,7 +191,7 @@ export function startFormalPython({ sources, manifest, entrypoint, args, files, 
         rootExiting = true;
         void Promise.allSettled(pending.map(child => child.completion)).then(() => {
           if (results.some(result => !result.expectedTermination && (result.status !== "exited" || !result.integrityVerified ||
-              (result.role !== "tool" && result.exitCode !== 0)))) {
+              (result.role !== "tool" && !result.exitCodes.includes(result.exitCode))))) {
             finish("transport-error", { error: "Formal subprocess did not terminate cleanly", exitCode: data.exitCode });
           } else finish("exited", data);
         });

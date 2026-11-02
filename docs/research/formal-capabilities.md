@@ -42,12 +42,14 @@ AIGER・BTORの[witness変換試験](../experiments/S15-sby-witness.md)は形式
 
 ## BitwuzlaとBoolectorで残る境界
 
+[原本SMTBMC/SBYの追加候補接続](../experiments/S15-extra-solver-smtbmc.md)では、help取得と実際の終了codeを仮想processへ接続しています。予備比較は正式な適合性認定ではなく、両候補は無効のままです。PATH上の別のnative solverへ到達した初期試行は除外し、解決先とhashの検査を必須にしました。
+
 [BitwuzlaのMeson診断](../experiments/S15-bitwuzla-build.md)は、上流wrapの固定依存とWASI境界を記録します。整数幅と終了境界を修正し、清浄なnative/WASIで[CLI正式5回・A/A 2回の全203行14列](../experiments/S15-bitwuzla-cli-qualification.md)を独立に監査しました。診断だけでは製品catalogの状態を変更しません。原本SMTBMC/SBYの認定は残件です。
 
 Bitwuzla本体の固定版[COPYING](https://github.com/bitwuzla/bitwuzla/blob/8d1eb01093ae54d9b4586456b69c3bf31000a4c2/COPYING)とBoolector本体の固定版[COPYING](https://github.com/Boolector/boolector/blob/393cdfba3735d334bb4e6525500b8a0280dd41e6/COPYING)はMITです。本体の条件だけで、依存を含むバイナリーを配布可能とは判定しません。
 
 - BitwuzlaはGMP 6.3以上、MPFR 4.2.1以上、SymFPUとSAT backendを必要とします。既定はCaDiCaLで、Meson 0.64以上、C++17を要求します。wrapの取得先・固定revision・archive hashは[依存の原記録](formal-sources.md#ビルドprofileと無効な依存)からたどれます。別の固定値を能力一覧のコードへ複製しません。
-- 原本SMTIOはBitwuzlaの`--help`を`subprocess.check_output`で読み、`--lang`の有無に応じてCLI引数を選びます。通常のstdin/stdout接続だけでは、この事前起動を扱えません。意味判定を変更せず、help起動・出力・終了状態も仮想processの境界へ接続する必要があります。
+- 原本SMTIOはBitwuzlaの`--help`を`subprocess.check_output`で読み、`--lang`の有無に応じてCLI引数を選びます。通常のstdin/stdout接続だけでは、この事前起動を扱えません。追加のprocess別名で実WASIのhelpを渡し、引数の選択は上流に任せる接続を予備検査しています。
 - BoolectorはBTOR2ToolsとSAT backendが必要です。btor2tools、CaDiCaL、Lingelingのsetup指定も[依存の原記録](formal-sources.md#ビルドprofileと無効な依存)に保持します。固定版の[NEWS](https://github.com/Boolector/boolector/blob/393cdfba3735d334bb4e6525500b8a0280dd41e6/NEWS#L1-L5)は最終リリース・保守終了・Bitwuzlaへの継承を明記しています。
 - 原本SMTIOはBoolectorやABC等のsolver内timeout指定を拒否する場合があります。候補一覧はこの制限を消さず、workerの外部期限・取消とは別に扱います。
 

@@ -1,5 +1,5 @@
 from queue import Empty
-from subprocess import PIPE, STDOUT
+from subprocess import PIPE, STDOUT, CalledProcessError
 from _formal_host import spawn_solver
 import hashlib
 import json
@@ -41,10 +41,34 @@ class Popen:
         self.handle.terminate()
 
     def wait(self):
-        return self.handle.finish()
+        return self.handle.finish(True)
 
     def poll(self):
         return self.handle.poll()
+
+
+def check_output(args, *, text=False):
+    if type(text) is not bool:
+        raise TypeError("Invalid virtual process text mode")
+    handle = spawn_solver(args, False)
+    output = bytearray()
+    try:
+        handle.stdin_close()
+        while True:
+            raw = bytes(handle.readline().to_py())
+            if not raw:
+                break
+            output.extend(raw)
+            if len(output) > 8 * 1024 * 1024:
+                raise ValueError("Virtual process capture limit")
+        code = handle.finish(True)
+        result = bytes(output).decode("utf-8").replace("\r\n", "\n").replace("\r", "\n") if text else bytes(output)
+        if code:
+            raise CalledProcessError(code, args, output=result)
+        return result
+    except BaseException:
+        handle.terminate()
+        raise
 
 
 class SolverQueue:
@@ -61,7 +85,7 @@ class SolverQueue:
         return raw.decode("utf-8")
 
     def join(self):
-        self.owner.p.handle.finish()
+        self.owner.p.handle.finish(True)
         self.owner.p_running = False
 
 

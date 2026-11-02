@@ -5,9 +5,9 @@ const MAX_LINE = 8 * 1024 * 1024;
 export function createFormalProcessClient(postMessage, jobId) {
   let sequence = 0;
   return Object.freeze({
-    spawn_solver(pythonArgs) {
+    spawn_solver(pythonArgs, mergeStderr = true) {
       const args = pythonArgs.toJs();
-      if (!Array.isArray(args) || args.length < 1 || args.length > 32 ||
+      if (typeof mergeStderr !== "boolean" || !Array.isArray(args) || args.length < 1 || args.length > 32 ||
           !args.every(arg => typeof arg === "string" && arg.length <= 256 && !arg.includes("\0"))) {
         throw new TypeError("Invalid virtual solver command");
       }
@@ -67,7 +67,7 @@ export function createFormalProcessClient(postMessage, jobId) {
         }
       }
 
-      postMessage({ type: "spawn-solver", jobId, processId, args, channels, control: control.buffer });
+      postMessage({ type: "spawn-solver", jobId, processId, args, mergeStderr, channels, control: control.buffer });
       return Object.freeze({
         stdin_write(bytes) {
           check();
@@ -82,14 +82,15 @@ export function createFormalProcessClient(postMessage, jobId) {
           check();
           return Atomics.load(control, 0) === 1 ? Atomics.load(control, 1) : null;
         },
-        finish() {
+        finish(allowFailure = false) {
+          if (typeof allowFailure !== "boolean") throw new TypeError("Invalid virtual process wait mode");
           while (readline().length !== 0) { /* Drain the original reader queue before joining. */ }
           for (;;) {
             check();
             const state = Atomics.load(control, 0);
             if (state === 1) {
               const code = Atomics.load(control, 1);
-              if (code !== 0) throw new Error(`Virtual solver exited with code ${code}`);
+              if (code !== 0 && !allowFailure) throw new Error(`Virtual solver exited with code ${code}`);
               return code;
             }
             Atomics.wait(control, 0, state, 100);

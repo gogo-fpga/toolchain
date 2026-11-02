@@ -17,12 +17,13 @@ SPEC.loader.exec_module(BUILD)
 
 class NativeTransport(ast.NodeTransformer):
     def visit_Name(self, node):
-        if node.id == "Popen":
-            return ast.Attribute(value=ast.Name(id="subprocess", ctx=ast.Load()), attr="Popen", ctx=node.ctx)
+        if node.id in ("Popen", "check_output"):
+            return ast.Attribute(value=ast.Name(id="subprocess", ctx=ast.Load()), attr=node.id, ctx=node.ctx)
         return node
 
     def visit_Assign(self, node):
-        if ast.dump(node) == ast.dump(ast.parse("Popen = subprocess.Popen").body[0]):
+        if any(ast.dump(node) == ast.dump(ast.parse(f"{name} = subprocess.{name}").body[0])
+               for name in ("Popen", "check_output")):
             return None
         return self.generic_visit(node)
 

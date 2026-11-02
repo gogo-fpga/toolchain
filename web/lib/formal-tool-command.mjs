@@ -26,7 +26,7 @@ export function validateFormalToolCommand(args, cwd) {
       seen.add(flag);
       if (flags.has(flag)) continue;
       const value = args[++index];
-      if (index >= args.length - 1 || (flag === "-s" ? !["yices", "z3"].includes(value) :
+      if (index >= args.length - 1 || (flag === "-s" ? !["yices", "z3", "boolector", "bitwuzla"].includes(value) :
           ["-t", "--append"].includes(flag) ? !/^\d{1,4}$/.test(value) :
           paths.has(flag) ? !path(value) : true)) throw new Error("Unsupported SMTBMC option");
     }

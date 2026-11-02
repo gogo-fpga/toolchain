@@ -30,6 +30,49 @@ def entry(path, before, after):
 
 
 class FormalWorkspaceTest(unittest.TestCase):
+    def test_capture_preserves_utf8_newlines_bytes_and_nonzero_process_error(self):
+        for text in (False, True):
+            for code in (0, 9):
+                raw = "日本語\r\nline\rlast\n".encode()
+                chunks = iter([raw[:2], raw[2:9], raw[9:], b""])
+                calls = []
+                handle = types.SimpleNamespace(
+                    stdin_close=lambda: calls.append("close"),
+                    readline=lambda: types.SimpleNamespace(to_py=lambda: next(chunks)),
+                    finish=lambda mode: calls.append(("finish", mode)) or code,
+                    terminate=lambda: calls.append("terminate"),
+                )
+                expected = raw.decode().replace("\r\n", "\n").replace("\r", "\n") if text else raw
+                def spawn(args, merge):
+                    self.assertEqual(args, ["unit"])
+                    self.assertIs(merge, False)
+                    return handle
+                with self.subTest(text=text, code=code), patch.object(adapter, "spawn_solver", spawn):
+                    if code:
+                        with self.assertRaises(adapter.CalledProcessError) as error:
+                            adapter.check_output(["unit"], text=text)
+                        self.assertEqual(error.exception.returncode, code)
+                        self.assertEqual(error.exception.output, expected)
+                        self.assertEqual(error.exception.cmd, ["unit"])
+                    else:
+                        self.assertEqual(adapter.check_output(["unit"], text=text), expected)
+                self.assertEqual(calls[:2], ["close", ("finish", True)])
+                self.assertEqual("terminate" in calls, bool(code))
+
+    def test_capture_rejects_unsupported_options_and_cleans_up_failed_or_excessive_reads(self):
+        for options in ({"text": 1}, {"timeout": 1}, {"input": b"x"}, {"shell": True}):
+            with self.assertRaises(TypeError):
+                adapter.check_output(["unit"], **options)
+        for chunks, exception in (([b"x" * (4 * 1024 * 1024 + 1)] * 2, ValueError), ([b"\xff", b""], UnicodeDecodeError)):
+            reads = iter(chunks)
+            stopped = []
+            handle = types.SimpleNamespace(stdin_close=lambda: None,
+                readline=lambda: types.SimpleNamespace(to_py=lambda: next(reads)),
+                finish=lambda mode: 0, terminate=lambda: stopped.append(True))
+            with patch.object(adapter, "spawn_solver", lambda *_: handle), self.assertRaises(exception):
+                adapter.check_output(["unit"], text=True)
+            self.assertEqual(stopped, [True])
+
     def test_directory_conflicts_are_rejected_before_other_writes(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

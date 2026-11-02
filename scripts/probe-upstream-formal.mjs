@@ -4,8 +4,8 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, symlinkSync, writeFil
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { pathToFileURL } from "node:url";
-import { digest, loadSolverProbe, root } from "../tests/synth/solver-protocol-helpers.mjs";
-import { sbyCases, sbyConfig } from "../tests/synth/formal-sby-cases.mjs";
+import { digest, loadSolverProbe, root, verifyNativeSolver } from "../tests/synth/solver-protocol-helpers.mjs";
+import { sbyCases, sbyConfig, selectFormalSolvers } from "../tests/synth/formal-sby-cases.mjs";
 
 const codes = { PASS: 0, FAIL: 2, UNKNOWN: 4, ERROR: 16, TIMEOUT: 8, CANCELLED: 32 };
 
@@ -38,7 +38,8 @@ export function readSbyStatus(text, exitCode, stdout) {
   return status;
 }
 
-export function probeNative({ manifestFile, out, formal = false }) {
+export function probeNative({ manifestFile, out, formal = false, solver }) {
+  const solvers = selectFormalSolvers(solver);
   const directory = path.resolve(out);
   assert.ok(!/[\s;'"`$\\]/.test(directory), "The upstream native shell requires an unambiguous workdir");
   mkdirSync(directory);
@@ -49,13 +50,13 @@ export function probeNative({ manifestFile, out, formal = false }) {
   const quoted = p => `'${p.replaceAll("'", "'\\''")}'`;
   const nativeCommands = { yosys, "yosys-smtbmc": `${quoted(python)} ${quoted(path.join(root, "vendor/yosys/backends/smt2/smtbmc.py"))}`,
     "yosys-witness": `${quoted(python)} ${quoted(path.join(root, "vendor/yosys/backends/smt2/witness.py"))}` };
-  const sourceFiles = ["scripts/probe-upstream-formal.mjs", "tests/synth/formal-sby-cases.mjs"];
+  const sourceFiles = ["scripts/probe-upstream-formal.mjs", "tests/synth/formal-sby-cases.mjs", "tests/synth/solver-protocol-helpers.mjs"];
   for (const name of ["sby", "click", "yosys"]) {
     const prefix = name === "yosys" ? "vendor/yosys/backends/smt2" : name === "sby" ? "vendor/sby/sbysrc" : "vendor/click/src/click";
     sourceFiles.push(...filesBelow(path.join(root, prefix)).filter(p => p.endsWith(".py")).map(p => `${prefix}/${p}`));
   }
   const metadata = {
-    format: 1, preliminary: !formal, runtime: "native", command: process.argv.slice(1), node: process.version, nativeCommands,
+    format: 1, preliminary: !formal, runtime: "native", command: process.argv.slice(1), node: process.version, nativeCommands, solverCommands: {},
     python: execFileSync(python, ["--version"], { encoding: "utf8" }).trim(),
     commit: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(),
     worktree: execFileSync("git", ["status", "--porcelain"], { cwd: root, encoding: "utf8" }),
@@ -65,12 +66,16 @@ export function probeNative({ manifestFile, out, formal = false }) {
   };
   writeFileSync(path.join(directory, "metadata.json"), JSON.stringify(metadata, null, 2) + "\n");
   const rows = [];
-  for (const solver of ["yices2", "z3"]) {
+  for (const solver of solvers) {
     const probe = loadSolverProbe(probes[solver].native, solver, "native");
     const bin = path.join(directory, `${solver}-bin`);
     mkdirSync(bin);
-    symlinkSync(probe.binaryPath, path.join(bin, solver === "yices2" ? "yices-smt2" : "z3"));
+    const executable = solver === "yices2" ? "yices-smt2" : solver;
+    symlinkSync(probe.binaryPath, path.join(bin, executable));
     writeFileSync(path.join(bin, "metadata.json"), probe.metadata);
+    metadata.solverCommands[solver] = verifyNativeSolver(executable, bin, probe.info.artifact.sha256,
+      { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` });
+    writeFileSync(path.join(directory, "metadata.json"), JSON.stringify(metadata, null, 2) + "\n");
     for (const fixture of sbyCases) {
       const working = path.join(directory, `${solver}-${fixture.name}`);
       mkdirSync(working);
@@ -117,8 +122,8 @@ export function probeNative({ manifestFile, out, formal = false }) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const { values } = parseArgs({ options: { probes: { type: "string" }, out: { type: "string" }, formal: { type: "boolean", default: false } } });
+  const { values } = parseArgs({ options: { probes: { type: "string" }, out: { type: "string" }, solver: { type: "string" }, formal: { type: "boolean", default: false } } });
   assert.ok(values.probes && values.out, "Use --probes MANIFEST --out NEW_DIRECTORY");
-  const rows = probeNative({ manifestFile: values.probes, out: values.out, formal: values.formal });
+  const rows = probeNative({ manifestFile: values.probes, out: values.out, formal: values.formal, solver: values.solver });
   if (rows.some(row => row.error)) process.exitCode = 1;
 }

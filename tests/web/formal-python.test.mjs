@@ -6,7 +6,7 @@ import { createFormalProcessClient } from "../../web/lib/formal-process-client.m
 import { startFormalPython } from "../../web/lib/formal-python-process.mjs";
 import { runFormalPythonJob } from "../../web/lib/formal-python-job.mjs";
 import { nodeFormalWorker } from "../synth/formal-python-helpers.mjs";
-import { commandWasm, nodeSolverWorker, sha256 } from "./solver-process-helpers.mjs";
+import { commandWasm, stdioWasm, nodeSolverWorker, sha256 } from "./solver-process-helpers.mjs";
 
 globalThis.crossOriginIsolated = true;
 const bytes = text => new TextEncoder().encode(text);
@@ -138,6 +138,8 @@ test("virtual process rejects corrupt controls, nonzero completion, separate std
   const failed = channelClient(); failed.output.end(); failed.stderr.end();
   Atomics.store(failed.control, 1, 9); Atomics.store(failed.control, 0, 1);
   assert.equal(failed.handle.poll(), 9); assert.throws(() => failed.handle.finish(), /code 9/);
+  assert.equal(failed.handle.finish(true), 9);
+  assert.throws(() => failed.handle.finish("true"), TypeError);
   const separate = channelClient(); separate.stderr.writeSync(bytes("error"));
   assert.throws(() => separate.handle.readline(0), /separate/);
   const { handle, client } = channelClient();
@@ -145,7 +147,59 @@ test("virtual process rejects corrupt controls, nonzero completion, separate std
   for (const args of [[], ["a\0b"], ["x".repeat(257)], [7], null]) {
     assert.throws(() => client.spawn_solver({ toJs: () => args }), TypeError);
   }
+  for (const mode of [0, null, "false", {}]) assert.throws(() => client.spawn_solver({ toJs: () => ["unit"] }, mode), TypeError);
   handle.terminate(); assert.throws(() => handle.readline(0), /cancelled/);
+});
+
+test("Pyodide check_output preserves captured bytes, text, inherited stderr and CalledProcessError", { timeout: 30000 }, async () => {
+  for (const text of [false, true]) for (const exitCode of [0, 9]) {
+    const wasm = stdioWasm({ stdoutLength: 9001, stderrLength: 3003, exitCode });
+    const stderr = [];
+    const code = `from formal_process import check_output
+from subprocess import CalledProcessError
+try:
+    captured = check_output(['unit'], text=${text ? "True" : "False"})
+    assert ${exitCode} == 0
+except CalledProcessError as error:
+    assert error.returncode == ${exitCode} == 9
+    assert error.cmd == ['unit']
+    captured = error.output
+assert isinstance(captured, ${text ? "str" : "bytes"})
+assert captured == ${text ? "'O'" : "b'O'"} * 9001
+with open('capture.bin', 'wb') as output:
+    output.write(captured.encode('utf-8') if isinstance(captured, str) else captured)
+`;
+    const result = await startFormalPython({ ...sources(code), entrypoint: "smtbmc", args: [], files: [],
+      solvers: { unit: { wasm, sha256: sha256(wasm), exitCodes: [0, 9] } },
+      workerFactory: nodeFormalWorker, solverWorkerFactory: () => nodeSolverWorker(), timeoutMs: 10000,
+      onStderr: line => stderr.push(line) }).completion;
+    assert.equal(result.status, "exited", result.error); assert.equal(result.exitCode, 0);
+    assert.equal(stderr.join(""), "E".repeat(3003));
+    assert.equal(new TextDecoder().decode(result.files.find(file => file.path === "capture.bin").bytes), "O".repeat(9001));
+    assert.equal(result.children[0].exitCode, exitCode); assert.deepEqual(result.children[0].exitCodes, [0, 9]);
+  }
+});
+
+test("formal subprocess nonzero exits require an explicit bounded policy and still preserve the real exit code", { timeout: 60000 }, async () => {
+  const wasm = stdioWasm({ stdoutLength: 0, stderrLength: 0, exitCode: 10 });
+  const code = "from formal_process import Popen\nfrom subprocess import PIPE, STDOUT\np = Popen(['unit'], stdin=PIPE, stdout=PIPE, stderr=STDOUT)\np.stdin.close()\nassert p.wait() == 10\n";
+  for (const exitCodes of [undefined, [0, 10, 20], [], [0, 0], [256], [-1], [true], "0", null]) {
+    const result = await startFormalPython({ ...sources(code), entrypoint: "smtbmc", args: [], files: [],
+      solvers: { unit: { wasm, sha256: sha256(wasm), ...(exitCodes === undefined ? {} : { exitCodes }) } },
+      workerFactory: nodeFormalWorker, solverWorkerFactory: () => nodeSolverWorker(), timeoutMs: 10000 }).completion;
+    if (Array.isArray(exitCodes) && exitCodes.length === 3) {
+      assert.equal(result.status, "exited", result.error); assert.equal(result.children[0].exitCode, 10);
+    } else assert.notEqual(result.status, "exited", JSON.stringify(exitCodes));
+    if (exitCodes === undefined) assert.equal(result.status, "transport-error");
+  }
+});
+
+test("captured output cannot exceed the virtual process read limit", { timeout: 15000 }, async () => {
+  const wasm = stdioWasm({ stdoutLength: 4096, stderrLength: 0, repeat: 2049 });
+  const result = await startFormalPython({ ...sources("from formal_process import check_output\ncheck_output(['unit'])\n"),
+    entrypoint: "smtbmc", args: [], files: [], solvers: { unit: { wasm, sha256: sha256(wasm) } },
+    workerFactory: nodeFormalWorker, solverWorkerFactory: () => nodeSolverWorker(), timeoutMs: 10000 }).completion;
+  assert.notEqual(result.status, "exited");
 });
 
 test("the real Pyodide adapter distinguishes SystemExit, runtime errors and verified solver completion", { timeout: 20000 }, async () => {

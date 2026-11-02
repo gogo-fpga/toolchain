@@ -11,6 +11,14 @@ export const root = path.resolve(import.meta.dirname, "../..");
 export const digest = bytes => createHash("sha256").update(bytes).digest("hex");
 const MAX_OUTPUT = 8 * 1024 * 1024;
 
+export function verifyNativeSolver(executable, bin, sha256, env) {
+  const resolved = execFileSync("python3", ["-c", "import shutil, sys; print(shutil.which(sys.argv[1]))", executable],
+    { env, encoding: "utf8", timeout: 10000 }).trim();
+  assert.equal(resolved, path.join(bin, executable), "Native solver resolved outside its isolated bin directory");
+  assert.equal(digest(readFileSync(resolved)), sha256, "Resolved native solver hash mismatch");
+  return { path: resolved, sha256 };
+}
+
 export function loadSolverProbe(directory, solver, runtime) {
   const location = path.resolve(root, directory);
   const metadata = readFileSync(path.join(location, "metadata.json"));

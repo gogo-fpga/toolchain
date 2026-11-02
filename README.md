@@ -22,6 +22,8 @@ T0 から T3 の編集・保存・合成・配置配線・ビットストリー�
 
 [形式検証の候補一覧と無効理由](docs/research/formal-capabilities.md)のデータを追加しています。上流のSMT全9選択肢・SBY全6エンジンと内蔵SATを残し、検査経路での動作と製品資材の準備を区別します。[追加ソルバーの診断](docs/experiments/S15-extra-solver-builds.md)ではBoolectorのnative/WASIビルドとCLIの5条件が一致しました。[ID幅とtraceの境界](docs/experiments/S15-solver-portability.md)は修正後の正式5回・A/A 2回と全列監査が通りましたが、別の警告とSMTBMCでの認定は残り、製品では無効のままです。[BitwuzlaのMeson診断](docs/experiments/S15-bitwuzla-build.md)は固定依存だけの清浄ビルドとCLI予備29実行が通りました。[CLI正式5回・A/A 2回](docs/experiments/S15-bitwuzla-cli-qualification.md)も全203行14列の独立監査が通りました。SMTBMC認定は未完了で、両候補は無効のままです。候補の画面表示とT6全体も未完了です。
 
+[追加候補と原本SMTBMC/SBYの接続](docs/experiments/S15-extra-solver-smtbmc.md)では、Bitwuzlaの実help取得とBoolectorの終了code 10/20をprocess境界へ接続しています。両候補の予備比較と、固定外のnative起動を除外した経緯を記録しました。正式反復・全列の独立監査・製品有効化とは区別します。
+
 ## IDE 画面
 
 IDE は、左にプロジェクトのファイル一覧、中央に HDL エディターとログ・問題・成果物・波形、右にボード情報と書き込み設定を表示します。プロジェクトと設計ファイルはブラウザー内の OPFS に保存し、ZIP で書き出し・読み込みができます。設計データをサーバーへ送信せず、合成・配置配線・ビットストリーム作成をブラウザー内で実行します。
