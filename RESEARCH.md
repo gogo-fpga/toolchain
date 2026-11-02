@@ -214,10 +214,9 @@ T6は上流SBY・SMTBMCの再利用を選び、[S15の事前基準](docs/experim
 | [SBY全体の仮想process接続](docs/experiments/S15-sby-runtime.md) | SbyPopen・単一slot・子差分・両solver各6条件の比較 |
 | [SBY全成果物・16列の独立監査](docs/experiments/S15-sby-artifact-audit.md) | 全268成果物・SQLite・終了・16列の改変拒否 |
 | [SBY正式5回・A/A 2回](docs/experiments/S15-sby-repeated.md) | 同一commitで全84行・19列・1,876成果物が一致 |
+| [SBY子workerの停止と輸送の対照](docs/experiments/S15-sby-controls.md) | 実stdin待機からの取消・期限・停止と改変拒否が予備23条件で成功。正式反復とwitnessは未完了 |
 
-元VHDLの独立再実行は、GHDL標準のVPIと`--psl-report`を再利用する限定した検査経路を追加しました。清浄な同一commitで55件×5回とA/Aの2回が成功し、元ファイルとCSV全280行19列を照合しています。通常assertionとclocked PSLの評価位相、coverが既定では標準出力に現れないこと、root moduleのVPI列挙、生CSV・全ファイルのhash・失敗試行と未完了の範囲を[元VHDLによる再実行の実験記録](docs/experiments/S15-vhdl-native-replay.md)へ保存します。下位化後のVerilog比較、追加fixtureとT6全体は未完了です。
-
-その後、[下位化Verilog比較](docs/experiments/S15-vhdl-lowered-replay.md)を追加しました。上流YosysでIcarus用モデルを出力し、assertion再実行からだけcoverを除き、元のcoverとPSLレポートを保持します。propertyのkind・A/EN別名と元ソースを対応付け、準備後のstate bit・初期値・clock、全ポートを照合します。通常assertionの診断密度は実行系で異なるため、最初の違反と全違反の包含を比較します。階層・名前付きライブラリーを含む10成功fixtureと5境界fixture、全60行20列の監査が予備検査で通りました。未知の初期値、memory、循環、空虚な条件は成功と区別します。[初回の失敗・process footerの制約](docs/experiments/S15-vhdl-lowered-failures.md)も保存します。その後、清浄な同一commitで69件を5回とA/Aの2回実行し、CSV420行の全20列とソース・実行系のhashを監査しました。GHDL VCDの日時と所要時間以外は反復間で一致しました。SMTソルバー、worker/UIとT6全体は引き続き未完了です。
+元VHDLの独立再実行と下位化Verilog比較、各5回とA/Aの反復、失敗試行と当時の未完了項目は、[形式検証調査の経緯](docs/research/formal-verification.md#vhdl反例の再実行と比較の経緯)へ原記録を移しました。
 
 Actions.lock は今回は導入を見送り、現行の完全長 SHA 固定を維持します。取得元 ID と推移依存の保護という追加価値、導入の制限、未確認の事項は上記の調査に記録しました。
 
