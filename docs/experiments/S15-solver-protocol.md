@@ -3,6 +3,8 @@
 - 状態: 予備検査。正式反復は未開始
 - 関連: [実験索引](README.md)、[buildと輸送の記録](S15-solver-build-and-transport.md)、[ソルバー調査](../research/formal-solvers.md)
 
+Z3 WASIのlink失敗後、SDKの例外library、fork登録と単一threadのyieldを切り分けた手動診断18条件は成功しました。[link診断とclean buildの再実行](S15-z3-wasi-link.md)へ詳細を残します。これは未コミットのshimと手動linkによる予備結果であり、正式なnative/WASI比較の結果ではありません。
+
 ## 目的と仮説
 
 固定sourceからbuildしたYices2とZ3のCLIを、native processと実WASI workerで実行します。JavaScriptへSMT-LIBの意味解析を移植せず、上流の応答を字句framerで区切り、同じsolverの両系で全byteを比較します。Nodeのisolation flagは検査用のfixtureであり、ブラウザーのCOOP/COEPや画面統合の確認ではありません。

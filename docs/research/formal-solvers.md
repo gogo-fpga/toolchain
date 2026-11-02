@@ -22,6 +22,8 @@ P2の初回予備ビルドでは以下の制約を確認しました。その後
 
 ## timerと浮動小数点を区別する理由
 
+その後のZ3 WASIは全コンパイル後に例外libraryとfork登録の未解決で停止しました。SDKのlibunwind・setjmpを明示し、WASIのfork登録だけを除外すると隔離した手動linkが通りました。既存shimへ単一threadのyieldを加えた予備18条件も通っています。清浄なbuildと正式比較の成功ではありません。[link失敗・patchの理由・再実行の記録](../experiments/S15-z3-wasi-link.md)へ詳細を残します。
+
 timerはworkerの強制終了で期限を守れる可能性がありますが、その仕組みを確認するまではtimeout対応済みとしません。上流timerが使えないときに成功を返す代用品は作りません。WASI timerの拒否と、hostが期限超過を分類して古いjobの応答を捨てることを、別の負の対照で調べます。
 
 一方、浮動小数点の丸めは数値計算の意味に関わります。ブラウザーにない丸めモードを定義するだけでは正しい実装になりません。Z3の[scoped_timer.cpp](https://github.com/Z3Prover/z3/blob/430d19e697e2ec9bad79ff210d41b4a7a5fcfa3e/src/util/scoped_timer.cpp)にもthread実装が残りますが、WASIの初回コンパイルはその前に停止しました。未到達の箇所を実際のビルド失敗として記録しません。公式WASMの設定とC APIの比較条件は[先例の調査](formal-verification.md#z3の公式wasm先例)へ戻れます。

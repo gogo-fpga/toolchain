@@ -730,6 +730,10 @@ export function createWasiP1ImportObject({
     proc_exit(code) {
       throw new WasiExit(code);
     },
+    sched_yield() {
+      // This profile has only one guest thread to schedule.
+      return ERRNO.SUCCESS;
+    },
     random_get(pointer, length) {
       if (!inBounds(pointer, length)) return ERRNO.FAULT;
       if (typeof globalThis.crypto?.getRandomValues !== "function") return ERRNO.NOSYS;

@@ -105,12 +105,13 @@ def build(args):
                 raise ValueError("Missing or mismatched pinned WASI SDK")
             metadata["wasi_sdk"] = {"version": version, "archive_sha256": archive_hash}
             compiler = str(sdk / "bin/clang")
+            compiler_cxx = str(sdk / "bin/clang++")
             c_flags += " -fwasm-exceptions -mllvm -wasm-enable-sjlj"
             c_flags += " -D_WASI_EMULATED_SIGNAL -D_WASI_EMULATED_PROCESS_CLOCKS -D_WASI_EMULATED_MMAN"
             link_flags = "-lwasi-emulated-signal -lwasi-emulated-process-clocks -lwasi-emulated-mman"
             link_flags += " -Wl,-z,stack-size=8388608 -Wl,--initial-memory=33554432 -Wl,--max-memory=536870912"
         metadata["compiler"] = subprocess.check_output([compiler, "--version"], text=True)
-        if args.solver == "z3" and args.runtime == "native":
+        if args.solver == "z3":
             metadata["compiler_cxx"] = subprocess.check_output([compiler_cxx, "--version"], text=True)
         metadata["host"] = {"os": os.uname().sysname, "release": os.uname().release,
                             "machine": os.uname().machine, "cpus": os.cpu_count(),
@@ -125,7 +126,8 @@ def build(args):
             if args.runtime == "wasi":
                 cxx_flags = c_flags.replace(" -std=gnu17", "")
                 command += [f"-DCMAKE_TOOLCHAIN_FILE={sdk}/share/cmake/wasi-sdk-p1.cmake",
-                            f"-DCMAKE_CXX_FLAGS={cxx_flags}", f"-DCMAKE_EXE_LINKER_FLAGS={link_flags}"]
+                            f"-DCMAKE_CXX_FLAGS={cxx_flags}", f"-DCMAKE_EXE_LINKER_FLAGS={link_flags}",
+                            "-DCMAKE_CXX_STANDARD_LIBRARIES=-lunwind -lsetjmp"]
             else:
                 command += [f"-DCMAKE_CXX_COMPILER={compiler_cxx}",
                             f"-DCMAKE_CXX_FLAGS={args.cxx_flags}",
@@ -133,7 +135,7 @@ def build(args):
                             f"-DCMAKE_CXX_STANDARD_LIBRARIES={args.cxx_libraries}"]
             run("configure", command)
             run("build", [args.cmake, "--build", output / "objects", "--target", "shell", "--parallel", str(args.jobs)])
-            binary = output / "objects" / ("z3.wasm" if args.runtime == "wasi" else "z3")
+            binary = output / "objects/z3"
         else:
             gmp_version, gmp_hash, gmp_asset, _url = pin("archive-pin", "gmp").split("\t")
             archive = ROOT / "vendor/formal-archives" / gmp_asset

@@ -162,6 +162,34 @@ class AuditTest(unittest.TestCase):
         (self.out / "yices2-wasi.metadata.json").unlink()
         self.assertRaises(FileNotFoundError, AUDIT.audit, self.out, True)
 
+    def format_three(self):
+        for info in [self.start, self.end]:
+            info["format"] = 3
+        for label in self.end["probes"]:
+            (self.out / (label + ".build-script.py")).write_bytes(b"fixture")
+        self.write_json("metadata-start.json", self.start)
+        self.write_json("metadata-end.json", self.end)
+
+    def test_format_three_keeps_distinct_build_and_measurement_scripts(self):
+        self.format_three()
+        name = "scripts/build-solver-probe.py"
+        (self.out / name.replace("/", "__")).write_bytes(b"new builder")
+        for info in [self.start, self.end]:
+            info["sources"][name] = AUDIT.digest(b"new builder")
+        self.write_json("metadata-start.json", self.start)
+        self.write_json("metadata-end.json", self.end)
+        AUDIT.audit(self.out, True)
+
+    def test_format_three_altered_build_script_snapshot_fails(self):
+        self.format_three()
+        (self.out / "yices2-wasi.build-script.py").write_bytes(b"altered")
+        self.assertRaisesRegex(ValueError, "build script snapshot hash", AUDIT.audit, self.out, True)
+
+    def test_format_three_missing_build_script_snapshot_fails(self):
+        self.format_three()
+        (self.out / "yices2-wasi.build-script.py").unlink()
+        self.assertRaises(FileNotFoundError, AUDIT.audit, self.out, True)
+
     def test_altered_raw_build_log_fails(self):
         (self.out / "yices2-wasi.build.log").write_bytes(b"altered")
         self.assertRaisesRegex(ValueError, "raw build log hash", AUDIT.audit, self.out, True)

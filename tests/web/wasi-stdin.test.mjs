@@ -30,6 +30,18 @@ test("WASI stdin remains EOF by default", () => {
   assert.deepStrictEqual(stream().read([10]), { errno: 0, count: 0, bytes: new Uint8Array() });
 });
 
+test("WASI single-thread yield succeeds without consuming input or changing descriptor state", () => {
+  let reads = 0;
+  const wasi = stream({ stdin() { reads++; return new Uint8Array([42]); } });
+  for (let index = 0; index < 3; index++) assert.equal(wasi.imports.sched_yield(), 0);
+  assert.equal(reads, 0);
+  assert.deepStrictEqual(wasi.read([1]), { errno: 0, count: 1, bytes: new Uint8Array([42]) });
+  assert.equal(reads, 1);
+  assert.equal(wasi.imports.fd_close(0), 0);
+  assert.equal(wasi.imports.sched_yield(), 0);
+  assert.notEqual(wasi.read([1]).errno, 0);
+});
+
 test("WASI stdin permits incremental reads and short reads without waiting for another iovec", () => {
   const input = [new Uint8Array([1, 2]), new Uint8Array([3]), new Uint8Array()];
   const requested = [];
