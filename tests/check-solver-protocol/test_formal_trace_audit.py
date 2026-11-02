@@ -13,6 +13,21 @@ SPEC.loader.exec_module(AUDIT)
 
 
 class FormalTraceAuditTest(unittest.TestCase):
+    def test_launcher_name_and_upstream_native_artifact_are_distinct(self):
+        probe = {"command": {"resolvedPath": "/build/source/static_bin/yices_smt2"},
+                 "native": {"artifact": {"path": "source/static_bin/yices_smt2"}}}
+        AUDIT.audit_resolved_native(probe)
+        for path in ["yices-smt2", "/build/source/static_bin/yices-smt2", "/build/other/yices_smt2"]:
+            changed = copy.deepcopy(probe)
+            changed["command"]["resolvedPath"] = path
+            with self.subTest(path=path), self.assertRaises(ValueError):
+                AUDIT.audit_resolved_native(changed)
+        for path in ["../yices_smt2", "/source/static_bin/yices_smt2", "C:/yices_smt2", "source\\yices_smt2", "./source/static_bin/yices_smt2"]:
+            changed = copy.deepcopy(probe)
+            changed["native"]["artifact"]["path"] = path
+            with self.subTest(path=path), self.assertRaises(ValueError):
+                AUDIT.audit_resolved_native(changed)
+
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)

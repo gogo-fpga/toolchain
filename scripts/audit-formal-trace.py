@@ -24,6 +24,15 @@ def encoded(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, allow_nan=False, separators=(",", ":"))
 
 
+def audit_resolved_native(probe):
+    resolved = PurePosixPath(probe["command"]["resolvedPath"])
+    name = probe["native"]["artifact"]["path"]
+    artifact = PurePosixPath(name)
+    require(name and str(artifact) == name and not artifact.is_absolute() and ".." not in artifact.parts
+            and "\\" not in name and "\0" not in name and not re.match(r"^[A-Za-z]:", name), "native artifact path")
+    require(resolved.is_absolute() and resolved.parts[-len(artifact.parts):] == artifact.parts, "resolved native artifact path")
+
+
 class Evidence(SBY.Evidence):
     def __init__(self, directory):
         path = Path(directory).absolute()
@@ -171,8 +180,7 @@ def audit(directory, solvers=("yices2", "z3"), formal=False):
             require(PurePosixPath(command["path"]).is_absolute() and PurePosixPath(command["path"]).name == executable
                     and command["sha256"] == probe["native"]["artifact"]["sha256"], "native command identity")
         if formal:
-            resolved = PurePosixPath(probe["command"]["resolvedPath"])
-            require(resolved.is_absolute() and resolved.name == executable, "resolved native executable name")
+            audit_resolved_native(probe)
     require(result["columns"] == COLUMNS, "JSON columns")
     reader = csv.DictReader(io.StringIO(evidence.read("results.csv").decode()), strict=True)
     require(reader.fieldnames == COLUMNS, "CSV columns")
