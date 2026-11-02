@@ -1,6 +1,6 @@
 # S15 P3 原本SBY・SMTBMCのprocess境界
 
-- 状態: 実施中。Pyodideの能力診断とnative原本の予備12条件を実施。Pyodide経由のSBY原本との比較は未実施。
+- 状態: 実施中。native原本SBYの予備12条件と、原本SMTBMCのnative/Pyodide予備16条件を実施。Pyodideを始点とするSBY全体の接続は未完了。
 - 関連: [S15の事前基準](S15-formal-verification.md)、[P2の正式比較](S15-solver-native-wasi.md)、[調査索引](../../RESEARCH.md#7-分割した調査)
 
 ## 目的と仮説
@@ -72,3 +72,32 @@ coverの到達はstep 4で、VCDとYWを生成しました。未到達のcover�
 予備出力には入力、設定、全stdout/stderr、SMT、制約、VCD、YW、SQLiteと全ファイルのsize/SHA-256を保存しました。診断3では配布Pyodideの5資材のsize/SHA-256も記録しました。原本のPythonと実行scriptのhash、実tool版、未commitの変更を含む状態は各metadataに記録しています。この2試行は未commitの予備結果で、清浄な提出commitを検証したものではありません。
 
 SBY原本のPyodide実行、nativeとのstatus・trace・制約比較、正式反復、UI、ブラウザーの展開器、実機は未完了です。空FDのselectとsqlite3の単独queryを、P3の接続成功として扱いません。
+
+## 原本SMTBMCの仮想process接続（予備）
+
+原本SBYがnativeで生成したSMTを変更せず、原本SMTBMCから実WASI solverを呼び出しました。Yices2とZ3それぞれ8条件、計16条件です。proveだけはbasecaseとinductionを別々に検査し、この段階ではSBY全体のproof判定を置き換えません。
+
+`patches/yosys-smtio-process.patch`はPopen、reader Thread・Queue、processの停止とresourceへの接続だけを変えます。Python workerが同期読取りで待っても、managerとsolverの独立workerは動作を続けます。stderrは原本が指定するSTDOUTへまとめ、書込みを直列化します。親の取消は子solverの終了記録も待ちます。Python例外はSystemExitと区別してruntime-errorにします。
+
+`p3-engine-preliminary-4`と`-5`では16条件すべてで終了コード、ログ、全入力・VCD・YW・Verilog testbenchがnativeと一致しました。ログの経過時刻prefixだけを比較から除き、他のbyte差は隠していません。いずれも未commitの予備結果であり、提出commitや製品全体の検証ではありません。
+
+```sh
+python3 scripts/build-formal-python.py --out build/S15/p3-formal-python-assets-5
+node scripts/probe-formal-python-engine.mjs \
+  --sources build/S15/p3-formal-python-assets-5 \
+  --probes build/S15/p2-native-wasi-all-probes.json \
+  --baseline build/S15/p3-native-upstream-2 \
+  --out build/S15/p3-engine-preliminary-6
+```
+
+資材生成器はgitlinkの原本からstageし、stageだけへpatchを適用します。SBY・SMTBMC・witness・Clickとlicenseの原文は変更しません。SMTIO全体のASTは、process接続だけをnativeの形に戻すと原本と一致します。`sat`を`unsat`へ改変する負の対照も拒否しました。資材の再生成一致と上書き拒否を含むPython検査25件、Web単体253件が成功しました。単体には実Pyodide・WASIの小さなfixtureも含みますが、UI検査ではありません。
+
+`p3-engine-preliminary-7`では、実行したsource・patch・依存lockとPython資材を保存し、solverのnative/WASI双方から実際の版表示を取得しました。生CSV全16行13列を`python3 scripts/audit-formal-python.py build/S15/p3-engine-preliminary-7`でraw log・終了記録・全artifactと独立に照合しました。各列の改変13種、VCDの欠落・改変、worker異常・signal・stderr・重複行を拒否する監査器の単体検査も追加しています。この監査は予備結果専用で、正式反復やsource closureの完了を意味しません。
+
+清浄な実装commit `81b227eb57121191356e40978bde6474ab57c5aa`からPython資材を再生成した`p3-engine-preliminary-8`でも、16条件が一致し、Web単体253件・Python検査25件が成功しました。[生CSV](S15-smtbmc-process-preliminary.csv)全16行13列の独立監査も成功しました。Yicesは両系2.7.0、Z3は両系5.3.3と実行時の版表示で確認しました。nativeは64 bit、WASIは32 bitです。これはNodeでの予備比較であり、各5回とA/A、ブラウザー操作、独立した反例再実行、実機の確認ではありません。
+
+初期の失敗を含むraw log・全artifact・source snapshot・Python資材とlicenseを証拠ZIP `S15-smtbmc-process-evidence-81b227e.zip`へ保存しました。[ファイル目録](S15-smtbmc-process-files.csv)の全サイズ・SHA-256をZIPの再読込みで照合し、[ZIPのSHA-256](S15-smtbmc-process-evidence.sha256)も記録しました。`bin/`のsymlinkは実行用の別名なので目録に含めず、実バイナリーのhashと実行時の版表示はbuild metadata・version logへ記録しています。solver binary自体の出典・clean build・生ログは[P2の正式記録](S15-solver-native-wasi.md)を参照します。
+
+失敗試行も保持します。最初の手動probeはmanifestのruntime keyとbinaryのpropertyを取り違え、その後はadapterにwaitがなく停止しました。比較driverの初回はlocal変数がNodeのprocessを隠して停止しました。初めて全16条件を試した`preliminary-3`では、反例・coverの生成中に原本が呼ぶpollが未実装で6条件が失敗しました。waitとpollを接続した後に上記の一致を確認しています。AST検査の初回はnormalizer自身が空要素を残して不一致となりました。normalizerだけを直し、原本の判定処理は変更していません。
+
+この層にはSBYのprocess起動、Yosys子workerとのfilesystem反映、仮想selectをまだ実装していません。資材生成器のGitなし配布ソースへの接続、独立全列監査、清浄commitでの正式5回・A/A、元回路による反例再実行、画面統合も残件です。

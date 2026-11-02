@@ -61,6 +61,37 @@ test("byte pipes wrap without truncation, preserve short reads and drain before 
   assert.throws(() => writer.end(), { code: "closed" });
 });
 
+test("byte pipe polling distinguishes no data, buffered bytes and EOF without consuming during waits", () => {
+  const { reader, writer } = pair();
+  assert.equal(reader.readAvailable(2), null);
+  assert.equal(reader.waitReadableSync(0), false);
+  const start = performance.now();
+  assert.equal(reader.waitReadableSync(5), false);
+  assert.ok(performance.now() - start >= 4);
+  for (const timeout of [-1, NaN, Infinity, 300001, "1"]) {
+    assert.throws(() => reader.waitReadableSync(timeout), RangeError);
+  }
+  for (const size of [-1, NaN, Infinity, 1.5, 8388609]) {
+    assert.throws(() => reader.readAvailable(size), RangeError);
+  }
+  writer.writeSync(new Uint8Array([1, 2]));
+  assert.equal(reader.waitReadableSync(0), true);
+  assert.deepEqual(reader.readAvailable(2), new Uint8Array([1, 2]));
+  writer.end();
+  assert.equal(reader.waitReadableSync(0), true);
+  assert.deepEqual(reader.readAvailable(2), new Uint8Array());
+});
+
+test("byte pipe polling preserves cancellation and closed-state errors", () => {
+  for (const method of ["cancel", "close"]) {
+    const { reader, writer } = pair();
+    writer[method]();
+    const expected = { code: method === "cancel" ? "cancelled" : "closed" };
+    assert.throws(() => reader.readAvailable(1), expected);
+    assert.throws(() => reader.waitReadableSync(0), expected);
+  }
+});
+
 test("byte pipes reject malformed data, read sizes and corrupted controls", async () => {
   const { reader, writer, descriptor } = pair();
   for (const value of [null, "smt", [1], Promise.resolve(1), new Uint8Array(8388609)]) {
