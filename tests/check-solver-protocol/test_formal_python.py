@@ -69,6 +69,7 @@ class FormalPythonBuildTest(unittest.TestCase):
                     self.assertEqual((self.out / name).read_bytes(), original)
         self.assertEqual(set(self.manifest["pins"]), {"yosys", "sby", "click"})
         self.assertEqual((self.out / "formal_process.py").read_bytes(), (ROOT / "web/formal_process.py").read_bytes())
+        self.assertEqual((self.out / "formal_trace.py").read_bytes(), (ROOT / "web/formal_trace.py").read_bytes())
         for asset in self.manifest["assets"]:
             raw = (self.out / asset["path"]).read_bytes()
             self.assertEqual(len(raw), asset["size"])
