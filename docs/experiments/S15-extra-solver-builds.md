@@ -1,6 +1,6 @@
 # S15 P4 追加ソルバーの固定依存と診断ビルド
 
-- 状態: Boolector nativeの初回ビルドとWASIの予備ビルドが成功。SMTの正式比較・反復とBitwuzlaは未完了
+- 状態: 清浄なcommitでBoolector native/WASIを生成し、CLIの5条件が一致。正式比較・反復・警告の精査とBitwuzlaは未完了
 - 基準: [S15の共通基準](S15-formal-verification.md)、[候補と無効理由](../research/formal-capabilities.md)
 - 戻り先: [実験索引](README.md)、[形式検証の調査](../research/formal-solvers.md)
 
@@ -83,3 +83,42 @@ node scripts/probe-extra-solver-cli.mjs --native build/S15/boolector-native-01 -
 `--cmake` と `--jobs` でhostツールのパスと並列数を明示できます。対応していないsolver名は拒否します。Bitwuzlaのビルド接続と正式反復は未完了です。Tang Nano実機での動作は本リポジトリでは試していません。
 
 CLI診断は清浄なbuild metadataとbinary hashを先に照合し、version、help、値取得とpush/pop、EOF、構文エラーの5条件をnativeと実workerで交互に実行します。WASIは7 byte bufferへ3 byteずつ書き、stdout/stderrの全byteと終了コードを比較します。Boolectorのsat終了10を通常終了0へ読み替えません。構文エラーの終了1も独立して検査します。生CSVと各stream・結果JSONは出力先へ保存します。これは予備CLI診断であり、全列の独立監査・正式反復・SMTBMCの検証を代替しません。
+
+## 清浄なビルドとCLIの予備結果
+
+清浄なcommit `e286c9f4b676ee3306a6ee51e7b6142e9d4686e3` から両runtimeを生成しました。nativeはGCC/G++ 11.4.0とCMake 3.22.1、WASIはSDK 34.0です。Boolectorの版表示はいずれも3.2.4でした。
+
+| runtime | bytes | SHA-256 |
+|---|---:|---|
+| native | 2,861,824 | `e4bab02e41676e17b2aa798f8ebca74023618a8ef79f2b37ef882040c25ed666` |
+| WASI | 2,116,270 | `00bbbbce78b4a355d9f75a289e00d43c43e4765fbca032cf7d66bf03d088a0a1` |
+
+最初のCLI実行はNode検査側の `crossOriginIsolated` 指定不足で、WASIの起動前に `isolation-required` として停止しました。生CSVはnativeのversion 1行だけで、成功には数えません。既存のNode検査と同じ指定を加え、清浄なcommit `c344c8bd4b20f5aa6623312728da0d88752f6da5` の計測器で上記の同じbinaryを比較し直しました。build commitとharness commitは別々に記録しています。
+
+5条件・計10実行が成功しました。version・helpは終了0、sat/unsatと値取得・push/pop、EOFは終了10、構文エラーは終了1でした。stdoutとstderrはそれぞれnative/WASIで全byte一致し、通常の条件でstderrは空、構文エラーではstdoutは空でした。値取得の応答は次のとおりです。
+
+```text
+sat
+((x #b00101010))
+unsat
+sat
+```
+
+[生CSV](S15-extra-solver-cli-preliminary.csv)は10行14列を原文のまま保存しました。各列と結果JSON、全streamを確認しましたが、独立監査器による全列監査と正式反復はまだ実施していません。小さなbufferによる分割I/Oは試していますが、仮想process brokerからの起動・取消・期限切れや、原本SMTBMC/SBYでの判定を検証済みとは扱いません。
+
+### 警告と採用の保留
+
+ビルド成功を、警告がないという意味では使いません。nativeのCaDiCaLではGit情報を含まないarchiveからIDENTIFIERを取得できない警告が出ました。依存のcommitはdriverが取得時に照合し、metadataへ別に記録しています。
+
+WASIには次の正しさに関わる警告が残っています。どちらも固定版の原文と照合し、単なる未使用変数の警告とは分けて扱います。
+
+- BTOR2Toolsの `src/btor2parser/btor2parser.c` の261・773・1248・1293行で、64 bitのIDを `labs(long)` に渡しています。WASIの32 bit longへの変換により切り詰める可能性があります。今回はSMT-LIB入力だけを試しており、BTOR2の正しさを確認していません。
+- Boolectorの `src/btortrapi.c` の58〜77行では、WASM向け条件分岐がgzip用 `popen` を除いた後に、未初期化の `FILE *file` を参照し得ます。gzipのAPI traceを試した結果ではなく、コンパイラー警告と原文から確認した問題です。
+
+このほかに未使用の関数・変数の警告もあり、全ログを証拠へ含めました。今回の5条件の一致だけでは、これらの問題や保守終了のリスクを解消したとは扱いません。Boolectorの製品候補は無効のままとし、採用は保留します。
+
+### 証拠の保全
+
+証拠ZIP `s15-extra-solver-preliminary-e286c9f.zip` は11,558,735 bytes、SHA-256は `dcebaeee5b6d7bc0a8ec5ec4cb401e95571f2acf61a83195b324ab4b977d43a7` です。失敗試行・成功したビルド・CLIの生出力、依存の原archiveとlicense、driverとpatchのsnapshot、MPFRの取得・署名記録を含む415ファイルを保存しました。[全ファイルの目録](S15-extra-solvers-files-sha256.csv)は各サイズとSHA-256を記録し、ZIPから読み戻した全件が元のbyte列と一致しています。目録自体のSHA-256は `6cd06cbd52c0e77085063612ebe8fd900e7fbe39efaa2a82998a7296f7830216` です。ZIPはチャットで渡し、repositoryには生CSV・目録と本記録を残します。
+
+初回の不正patchは原文snapshotを残せていません。部分適用したconfigure・makefile、reject、記録済みpatch hashは保全していますが、そのpatch原文を保全できたとは主張しません。以後の試行は適用したpatchのsnapshotを保存します。
