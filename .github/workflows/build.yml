@@ -1656,12 +1656,9 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: zstd の submodule を取得
-        run: git submodule update --init --depth 1 -- vendor/zstd
-
-      - name: HDL ライブラリーと CPU の固定ソースを取得
+      - name: zstd と固定した HDL ライブラリーを取得
         run: |
-          git submodule update --init --depth 1 -- third_party/
+          git submodule update --init --depth 1 -- vendor/zstd third_party/
           git -C third_party/vexriscv submodule update --init --depth 1 -- pythondata_cpu_vexriscv/verilog/ext/VexRiscv
 
       - name: Node.js を設定
