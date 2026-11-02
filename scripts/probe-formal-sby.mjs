@@ -7,7 +7,7 @@ import { startFormalPython } from "../web/lib/formal-python-process.mjs";
 import { nodeFormalWorker, nodeFormalWasiWorker, readFormalSources } from "../tests/synth/formal-python-helpers.mjs";
 import { nodeSolverWorker } from "../tests/web/solver-process-helpers.mjs";
 import { loadSolverProbe, digest, root } from "../tests/synth/solver-protocol-helpers.mjs";
-import { sbyCases, sbyConfig } from "../tests/synth/formal-sby-cases.mjs";
+import { sbyCases, sbyConfig, selectFormalSolvers } from "../tests/synth/formal-sby-cases.mjs";
 import { readSbyStatus, classifySbyStatus } from "./probe-upstream-formal.mjs";
 
 globalThis.crossOriginIsolated = true;
@@ -55,11 +55,12 @@ save("inputs/yosys-native", nativeYosys);
 json("assets/manifest.json", sources.manifest); json("metadata.json", metadata);
 const encoder = new TextEncoder();
 const rows = [];
-for (const solver of ["yices2", "z3"].filter(name => !values.solver || name === values.solver)) {
+for (const solver of selectFormalSolvers(values.solver)) {
   const probe = loadSolverProbe(probes[solver].wasi, solver, "wasi");
   const nativeBuild = readFileSync(path.join(values.baseline, `${solver}-bin/metadata.json`));
   const nativeInfo = JSON.parse(nativeBuild);
-  const nativeBinary = readFileSync(path.join(values.baseline, `${solver}-bin`, solver === "yices2" ? "yices-smt2" : "z3"));
+  assert.equal(nativeMetadata.solverCommands?.[solver]?.sha256, nativeInfo.artifact.sha256, "Missing verified native solver command");
+  const nativeBinary = readFileSync(path.join(values.baseline, `${solver}-bin`, solver === "yices2" ? "yices-smt2" : solver));
   assert.equal(digest(nativeBinary), nativeInfo.artifact.sha256);
   metadata.probes[solver] = { metadataSha256: probe.metadataSha256, sha256: probe.info.artifact.sha256,
     nativeMetadataSha256: digest(nativeBuild), nativeSha256: nativeInfo.artifact.sha256 };
@@ -80,7 +81,8 @@ for (const solver of ["yices2", "z3"].filter(name => !values.solver || name === 
     const result = await startFormalPython({ ...sources, entrypoint: "sby",
       args: ["-j", "1", "-d", "result", "--yosys", "yosys", "--smtbmc", "yosys-smtbmc", "--witness", "yosys-witness", "job.sby"],
       files: [{ path: "job.sby", bytes: encoder.encode(sbyConfig(fixture, solver)) }, { path: "top.v", bytes: encoder.encode(fixture.source) }],
-      solvers: { [solver === "yices2" ? "yices-smt2" : "z3"]: { wasm: probe.binary, sha256: probe.info.artifact.sha256 } }, yosys,
+      solvers: { [solver === "yices2" ? "yices-smt2" : solver]: { wasm: probe.binary, sha256: probe.info.artifact.sha256,
+        exitCodes: solver === "boolector" ? [0, 10, 20] : [0] } }, yosys,
       timeoutMs: 60_000, workerFactory: nodeFormalWorker, solverWorkerFactory: nodeSolverWorker, wasiWorkerFactory: nodeFormalWasiWorker,
       onStdout: line => stdout.push(line), onStderr: line => stderr.push(line) }).completion;
     save(`${label}/stdout.log`, stdout.join("")); save(`${label}/stderr.log`, stderr.join(""));

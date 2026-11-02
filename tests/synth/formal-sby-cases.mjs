@@ -29,7 +29,8 @@ export const sbyCases = [
 ];
 
 export function sbyConfig(fixture, solver) {
-  if (!["yices2", "z3"].includes(solver)) throw new Error("Unsupported baseline solver");
+  if (typeof solver !== "string") throw new Error("Missing baseline solver");
+  selectFormalSolvers(solver);
   return `[options]
 mode ${fixture.mode}
 depth ${fixture.depth}
@@ -44,4 +45,10 @@ prep -top top
 [files]
 top.v
 `;
+}
+
+export function selectFormalSolvers(solver) {
+  if (solver === undefined) return ["yices2", "z3"];
+  if (!["yices2", "z3", "boolector", "bitwuzla"].includes(solver)) throw new Error("Unsupported diagnostic solver");
+  return [solver];
 }

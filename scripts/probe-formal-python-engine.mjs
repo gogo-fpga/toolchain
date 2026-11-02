@@ -7,8 +7,8 @@ import { parseArgs } from "node:util";
 import { startFormalPython } from "../web/lib/formal-python-process.mjs";
 import { nodeFormalWorker, readFormalSources } from "../tests/synth/formal-python-helpers.mjs";
 import { nodeSolverWorker } from "../tests/web/solver-process-helpers.mjs";
-import { loadSolverProbe } from "../tests/synth/solver-protocol-helpers.mjs";
-import { sbyCases } from "../tests/synth/formal-sby-cases.mjs";
+import { loadSolverProbe, verifyNativeSolver } from "../tests/synth/solver-protocol-helpers.mjs";
+import { sbyCases, selectFormalSolvers } from "../tests/synth/formal-sby-cases.mjs";
 import { startSolverProcess } from "../web/lib/solver-process.mjs";
 
 globalThis.crossOriginIsolated = true;
@@ -54,11 +54,13 @@ for (const file of sources.sources) {
 writeFileSync(path.join(out, "assets/manifest.json"), JSON.stringify(sources.manifest, null, 2) + "\n");
 writeFileSync(path.join(out, "metadata.json"), JSON.stringify(metadata, null, 2) + "\n");
 const rows = [];
-for (const solver of ["yices2", "z3"].filter(name => !values.solver || name === values.solver)) {
+for (const solver of selectFormalSolvers(values.solver)) {
   const nativeProbe = loadSolverProbe(probes[solver].native, solver, "native");
   const wasiProbe = loadSolverProbe(probes[solver].wasi, solver, "wasi");
-  const executable = solver === "yices2" ? "yices-smt2" : "z3";
+  const executable = solver === "yices2" ? "yices-smt2" : solver;
   symlinkSync(nativeProbe.binaryPath, path.join(binaryDir, executable));
+  verifyNativeSolver(executable, binaryDir, nativeProbe.info.artifact.sha256,
+    { ...process.env, PATH: `${binaryDir}${path.delimiter}${process.env.PATH}` });
   for (const [runtime, probe] of [["native", nativeProbe], ["wasi", wasiProbe]]) {
     writeFileSync(path.join(out, `${solver}-${runtime}-build.json`), probe.metadata);
     let version;
@@ -110,7 +112,8 @@ for (const solver of ["yices2", "z3"].filter(name => !values.solver || name === 
         exitCode: native.status, signal: native.signal, error: native.error?.message ?? null }, null, 2) + "\n");
       const stdout = []; const stderr = [];
       const engine = startFormalPython({ ...sources, entrypoint: "smtbmc", args, files,
-        solvers: { [executable]: { wasm: wasiProbe.binary, sha256: wasiProbe.info.artifact.sha256 } },
+        solvers: { [executable]: { wasm: wasiProbe.binary, sha256: wasiProbe.info.artifact.sha256,
+          exitCodes: solver === "boolector" ? [0, 10, 20] : [0] } },
         workerFactory: nodeFormalWorker, solverWorkerFactory: () => nodeSolverWorker(),
         onStdout: line => stdout.push(line), onStderr: line => stderr.push(line), timeoutMs: 30_000,
       });
@@ -137,8 +140,9 @@ for (const solver of ["yices2", "z3"].filter(name => !values.solver || name === 
         assert.match(stdout.join(""), new RegExp(`Status: ${expected ? "FAILED" : "PASSED"}\\n$`));
         assert.equal(stderr.join(""), native.stderr);
         assert.equal(normalizeLog(stdout.join("")), normalizeLog(native.stdout));
-        assert.equal(result.children.length, 1);
-        assert.ok(result.children.every(child => child.status === "exited" && child.exitCode === 0 && child.integrityVerified));
+        assert.equal(result.children.length, solver === "bitwuzla" ? 2 : 1);
+        assert.ok(result.children.every(child => child.status === "exited" &&
+          (solver === "boolector" ? [0, 10, 20] : [0]).includes(child.exitCode) && child.integrityVerified));
         const nativeNames = readdirSync(nativeDirectory).sort();
         const traceRequired = fixture.name === "bmc-violation" || fixture.name === "cover-reached" ||
           (fixture.name === "prove-inconclusive" && phase === "induction");
