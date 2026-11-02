@@ -14,6 +14,47 @@ SPEC.loader.exec_module(ARCHIVE)
 
 
 class ExtraFormalArchiveTest(unittest.TestCase):
+    def test_trace_campaign_requires_its_auditors_and_original_writer(self):
+        sources = ARCHIVE.campaign_sources({"kind": "formal-trace-v1"})
+        self.assertEqual(sources[0], "scripts/measure-formal-trace.py")
+        self.assertIn("scripts/audit-formal-trace.py", sources)
+        self.assertIn("vendor/yosys/backends/smt2/smtio.py", sources)
+        self.assertEqual(ARCHIVE.campaign_sources({}), ["scripts/" + name for name in ARCHIVE.AUDITORS])
+        with self.assertRaisesRegex(ValueError, "unknown campaign"):
+            ARCHIVE.campaign_sources({"kind": "untrusted"})
+
+    def test_staging_materializes_only_hash_verified_native_launchers(self):
+        binary = self.base.parent / (self.base.name + "-native")
+        binary.write_bytes(b"native executable")
+        self.addCleanup(binary.unlink)
+        alias = self.campaign / "solver-bin/solver"
+        alias.parent.mkdir()
+        alias.symlink_to(binary)
+        metadata = {"solverCommands": {"solver": {"path": str(alias), "sha256": ARCHIVE.digest(binary.read_bytes())}}}
+        (self.campaign / "metadata.json").write_text(json.dumps(metadata))
+        output = self.base / "staged"
+        report = ARCHIVE.stage([self.campaign], output)
+        restored = output / alias.relative_to(self.base)
+        self.assertFalse(restored.is_symlink())
+        self.assertEqual(restored.read_bytes(), binary.read_bytes())
+        self.assertEqual(len(report["materializedLaunchers"]), 1)
+        self.assertTrue(alias.is_symlink())
+        with patch("os.getcwd", return_value=str(self.base)):
+            self.assertEqual(len(ARCHIVE.collect([str(output.relative_to(self.base))])), report["files"] + 1)
+        with self.assertRaises(ValueError):
+            ARCHIVE.stage([self.campaign], output)
+        binary.write_bytes(b"changed native")
+        with self.assertRaisesRegex(ValueError, "unverified launcher"):
+            ARCHIVE.stage([self.campaign], self.base / "changed")
+        with self.assertRaises(ValueError):
+            ARCHIVE.stage([self.campaign], self.campaign / "nested")
+        linked = self.base / "linked"
+        linked.symlink_to(self.campaign.parent, target_is_directory=True)
+        with self.assertRaises(ValueError):
+            ARCHIVE.stage([linked / self.campaign.name], self.base / "indirect")
+        with self.assertRaises(ValueError):
+            ARCHIVE.stage([self.campaign], linked / "output")
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)

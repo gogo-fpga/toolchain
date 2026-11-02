@@ -6,6 +6,7 @@ import hashlib
 import json
 from pathlib import Path, PurePosixPath
 import re
+import shutil
 import stat
 import subprocess
 import sys
@@ -21,6 +22,16 @@ MAX_LOGICAL = 16 * 1024 * 1024 * 1024
 MAX_MANIFEST = 16 * 1024 * 1024
 AUDITORS = ("measure-extra-formal.py", "audit-formal-python.py", "audit-formal-sby.py",
             "audit-formal-controls.py", "sby-artifact-audit.py", "formal-solver-audit.py")
+TRACE_AUDITORS = ("measure-formal-trace.py", "audit-formal-trace.py", "audit-formal-sby.py",
+                  "sby-artifact-audit.py", "formal-solver-audit.py", "negative-formal-trace.py")
+
+
+def campaign_sources(plan):
+    kind = plan.get("kind")
+    require(kind in [None, "formal-trace-v1"], "unknown campaign kind")
+    if kind == "formal-trace-v1":
+        return ["scripts/" + name for name in TRACE_AUDITORS] + ["vendor/yosys/backends/smt2/smtio.py"]
+    return ["scripts/" + name for name in AUDITORS]
 
 
 def require(value, message):
@@ -52,11 +63,13 @@ def safe_path(name):
 
 
 def audited_campaign(directory):
-    runner = directory / "snapshots/scripts/measure-extra-formal.py"
+    plan = strict_json((directory / "plan.json").read_bytes())
+    sources = campaign_sources(plan)
+    runner = directory / "snapshots" / sources[0]
     require(runner.is_file() and not runner.is_symlink(), "missing captured campaign runner")
-    for name in AUDITORS:
-        path = directory / "snapshots/scripts" / name
-        require(path.is_file() and not path.is_symlink() and digest(path.read_bytes()) == digest((ROOT / "scripts" / name).read_bytes()),
+    for name in sources:
+        path = directory / "snapshots" / name
+        require(path.is_file() and not path.is_symlink() and digest(path.read_bytes()) == digest((ROOT / name).read_bytes()),
                 "trusted campaign auditor before execution")
     with tempfile.TemporaryDirectory(prefix="formal-audit-cache-") as cache:
         result = subprocess.run([sys.executable, "-I", "-B", "-X", "pycache_prefix=" + cache, str(runner), "--audit-only", "--out", str(directory)], cwd=ROOT,
@@ -70,7 +83,7 @@ def audited_campaign(directory):
 def collect(sources):
     paths = []
     for source in sources:
-        source = Path(source)
+        source = Path(source).absolute()
         require(source.exists() and not source.is_symlink(), "missing or linked evidence source")
         candidates = source.rglob("*") if source.is_dir() else [source]
         for path in candidates:
@@ -122,6 +135,44 @@ def package(directory, output, extras=()):
             "sha256": digest(output.read_bytes()), "manifestSha256": digest(json.dumps(manifest, sort_keys=True, ensure_ascii=True).encode() + b"\n")}
 
 
+def stage(sources, output):
+    output = Path(output).absolute()
+    output.relative_to(ROOT)
+    require(sources and not output.exists() and output.resolve() == output, "missing sources or unsafe staging destination")
+    entries, links = [], []
+    for source in sources:
+        source = Path(source).absolute()
+        source.relative_to(ROOT)
+        require(source.exists() and source.resolve() == source and source not in output.parents and source != output, "unsafe staging source")
+        for path in source.rglob("*") if source.is_dir() else [source]:
+            if path.is_dir() and not path.is_symlink():
+                continue
+            require(path.is_file(), "unsupported staging entry")
+            name = path.relative_to(ROOT).as_posix()
+            safe_path(name)
+            if path.is_symlink():
+                metadata = path.parent.parent / "metadata.json"
+                require(not metadata.is_symlink() and path.stat().st_size <= MAX_OBJECT, "unsafe launcher metadata or binary size")
+                meta = strict_json(metadata.read_bytes())
+                commands = meta.get("solverCommands")
+                if commands is None:
+                    commands = {solver: probe["command"] for solver, probe in meta["probes"].items()}
+                sha = digest(path.read_bytes())
+                require(any(path.parent.name == solver + "-bin" and command["path"] == str(path)
+                            and command["sha256"] == sha for solver, command in commands.items()), "unverified launcher symlink")
+                links.append({"path": name, "sha256": sha})
+            entries.append((path, name))
+    require(len(entries) == len({name for _, name in entries}), "overlapping staging sources")
+    output.mkdir()
+    for path, name in entries:
+        target = output / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, target, follow_symlinks=True)
+    report = {"sources": [str(Path(source).absolute().relative_to(ROOT)) for source in sources], "files": len(entries), "materializedLaunchers": links}
+    (output / "staging.json").write_text(json.dumps(report, sort_keys=True) + "\n")
+    return report
+
+
 def validate(archive):
     with zipfile.ZipFile(archive) as data:
         names = data.namelist()
@@ -157,9 +208,11 @@ def validate(archive):
         for sha in objects:
             info = data.getinfo("objects/" + sha)
             require(info.file_size <= MAX_OBJECT and digest(data.read(info)) == sha, "archived object bytes")
-        for name in AUDITORS:
-            runner = next((item for item in manifest["files"] if item["path"] == str(campaign) + "/snapshots/scripts/" + name), None)
-            require(runner is not None and runner["sha256"] == digest((ROOT / "scripts" / name).read_bytes()), "trusted campaign auditor")
+        plan = next((item for item in manifest["files"] if item["path"] == str(campaign) + "/plan.json"), None)
+        require(plan is not None, "missing campaign plan")
+        for name in campaign_sources(strict_json(data.read("objects/" + plan["sha256"]))):
+            runner = next((item for item in manifest["files"] if item["path"] == str(campaign) + "/snapshots/" + name), None)
+            require(runner is not None and runner["sha256"] == digest((ROOT / name).read_bytes()), "trusted campaign auditor")
         return manifest
 
 
@@ -186,6 +239,8 @@ if __name__ == "__main__":
     parser.add_argument("--output", required=True)
     parser.add_argument("--include", action="append", default=[])
     parser.add_argument("--restore", action="store_true")
+    parser.add_argument("--stage", action="store_true")
     options = parser.parse_args()
-    result = restore(options.output, options.campaign) if options.restore else package(options.campaign, options.output, options.include)
+    require(not (options.restore and options.stage), "conflicting archive operations")
+    result = stage(options.include, options.output) if options.stage else restore(options.output, options.campaign) if options.restore else package(options.campaign, options.output, options.include)
     print(json.dumps(result, sort_keys=True, allow_nan=False))

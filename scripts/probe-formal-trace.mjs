@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
@@ -13,11 +13,14 @@ import { sbyCases, selectFormalSolvers } from "../tests/synth/formal-sby-cases.m
 globalThis.crossOriginIsolated = true;
 const { values } = parseArgs({ options: {
   sources: { type: "string" }, probes: { type: "string" }, baseline: { type: "string" },
-  out: { type: "string" }, solver: { type: "string" }, case: { type: "string" },
+  out: { type: "string" }, solver: { type: "string" }, case: { type: "string" }, formal: { type: "boolean", default: false },
 } });
 assert.ok(values.sources && values.probes && values.baseline && values.out,
   "Use --sources ASSETS --probes MANIFEST --baseline NATIVE_SBY --out NEW_DIRECTORY");
 const solvers = selectFormalSolvers(values.solver);
+assert.ok(!values.formal || !values.case, "Formal evidence requires every fixture");
+const worktree = execFileSync("git", ["status", "--porcelain=v1"], { cwd: root, encoding: "utf8" });
+assert.ok(!values.formal || worktree === "", "Formal evidence requires a clean worktree");
 const fixtures = sbyCases.filter(fixture => !values.case || fixture.name === values.case);
 assert.ok(fixtures.length, "Unknown trace fixture");
 const out = path.resolve(values.out);
@@ -34,8 +37,8 @@ for (const [name, sha256] of Object.entries(baseline.sources)) {
 }
 const python = process.env.PYTHON ?? "python3";
 const metadata = {
-  format: 1, preliminary: true, argv: process.argv, commit: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(),
-  worktree: execFileSync("git", ["status", "--porcelain=v1"], { cwd: root, encoding: "utf8" }),
+  format: 1, preliminary: !values.formal, artifactOrder: "codepoint", argv: process.argv,
+  commit: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(), worktree,
   submodules: execFileSync("git", ["submodule", "status"], { cwd: root, encoding: "utf8" }),
   host: { platform: os.platform(), release: os.release(), architecture: os.arch(), cpus: os.cpus().length,
     cpu: os.cpus()[0]?.model, memoryBytes: os.totalmem() },
@@ -43,13 +46,19 @@ const metadata = {
   pyodide: JSON.parse(readFileSync(path.join(root, "node_modules/pyodide/package.json"))).version,
   baselineSha256: digest(baselineBytes), baselineResultsSha256: digest(readFileSync(path.join(values.baseline, "results.json"))),
   sources: assets.manifest, probes: {}, snapshots: {},
+  sourcePins: Object.fromEntries(solvers.map(solver => [solver,
+    execFileSync("git", ["ls-tree", "HEAD", `vendor/${solver}`], { cwd: root, encoding: "utf8" }).match(/^160000 commit ([a-f0-9]{40})\t/)?.[1]])),
 };
+if (values.formal) assert.ok(baseline.preliminary === false && baseline.worktree === "" && baseline.commit === metadata.commit,
+  "Formal native baseline must use the same clean commit");
 writeFileSync(path.join(out, "baseline-metadata.json"), baselineBytes);
 writeFileSync(path.join(out, "baseline-results.json"), readFileSync(path.join(values.baseline, "results.json")));
-for (const name of ["scripts/probe-formal-trace.mjs", "scripts/build-formal-python.py", "web/formal_trace.py",
+for (const name of new Set(["scripts/probe-formal-trace.mjs", "scripts/build-formal-python.py", "web/formal_trace.py",
   ...readdirSync(path.join(root, "web/lib")).filter(name => name.startsWith("formal-")).map(name => `web/lib/${name}`),
   "tests/synth/formal-python-helpers.mjs", "tests/synth/formal-sby-cases.mjs", "tests/synth/solver-protocol-helpers.mjs",
-  "tests/web/solver-process-helpers.mjs", "tests/web/formal-python-node-worker.mjs", "tests/web/solver-node-worker.mjs"]) {
+  "tests/web/solver-process-helpers.mjs", "tests/web/formal-python-node-worker.mjs", "tests/web/solver-node-worker.mjs",
+  ...Object.keys(baseline.sources), ...Object.keys(assets.manifest.patches).map(name => "patches/" + name),
+  ...Object.values(assets.manifest.origins).map(origin => `vendor/${origin.submodule}/${origin.source}`)])) {
   const bytes = readFileSync(path.join(root, name));
   const target = path.join(out, "snapshots", name);
   mkdirSync(path.dirname(target), { recursive: true }); writeFileSync(target, bytes);
@@ -66,7 +75,7 @@ const columns = ["solver", "case", "phase", "runtime", "entrypoint", "status", "
   "modelSha256", "solverSha256", "stdoutSha256", "stderrSha256", "captureSha256", "artifactsSha256", "error"];
 function save() {
   writeFileSync(path.join(out, "metadata.json"), JSON.stringify(metadata, null, 2) + "\n");
-  writeFileSync(path.join(out, "results.json"), JSON.stringify({ preliminary: true, columns, rows }, null, 2) + "\n");
+  writeFileSync(path.join(out, "results.json"), JSON.stringify({ preliminary: !values.formal, columns, rows }, null, 2) + "\n");
   writeFileSync(path.join(out, "results.csv"), columns.join(",") + "\n" + rows.map(row => columns.map(name =>
     `"${String(row[name] ?? "").replaceAll('"', '""')}"`).join(",")).join("\n") + "\n");
 }
@@ -90,6 +99,20 @@ try {
     metadata.probes[solver] = { command: verifyNativeSolver(executable, bin, native.info.artifact.sha256, env),
       native: native.info, wasi: wasi.info,
       version: execFileSync(native.binaryPath, ["--version"], { env, encoding: "utf8", timeout: 10_000 }).trim() };
+    metadata.probes[solver].command.resolvedPath = realpathSync(path.join(bin, executable));
+    assert.equal(metadata.probes[solver].command.resolvedPath, realpathSync(native.binaryPath));
+    mkdirSync(path.join(out, "inputs"), { recursive: true });
+    writeFileSync(path.join(out, "inputs", solver + "-native"), native.binary);
+    writeFileSync(path.join(out, "inputs", solver + ".wasm"), wasi.binary);
+    for (const [runtime, probe] of [["native", native], ["wasi", wasi]]) {
+      writeFileSync(path.join(out, "inputs", `${solver}-${runtime}-build.py`), probe.buildScript);
+      for (const patch of probe.info.patches) {
+        const target = path.join(out, "snapshots", patch.path);
+        mkdirSync(path.dirname(target), { recursive: true });
+        const bytes = readFileSync(path.join(root, patch.path));
+        writeFileSync(target, bytes); metadata.snapshots[patch.path] = digest(bytes);
+      }
+    }
     for (const [name, probe] of [["native", native], ["wasi", wasi]]) writeFileSync(path.join(out, `${solver}-${name}-build.json`), probe.metadata);
     for (const fixture of fixtures) {
       const recorded = reference.rows.find(row => row.solver === solver && row.case === fixture.name);
@@ -112,7 +135,8 @@ try {
           const files = [{ path: "model.smt2", bytes: new Uint8Array(model) }, { path: "top.v", bytes: new TextEncoder().encode(fixture.source) }];
           for (const file of files) writeFileSync(path.join(working, file.path), file.bytes);
           const row = { solver, case: fixture.name, phase, runtime, entrypoint, status: "failed", expectedTrace,
-            modelSha256: digest(model), solverSha256: (runtime === "native" ? native : wasi).info.artifact.sha256, error: null };
+            modelSha256: digest(model), solverSha256: (runtime === "native" ? native : wasi).info.artifact.sha256,
+            captureSha256: null, error: null };
           rows.push(row);
           try {
             let result;
@@ -155,7 +179,7 @@ try {
             const expectedNames = ["model.smt2", "top.v", ...(expectedTrace ? ["trace.vcd", "trace.yw", "trace_tb.v"] : []),
               ...(entrypoint === "formal_trace" ? ["formal-trace.json"] : [])].sort();
             assert.deepEqual([...names].sort(), expectedNames, "Complete artifact inventory");
-            const artifacts = Object.fromEntries(names.filter(name => name !== "formal-trace.json").map(name => [name, digest(readFileSync(path.join(working, name)))]));
+            const artifacts = Object.fromEntries(names.filter(name => name !== "formal-trace.json").sort().map(name => [name, digest(readFileSync(path.join(working, name)))]));
             row.artifactsSha256 = digest(JSON.stringify(artifacts));
             if (!plain) plain = { stdout: normalized(stdout), stderr, artifacts };
             assert.equal(normalized(stdout), plain.stdout); assert.equal(stderr, plain.stderr); assert.deepEqual(artifacts, plain.artifacts);
