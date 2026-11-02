@@ -44,6 +44,14 @@ SMT-LIB 2.6系の応答を区切る基盤も追加しました。固定Yices2の
 
 ## 標準入力と輸送の境界
 
+### 実Yices2の応答で確認した境界
+
+その後、固定sourceから作ったnativeとWASIのYices2を、実stdin/stdoutと字句framerへ接続しました。bit-vector、arrayのpush/pop、値とmodel、32,768 bitの長い値を予備比較し、同じsolverの両系で応答の全byteが一致しました。5回反復、Z3との比較、SBYと画面の接続はまだ未完了です。[実応答比較の記録](../experiments/S15-solver-protocol.md)へ条件と初回の失敗を分けて残します。
+
+重要な制約は、Yices2が構文エラーを`(error ...)`で返しても終了コード0になることです。固定原本の[parse loopと正常終了](https://github.com/SRI-CSL/yices2/blob/85cf17e44eac76b5d14b297c09fc9bfecf47ef65/src/frontend/yices_smt2.c#L1182-L1221)でも、構文エラーでloopを抜けた後に`YICES_EXIT_SUCCESS`を返します。framerの正常終了やprocessの終了コードだけを、論理判定の成功・証明の成立としません。P3では上流yosys-smtbmcの応答検査を再利用し、SMTの意味解析をJavaScriptへ複製しません。
+
+Yices2の値の表示では、問い合わせたarrayの式は入力の`#x2`を保持し、評価値は`#b0111`になりました。長い値には上流printerの改行も入ります。最初の検査器は両方を誤って予想して失敗しました。出力を正規化せず、固定CLIの表示をそのまま比較します。また、`(exit)`を分割して送ると、最後の改行を送る前にsolverが終了してwriteが拒否される場合があります。正常終了の検査はstdinのEOFで行い、終了後のwrite拒否とは分けます。
+
 既存shimはstdinを常にEOFにしていたため、同期の`stdin(length)` callbackを追加しました。戻り値は要求長以下の`Uint8Array`に限り、Promise、過大な値、閉じたdescriptor、無効なmemoryを拒否します。短いreadで次のiovecを待たず、既定のEOFも維持します。これはbyte輸送の基盤であって、SMTのresponse framingやsolverの成功判定ではありません。
 
 容量を制限した共有bufferの基盤を追加し、EOF、終了後のwrite、cancel、backpressureをNodeの実workerを含む11件で検査しました。`crossOriginIsolated`と非同期Atomicsが使えなければ開始を拒否します。Nodeのfixtureではisolation flagを設定しており、ブラウザーのヘッダーを検証したものではありません。
