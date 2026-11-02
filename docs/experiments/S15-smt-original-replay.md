@@ -67,7 +67,7 @@ node scripts/probe-formal-trace.mjs --solver "$SOLVER" \
 | Bitwuzla | 8 | 4 | 32 | 全行 `matched`、errorなし |
 | Boolector | 8 | 4 | 32 | 全行 `matched`、errorなし |
 
-全128行で、model・元VCD/YW/testbench全bytes、標準stream、終了code、native/Pyodideの記録JSONが一致しました。Bitwuzlaのhelp childとSMT child、Boolectorの実終了code 10/20も、既存のprocess境界の検査を通しています。CSVは[既定2候補](S15-smt-trace-default-preliminary.csv)、[Bitwuzla](S15-smt-trace-bitwuzla-preliminary.csv)、[Boolector](S15-smt-trace-boolector-preliminary.csv)です。全17列の別の監査器による独立監査と正式反復は、まだ行っていません。
+全128行で、model・元VCD/YW/testbench全bytes、標準stream、終了code、native/Pyodideの記録JSONが一致しました。Bitwuzlaのhelp childとSMT child、Boolectorの実終了code 10/20も、既存のprocess境界の検査を通しています。CSVは[既定2候補](S15-smt-trace-default-preliminary.csv)、[Bitwuzla](S15-smt-trace-bitwuzla-preliminary.csv)、[Boolector](S15-smt-trace-boolector-preliminary.csv)です。この時点では独立監査と正式反復は未実施でした。後続の[全17列監査・正式反復](S15-smt-trace-audit.md)とは区別します。
 
 hostはLinux `6.8.0-1061-aws`、x86_64、Intel Xeonの2 CPU、memory 8,327,749,632 bytesです。Node `v24.21.0`、Python `3.12.13`、Pyodide `314.0.7`を使いました。solverのsource・binary hashとnative実行pathは各出力先の `metadata.json` と `*-build.json`、実行時のchild identity・実終了code・輸送整合性は各条件の `process.json` に保存しています。binaryは前段の認定品を再利用しており、今回の変更から再ビルドしたものではありません。
 
@@ -91,7 +91,7 @@ hostはLinux `6.8.0-1061-aws`、x86_64、Intel Xeonの2 CPU、memory 8,327,749,6
 
 提出済みcommit `3b6eba147b8989d27cb9f23c439fcc758d027bd5` の予備128行は、新しい監査器でも全17列が一致しました。初回監査では既定entrypointのJSONで空のcapture hashが省略される点と、英語localeによる成果物名の順序を見落として停止しました。失敗ログを保持し、旧予備記録だけを明示的に読めるようにしました。新しい比較器は空のhashも `null` として保存し、hashの対象名はcodepoint順に固定します。正式modeは旧形式を許可しません。
 
-正式modeは清浄な同一commitのnative基準を要求し、source pin・元Pythonとpatchのhash・staged資材・native/WASI build metadata・実binary全bytesと起動先を照合します。`scripts/measure-formal-trace.py` は既定2候補、Bitwuzla、Boolectorを順にA/A 2回・正式5回測り、全896行19列、反復間の意味的hashと条件ごとの最小・中央値・最大を監査します。正式結果はまだありません。
+正式modeは清浄な同一commitのnative基準を要求し、source pin・元Pythonとpatchのhash・staged資材・native/WASI build metadata・実binary全bytesと起動先を照合します。`scripts/measure-formal-trace.py` は既定2候補、Bitwuzla、Boolectorを順にA/A 2回・正式5回測り、全896行19列、反復間の意味的hashと条件ごとの最小・中央値・最大を監査します。[正式結果と証拠復元](S15-smt-trace-audit.md)は全列監査を通りました。
 
 ```sh
 python3 scripts/build-formal-python.py --out build/S15/smt-trace-python-assets-formal-01
@@ -104,11 +104,11 @@ probe一覧は前段でhash認定した4候補のnative/WASI build出力を指�
 
 正式測定前の実証拠改変対照は、既定2候補56件、Bitwuzla 57件、Boolector 57件の計170件を拒否し、原状へ戻した後の監査も通りました。既定2候補は独立metadataへの修正を含む新しい予備比較を使い、追加2候補は提出済みの予備証拠を使っています。これは正式反復の結果ではありません。Python回帰138件とWeb回帰276件も成功しました。
 
-初回正式試行 `smt-trace-formal-01` はcommit `4ec0983e4a4476e56538f37c8fff7200040ab697` の既定2候補64行を生成後、監査器が上流の本体名 `yices_smt2` とCLI起動名 `yices-smt2` を同一視して停止しました。比較出力・失敗記録は別の失敗証拠として保持します。本体の解決先はbuild metadataの相対パス全体と照合し、CLI起動名・binary hashの照合も維持する修正と回帰を追加しました。この試行は正式成功結果に含めず、修正commitから全反復をやり直します。
+初回正式試行 `smt-trace-formal-01` はcommit `4ec0983e4a4476e56538f37c8fff7200040ab697` の既定2候補64行を生成後、監査器が上流の本体名 `yices_smt2` とCLI起動名 `yices-smt2` を同一視して停止しました。比較出力・失敗記録は別の失敗証拠として保持します。本体の解決先はbuild metadataの相対パス全体と照合し、CLI起動名・binary hashの照合も維持する修正と回帰を追加しました。この試行は正式成功結果に含めず、修正commitから全反復をやり直しました。成功した出力先と実行commandは正式結果の記録を参照してください。
 
 ## 未完了
 
-元Verilog・元VHDL/PSL・下位化Verilogへの値の接続、負の対照、全列独立監査、正式反復、証拠復元と画面接続は未完了です。原本SMTBMC/SBYの成果物一致と、原回路による反例検証を分けて進めます。
+値の記録層は全列独立監査・正式反復・証拠復元まで確認しました。元Verilog・元VHDL/PSL・下位化Verilogへの値の接続と、原回路再実行層の負の対照・全列監査・正式反復・画面接続は未完了です。原本SMTBMC/SBYの成果物一致と、原回路による反例検証を分けて進めます。
 
 ## 一次資料
 
