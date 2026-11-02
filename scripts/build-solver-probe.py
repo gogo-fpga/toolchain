@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import shlex
 import shutil
 import subprocess
@@ -49,6 +50,85 @@ def stage_source(name: str, expected: str, output: Path):
     (output / ".gitcommit").write_text(expected + "\n")
 
 
+def setup_dependency(source: Path, name: str) -> dict[str, str]:
+    text = (source / "contrib" / f"setup-{name}.sh").read_text()
+    commits = re.findall(r'^COMMIT_ID="([0-9a-f]{40})"$', text, re.MULTILINE)
+    urls = re.findall(r'download_github "([A-Za-z0-9_-]+/[A-Za-z0-9_-]+)" "\$COMMIT_ID"', text)
+    if len(commits) != 1 or len(urls) != 1:
+        raise ValueError(f"Unrecognized upstream dependency pin: {name}")
+    return {"commit": commits[0], "url": f"https://github.com/{urls[0]}.git"}
+
+
+def stage_dependency(name, dependency, output, metadata, run):
+    repository = output / f"{name}-git"
+    source = output / f"{name}-source"
+    metadata.setdefault("dependencies", {})[name] = {**dependency}
+    run(f"{name}-init", ["git", "init", "--bare", repository])
+    run(f"{name}-fetch", ["git", "--git-dir", repository, "fetch", "--depth=1",
+                          dependency["url"], dependency["commit"]])
+    actual = subprocess.check_output(["git", "--git-dir", str(repository), "rev-parse", "FETCH_HEAD"], text=True).strip()
+    if actual != dependency["commit"]:
+        raise ValueError(f"Fetched upstream pin mismatch: {name}")
+    archive = subprocess.check_output(["git", "--git-dir", str(repository), "archive", actual])
+    archive_path = output / f"{name}-source.tar"
+    archive_path.write_bytes(archive)
+    source.mkdir()
+    with tarfile.open(fileobj=io.BytesIO(archive)) as entries:
+        entries.extractall(source, filter="data")
+    licenses = sorted(p for p in source.iterdir() if p.name.startswith(("LICENSE", "COPYING")))
+    if not licenses or any(not p.is_file() or p.is_symlink() or not p.stat().st_size for p in licenses):
+        raise ValueError(f"Missing or unsafe dependency license: {name}")
+    metadata["dependencies"][name].update(
+        archive_sha256=digest(archive_path), licenses={p.name: digest(p) for p in licenses},
+    )
+    return source
+
+
+def build_boolector(args, output, source, metadata, run, environment, compiler, compiler_cxx, c_flags, link_flags, sdk):
+    metadata["cmake"] = subprocess.check_output([args.cmake, "--version"], text=True)
+    cxx_flags = c_flags.replace(" -std=gnu17", "")
+    if args.runtime == "native":
+        cxx_flags = f"{cxx_flags} {args.cxx_flags}".strip()
+        link_flags = args.cxx_link_flags
+    environment = {**environment, "CC": compiler, "CXX": compiler_cxx,
+                   "CFLAGS": c_flags, "CXXFLAGS": cxx_flags, "LDFLAGS": link_flags,
+                   "GIT_CEILING_DIRECTORIES": str(output)}
+    if args.runtime == "wasi":
+        environment.update(AR=str(sdk / "bin/llvm-ar"), RANLIB=str(sdk / "bin/llvm-ranlib"))
+    prefix = output / "dependencies"
+    (prefix / "include").mkdir(parents=True)
+    (prefix / "lib").mkdir()
+    cadical = stage_dependency("cadical", setup_dependency(source, "cadical"), output, metadata, run)
+    btor = stage_dependency("btor2tools", setup_dependency(source, "btor2tools"), output, metadata, run)
+    run("cadical-configure", [cadical / "configure", "-O2"], cadical, environment)
+    run("cadical-build", ["make", f"-j{args.jobs}", "libcadical.a"], cadical / "build", environment)
+    shutil.copyfile(cadical / "build/libcadical.a", prefix / "lib/libcadical.a")
+    shutil.copyfile(cadical / "src/ccadical.h", prefix / "include/ccadical.h")
+    toolchain = [f"-DCMAKE_EXE_LINKER_FLAGS={link_flags}"]
+    if args.runtime == "wasi":
+        toolchain = [f"-DCMAKE_TOOLCHAIN_FILE={sdk}/share/cmake/wasi-sdk-p1.cmake",
+                     f"-DCMAKE_EXE_LINKER_FLAGS={link_flags}",
+                     "-DCMAKE_CXX_STANDARD_LIBRARIES=-lunwind -lsetjmp",
+                     "-DCMAKE_CROSSCOMPILING_EMULATOR="]
+    elif args.cxx_libraries:
+        toolchain += [f"-DCMAKE_CXX_STANDARD_LIBRARIES={args.cxx_libraries}"]
+    common = [*toolchain, f"-DCMAKE_C_COMPILER={compiler}", f"-DCMAKE_CXX_COMPILER={compiler_cxx}",
+              f"-DCMAKE_C_FLAGS={c_flags}", f"-DCMAKE_CXX_FLAGS={environment['CXXFLAGS']}",
+              "-DCMAKE_BUILD_TYPE=Release", "-DCMAKE_POLICY_VERSION_MINIMUM=3.5", "-DBUILD_SHARED_LIBS=OFF"]
+    run("btor2tools-configure", [args.cmake, "-S", btor, "-B", output / "btor2tools-build", *common], env=environment)
+    run("btor2tools-build", [args.cmake, "--build", output / "btor2tools-build", "--target", "btor2parser",
+                            "--parallel", str(args.jobs)], env=environment)
+    shutil.copyfile(output / "btor2tools-build/lib/libbtor2parser.a", prefix / "lib/libbtor2parser.a")
+    shutil.copyfile(btor / "src/btor2parser/btor2parser.h", prefix / "include/btor2parser.h")
+    run("configure", [args.cmake, "-S", source, "-B", output / "objects", *common,
+                      f"-DCMAKE_PREFIX_PATH={prefix}", "-DONLY_CADICAL=ON", "-DUSE_GMP=OFF",
+                      "-DPYTHON=OFF", "-DTESTING=OFF", "-DTIME_STATS=OFF",
+                      "-DCMAKE_DISABLE_FIND_PACKAGE_Threads=TRUE"], env=environment)
+    run("build", [args.cmake, "--build", output / "objects", "--target", "boolector-bin",
+                  "--parallel", str(args.jobs)], env=environment)
+    return output / "objects/bin/boolector"
+
+
 def build(args):
     output = args.out.absolute()
     if output.exists() or output.is_symlink():
@@ -69,6 +149,7 @@ def build(args):
         record["environment"] = {key: selected_env[key] for key in (
             "CC", "CXX", "AR", "RANLIB", "STRIP", "CPPFLAGS", "CFLAGS", "CXXFLAGS",
             "LDFLAGS", "LIBS", "LC_ALL", "TZ", "SOURCE_DATE_EPOCH",
+            "GIT_CEILING_DIRECTORIES",
         ) if key in selected_env}
         metadata["commands"].append(record)
         (output / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
@@ -97,6 +178,7 @@ def build(args):
         link_flags = ""
         compiler = os.environ.get("CC", "gcc")
         compiler_cxx = os.environ.get("CXX", "g++")
+        sdk = None
         if args.runtime == "wasi":
             version, archive_hash, asset, _url = pin("wasi-sdk-pin").split("\t")
             sdk = (ROOT / "build" / asset.removesuffix(".tar.gz")).resolve()
@@ -111,7 +193,7 @@ def build(args):
             link_flags = "-lwasi-emulated-signal -lwasi-emulated-process-clocks -lwasi-emulated-mman"
             link_flags += " -Wl,-z,stack-size=8388608 -Wl,--initial-memory=33554432 -Wl,--max-memory=536870912"
         metadata["compiler"] = subprocess.check_output([compiler, "--version"], text=True)
-        if args.solver == "z3":
+        if args.solver != "yices2":
             metadata["compiler_cxx"] = subprocess.check_output([compiler_cxx, "--version"], text=True)
         metadata["host"] = {"os": os.uname().sysname, "release": os.uname().release,
                             "machine": os.uname().machine, "cpus": os.cpu_count(),
@@ -136,6 +218,9 @@ def build(args):
             run("configure", command)
             run("build", [args.cmake, "--build", output / "objects", "--target", "shell", "--parallel", str(args.jobs)])
             binary = output / "objects/z3"
+        elif args.solver == "boolector":
+            binary = build_boolector(args, output, source, metadata, run, environment,
+                                     compiler, compiler_cxx, c_flags, link_flags, sdk)
         else:
             gmp_version, gmp_hash, gmp_asset, _url = pin("archive-pin", "gmp").split("\t")
             archive = ROOT / "vendor/formal-archives" / gmp_asset
@@ -195,7 +280,7 @@ def build(args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--solver", choices=("yices2", "z3"), required=True)
+    parser.add_argument("--solver", choices=("yices2", "z3", "boolector"), required=True)
     parser.add_argument("--runtime", choices=("native", "wasi"), required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--cmake", default="cmake")

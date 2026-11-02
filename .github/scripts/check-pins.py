@@ -59,7 +59,10 @@ ARCHIVE_TAG_SOURCES = {
     "eigen": "https://gitlab.com/libeigen/eigen.git",
     "adawebpack": "https://github.com/godunko/adawebpack.git",
 }
-ARCHIVE_INDEX_SOURCES = {"gmp": "https://ftp.gnu.org/gnu/gmp/"}
+ARCHIVE_INDEX_SOURCES = {
+    "gmp": "https://ftp.gnu.org/gnu/gmp/",
+    "mpfr": "https://ftp.gnu.org/gnu/mpfr/",
+}
 GCC_SOURCE = "https://gcc.gnu.org/git/gcc.git"
 GCC_LIBGNAT_TAG = "releases/gcc-14.1.0"
 APYCULA_REQUIREMENTS = "requirements-nextpnr.txt"
@@ -671,6 +674,7 @@ def consistency(root: Path = ROOT) -> list[str]:
                     f"adawebpack-{pin['version']}.tar.gz"
                 ),
                 "gmp": f"https://ftp.gnu.org/gnu/gmp/gmp-{pin['version']}.tar.xz",
+                "mpfr": f"https://ftp.gnu.org/gnu/mpfr/mpfr-{pin['version']}.tar.xz",
             }[dependency]
             if pin["url"] != expected_url:
                 errors.append(f"RESEARCH.md: {dependency} asset URL が pin と一致しません")
