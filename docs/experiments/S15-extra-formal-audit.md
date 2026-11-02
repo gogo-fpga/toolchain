@@ -44,6 +44,10 @@ SMTBMCの正式証拠には、native参照のmetadata、native実行先とbinary
 
 全対照の予備03は、同じ作業コピーへのファイル追加でGitの状態が開始時から変わり、最終gateで停止しました。途中の16行が揃っていても、CSVと最終検査がないため採用しません。試行中の出力は削除せず保存し、次の検査はcommit後の固定した状態で行います。
 
+commit `cee9eb0` の最初の正式計測は、A/A 2回と正式1回目のBitwuzlaまで個別監査を通過し、Boolectorの期限切れ対照で停止しました。設定15,000 msに対して `elapsedMs=14999.991565`、`status=timeout`、`error=null` を記録しています。全workerは停止し、成果物は空でしたが、設定より0.008435 ms早いため、期限到達の監査を通しませんでした。出力は `build/S15/p4-extra-formal-campaign-cee9eb0-01` に保持し、途中の成功を正式5回の結果へ混ぜません。
+
+[Nodeのtimer](https://nodejs.org/docs/latest-v24.x/api/timers.html#settimeoutcallback-delay-args)は、callbackの正確な実行時刻を保証しません。修正では監査の許容幅を広げず、rootのtimer callbackで単調時計を確認し、残り時間が正なら切り上げた時間だけ再待機します。期限後だけ `timeout` へ遷移し、取消後の古いcallbackでは再待機しません。同じ早着時刻を与える単体検査を追加しました。solverや検証の意味は変えず、新しい清浄commitからA/Aと正式試行をすべてやり直します。
+
 ## 再実行
 
 前段で照合した各候補のnative/WASI buildを、診断manifestの `native` と `wasi` へ指定します。solverを指定しない従来のprobe/auditの既定対象はYices2/Z3のままです。次の計測器だけが追加2候補の全条件を要求します。
@@ -56,7 +60,15 @@ python3 scripts/measure-extra-formal.py \
   --out build/S15/extra-formal-campaign
 python3 scripts/measure-extra-formal.py \
   --audit-only --out build/S15/extra-formal-campaign
+python3 scripts/package-extra-formal.py \
+  --campaign build/S15/extra-formal-campaign --output build/S15/extra-formal-evidence.zip \
+  --include licenses --include THIRD_PARTY_NOTICES.md \
+  --include scripts/package-extra-formal.py
+python3 scripts/package-extra-formal.py --restore \
+  --output build/S15/extra-formal-evidence.zip --campaign build/S15/extra-formal-restored
 ```
+
+ZIPは同じ内容をSHA-256のobjectとして一度だけ格納し、元の論理パス・byte数・実行権限の有無を目録へ保存します。nativeの隔離binの参照は、リポジトリー内の実体を検査して通常ファイルへ展開し、復元先にsymlinkを作りません。未知・重複・欠落したobject、不安全なパス、上限超過、異なる監査コードを拒否します。空の場所へ全byteを復元した後、保存した監査器で同じ全列監査を実行します。失敗試行を追加保存する場合は `--include` で指定し、採用したcampaignとは目録でも分けます。
 
 計測器は全コマンド、submodule、各probeの実際の版・ホスト・資材・source・全snapshotを保存します。出力先が既存なら停止します。単体検査は `python3 -m unittest discover -s tests/check-solver-protocol`、構文検査は `node --check` と `python3 -m py_compile` です。
 
