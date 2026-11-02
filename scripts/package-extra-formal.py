@@ -144,7 +144,7 @@ def stage(sources, output):
     output = Path(output).absolute()
     output.relative_to(ROOT)
     require(sources and not output.exists() and output.resolve() == output, "missing sources or unsafe staging destination")
-    entries, links = [], []
+    entries, links, clones = [], [], []
     for source in sources:
         source = Path(source).absolute()
         source.relative_to(ROOT)
@@ -163,9 +163,30 @@ def stage(sources, output):
                 if commands is None:
                     commands = {solver: probe["command"] for solver, probe in meta["probes"].items()}
                 sha = digest(path.read_bytes())
-                require(any(path.parent.name == solver + "-bin" and command["path"] == str(path)
-                            and command["sha256"] == sha for solver, command in commands.items()), "unverified launcher symlink")
-                links.append({"path": name, "sha256": sha})
+                verified = any(path.parent.name == solver + "-bin" and command["path"] == str(path)
+                               and command["sha256"] == sha for solver, command in commands.items())
+                if verified:
+                    links.append({"path": name, "sha256": sha})
+                else:
+                    clone = None
+                    if path.parent.parent.name == "mutated-evidence":
+                        for solver, command in commands.items():
+                            if path.parent.name != solver + "-bin":
+                                continue
+                            try:
+                                original = Path(command["path"])
+                                relative = original.relative_to(ROOT)
+                                verified_clone = (original.is_absolute() and original.parent.name == path.parent.name
+                                                  and original.name == path.name and original.is_symlink()
+                                                  and os.readlink(original) == os.readlink(path)
+                                                  and command["sha256"] == sha)
+                            except (KeyError, OSError, TypeError, ValueError):
+                                continue
+                            if verified_clone:
+                                clone = {"path": name, "launcher": relative.as_posix(), "sha256": sha}
+                                break
+                    require(clone is not None, "unverified launcher symlink")
+                    clones.append(clone)
             entries.append((path, name))
     require(len(entries) == len({name for _, name in entries}), "overlapping staging sources")
     output.mkdir()
@@ -179,7 +200,8 @@ def stage(sources, output):
         else:
             shutil.copy2(path, target, follow_symlinks=True)
             objects[key] = target
-    report = {"sources": [str(Path(source).absolute().relative_to(ROOT)) for source in sources], "files": len(entries), "materializedLaunchers": links}
+    report = {"sources": [str(Path(source).absolute().relative_to(ROOT)) for source in sources], "files": len(entries),
+              "materializedLaunchers": links, "materializedCloneLaunchers": clones}
     (output / "staging.json").write_text(json.dumps(report, sort_keys=True) + "\n")
     return report
 
