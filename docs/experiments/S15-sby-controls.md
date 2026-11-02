@@ -54,7 +54,7 @@ python3 scripts/measure-formal-controls.py \
 
 ## 結果と制約
 
-予備検査は両ソルバー各9条件とオプション拒否5条件の全23条件で成功しました。正式反復は未完了です。初回の不合格や中止も、後の成功で消さずに記録します。
+予備検査は両ソルバー各9条件とオプション拒否5条件の全23条件で成功しました。その後の正式反復も、下記の通り完走しました。初回の不合格や中止も、後の成功で消さずに記録します。
 
 初回のYices2予備検査では、14条件中3条件が検査用Node bridgeの不備で不合格になりました。実Yosys workerが正しい終了通知を送った後、deltaの書き出し中にNodeの自然終了0が届くと、bridgeが異常停止と誤分類していました。正常な終了通知を受け取った事実と、その後のNode exitを別に記録するよう修正します。製品の判定や採否の基準は変更しません。初回の全ログは`build/S15/p3-controls-preliminary-1`へ保全しています。
 
@@ -67,3 +67,32 @@ witness用mapの最初の生成は、`formalff -ff2anyinit -anyinit2ff`という
 待機を使う期限切れは、ソルバー計算の速度や性能を測る試験ではありません。Nodeの終了17をerrorへ接続する試験も、ブラウザーのOOM検知を測ったものではありません。実ブラウザーの画面、配布物、実機のTang Nanoでは本リポジトリで試していません。
 
 SMTBMCの代表条件はYWを直接生成するため、通常のSBY実行からyosys-witness子が自然に起動するわけではありません。witnessの変換境界は別のfixtureで実際に起動し、原本SBYの意味論や回路の反例検証とは分けて記録する必要があります。
+
+## 正式5回とA/A 2回
+
+清浄な`56219e54dc03fe1d4de98e1c572d9ddda81bd4e6`で、A/A 2回の後に正式5回を実行しました。全7組で23条件が成功し、事前基準の変更や、破棄・上書きした正式試行はありません。測定中のソースと計測器は変更していません。
+
+[生CSV全161行14列](S15-sby-controls-56219e5.csv)は、A/A 46行と正式115行を分け、全966出力ファイル・707 workerの起動と実exit・元のstatus・イベント・stdout・stderrから作り直して一致しました。SHA-256は`081ffc2241b80e1de302fb19b44b15a0012c54e73f7479c92c67df8ac19ab020`です。通常のPASS/0・FAIL/2・UNKNOWN/4、cancelled、timeout、crashed、protocol-error、改変と競合のruntime-errorは、全回で区別したままです。
+
+同じ7組で[witnessの2形式](S15-sby-witness.md#正式5回とaa-2回)も比較しました。こちらは全14行9列・42出力・21 workerで、上記のSBY全161行とは別に監査します。全7組でソース・commit・バイナリー・Node・Pyodide・Python・計測器・期限とwitness出力の同一性を確認しました。
+
+OSはLinux 6.8.0-1061-aws x64、CPUはIntel Xeonの論理2 CPU、メモリーは8,327,749,632 byteでした。Node v24.21.0、Pyodide package 314.0.7、native Python 3.12.13です。全条件の正式5回の最小・中央値・最大を[集計JSON](S15-sby-controls-56219e5.json)へ保存しました。期限は15,000 msですが、workerの起動・待機と停止を含む所要時間はソルバーの計算性能ではありません。
+
+### 証拠の保全と再監査
+
+元の相対path・サイズ・SHA-256を、[A/A 1](S15-sby-controls-aa-1.files.csv)、[A/A 2](S15-sby-controls-aa-2.files.csv)、[正式1](S15-sby-controls-run-1.files.csv)、[正式2](S15-sby-controls-run-2.files.csv)、[正式3](S15-sby-controls-run-3.files.csv)、[正式4](S15-sby-controls-run-4.files.csv)、[正式5](S15-sby-controls-run-5.files.csv)、[予備・失敗試行](S15-sby-controls-preliminary.files.csv)、[共通資材と計測器](S15-sby-controls-common.files.csv)へ分けました。1 CSVは1 MiB未満です。
+
+全6,158ファイル、元のサイズ1,117,151,581 byteを、SHA-256による重複排除で1,668 objectへ保存しました。`S15-sby-controls-evidence-56219e5.zip`は31,461,003 byte、SHA-256は`be04adae984dc238de1c159b11f682eeb614de6242665209bc128f7b41816edf`です。native起動用のsymlinkは含めず、入力binaryの実体は残しています。
+
+```sh
+unzip S15-sby-controls-evidence-56219e5.zip restore.py README.txt
+python3 restore.py S15-sby-controls-evidence-56219e5.zip evidence-restored
+python3 evidence-restored/scripts/measure-formal-controls.py \
+  --out evidence-restored/build/S15/p3-controls-campaign --audit-only
+```
+
+実際にZIPから別directoryへ全6,158ファイルを復元して全件のサイズ・hashを再確認し、復元したPython計測器だけでSBY全161行14列とwitness全14行9列の独立監査が成功しました。ZIPはチャットで渡し、repositoryには生CSV・集計・目録と本記録を残します。
+
+### 採否と残件
+
+事前基準を満たしたため、この23条件の停止・輸送・制限の扱いを採用します。原本の判定処理や不合格条件を緩めたものではありません。SBY実行から自然にwitness子が起動した証拠、回路の反例の独立再実行、製品の配布・画面統合、CI全体、実機のTang Nanoは別の範囲です。
