@@ -52,3 +52,4 @@
 | [S15 P2 実ソルバーの応答と終了](S15-solver-protocol.md) | bit-vector・array・長い応答、計算要求後の停止、hardware丸めの境界と全列監査 | 事前基準と予備21実行などの履歴。正式結果は下記へ分離 |
 | [S15 P2 Z3 WASIのlink](S15-z3-wasi-link.md) | SDKの例外library、fork登録と単一threadのyield、buildと計測の履歴分離 | link失敗と手動18条件を保持。その後のclean buildは成功 |
 | [S15 P2 native/WASI正式比較](S15-solver-native-wasi.md) | 両solverの実応答、worker異常系、5回・A/A、資源、圧縮サイズと証拠 | 全329行31列・294負の対照を監査。SBY・製品画面は未完了 |
+| [S15 P3 原本SBY・SMTBMCのprocess境界](S15-sby-process.md) | Pythonの能力診断、原本のBMC・prove・coverと輸送境界 | native原本12条件の予備基準を確認。Pyodideのprocess・threadは非対応、SQLite実queryは成功。接続は未完了 |
