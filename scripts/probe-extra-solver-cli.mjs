@@ -7,6 +7,8 @@ import { root, digest, loadSolverProbe } from "../tests/synth/solver-protocol-he
 import { startSolverProcess } from "../web/lib/solver-process.mjs";
 import { nodeSolverWorker } from "../tests/web/solver-process-helpers.mjs";
 
+globalThis.crossOriginIsolated = true;
+
 const { values } = parseArgs({ options: {
   native: { type: "string" }, wasi: { type: "string" }, out: { type: "string" },
 } });
