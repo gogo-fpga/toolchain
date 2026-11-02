@@ -171,7 +171,7 @@ def audit(directory, evidence_root=None, git_repo=ROOT):
                 require(dependency["url"] == wrap["source_url"] and dependency["archive_sha256"] == wrap["source_hash"], "CaDiCaL archive pin differs")
                 archive = build / wrap["source_filename"]
                 target = wrap["directory"]
-                prefix = ""
+                prefix = target + "/"
             else:
                 require(dependency["url"] == wrap["url"] and dependency["commit"] == wrap["revision"], "SymFPU source pin differs")
                 archive = build / "symfpu-source.tar"
