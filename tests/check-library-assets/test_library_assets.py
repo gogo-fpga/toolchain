@@ -4,6 +4,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -19,6 +20,19 @@ SPEC.loader.exec_module(library_assets)
 
 
 class LibraryAssetsTests(unittest.TestCase):
+    def test_e2e_prepares_pinned_library_sources_before_web_server(self):
+        workflow = (ROOT / ".github/workflows/build.yml").read_text()
+        job = re.search(r"(?ms)^  e2e:\n(.*?)(?=^  [^ ]|\Z)", workflow)
+        self.assertIsNotNone(job)
+        setup, run = job[1].split("      - name: Playwright E2E\n", 1)
+        self.assertIn("run: npx playwright test", run)
+        self.assertIn("git submodule update --init --depth 1 -- third_party/", setup)
+        self.assertIn(
+            "git -C third_party/vexriscv submodule update --init --depth 1 -- "
+            "pythondata_cpu_vexriscv/verilog/ext/VexRiscv",
+            setup,
+        )
+
     def test_cpu_board_availability_matches_all_formal_main_rows(self):
         catalog = json.loads((ROOT / "libraries/catalog.json").read_text())
         with (ROOT / "docs/experiments/S14-production-cpu.csv").open(newline="") as stream:
