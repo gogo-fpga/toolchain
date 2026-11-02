@@ -2,8 +2,8 @@ import { Worker } from "node:worker_threads";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-export function nodeFormalWorker() {
-  const worker = new Worker(new URL("../web/formal-python-node-worker.mjs", import.meta.url), { execArgv: [] });
+export function nodeFormalWorker(url = new URL("../web/formal-python-node-worker.mjs", import.meta.url)) {
+  const worker = new Worker(url, { execArgv: [] });
   const wrappers = new Map();
   worker.on("error", () => {});
   return {
@@ -15,6 +15,10 @@ export function nodeFormalWorker() {
     },
     removeEventListener(type, listener) { worker.off(type, wrappers.get(listener)); wrappers.delete(listener); },
   };
+}
+
+export function nodeFormalWasiWorker() {
+  return nodeFormalWorker(new URL("../web/formal-wasi-node-worker.mjs", import.meta.url));
 }
 
 export function readFormalSources(directory) {

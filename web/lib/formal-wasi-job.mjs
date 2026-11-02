@@ -2,6 +2,7 @@ import { attachBytePipe } from "./byte-pipe.mjs";
 import { packWorkspaceDelta } from "./formal-workspace.mjs";
 import { readUstar } from "./ustar.mjs";
 import { safePath } from "./verified-assets.mjs";
+import { validateFormalToolCommand } from "./formal-tool-command.mjs";
 import { createMemoryTree, runWasiP1, setTreeEntry } from "./wasi-p1.mjs";
 
 async function sha256(bytes) {
@@ -64,10 +65,7 @@ export async function runFormalWasiJob({ jobId, wasm, sha256: binaryHash, share,
       throw new Error("Formal WASI asset hash mismatch");
     }
     status = "setup-error";
-    if (!safePath(cwd) || cwd.includes("\0") || cwd.length > 512 ||
-        !Array.isArray(args) || args.length !== 4 || args[0] !== "yosys" || args[1] !== "-ql" ||
-        !/^(?:\.\.\/model\/)?design(?:_[a-z0-9]+)?\.log$/.test(args[2]) ||
-        !/^(?:\.\.\/model\/)?design(?:_[a-z0-9]+)?\.ys$/.test(args[3])) {
+    if (validateFormalToolCommand(args, cwd).runtime !== "wasi") {
       throw new Error("Unsupported formal WASI command");
     }
     const work = workspace(files);

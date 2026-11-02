@@ -4,6 +4,7 @@ import importlib.util
 import json
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -63,7 +64,7 @@ class FormalPythonBuildTest(unittest.TestCase):
                 original = subprocess.check_output(["git", "-C", str(ROOT / "vendor" / origin["submodule"]),
                                                     "show", f'{commit}:{origin["source"]}'])
                 self.assertEqual(hashlib.sha256(original).hexdigest(), origin["original_sha256"])
-                if name != "smtio.py":
+                if name not in {"smtio.py", "sby.py", "sby_core.py", "sby_jobserver.py"}:
                     self.assertEqual((self.out / name).read_bytes(), original)
         self.assertEqual(set(self.manifest["pins"]), {"yosys", "sby", "click"})
         self.assertEqual((self.out / "formal_process.py").read_bytes(), (ROOT / "web/formal_process.py").read_bytes())
@@ -78,6 +79,40 @@ class FormalPythonBuildTest(unittest.TestCase):
 
     def test_entire_smtio_ast_is_unchanged_when_only_transport_branches_are_removed(self):
         self.assertEqual(normalized(self.original()), normalized((self.out / "smtio.py").read_text()))
+
+    def test_entire_sby_ast_is_unchanged_when_only_browser_transport_branches_are_removed(self):
+        for name in ("sby.py", "sby_core.py", "sby_jobserver.py"):
+            pin = self.manifest["pins"]["sby"]
+            original = subprocess.check_output(["git", "-C", str(ROOT / "vendor/sby"), "show", f"{pin}:sbysrc/{name}"]).decode()
+            with self.subTest(name=name):
+                self.assertEqual(normalized(original), normalized((self.out / name).read_text()))
+
+    def test_browser_jobserver_never_creates_os_pipes_or_helper_processes(self):
+        code = '''
+import os, sys, subprocess
+from unittest.mock import patch
+import sby_jobserver
+def forbidden(*args, **kwargs):
+    raise AssertionError("Native process boundary was reached")
+with patch.object(sys, "platform", "emscripten"), patch.object(os, "pipe", forbidden), patch.object(subprocess, "Popen", forbidden), patch.object(subprocess, "run", forbidden):
+    sby_jobserver.process_jobserver_environment()
+    client = sby_jobserver.SbyJobClient(1)
+    first = client.request_lease()
+    second = client.request_lease()
+    assert first.is_ready and not second.is_ready
+    client.return_lease()
+    assert second.is_ready
+    assert client.poll_fds() == []
+    client.poll()
+    assert client.helper_process is None
+    try:
+        sby_jobserver.SbyJobClient(2)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("Parallel jobs were not rejected")
+'''
+        subprocess.run([sys.executable, "-c", code], cwd=self.out, check=True, timeout=10)
 
     def test_ast_guard_rejects_a_forged_smt_status_even_with_the_transport_adapter(self):
         tree = ast.parse((self.out / "smtio.py").read_text())

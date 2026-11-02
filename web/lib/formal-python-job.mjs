@@ -1,11 +1,13 @@
 import { createFormalProcessClient } from "./formal-process-client.mjs";
+import { createFormalToolClient } from "./formal-tool-client.mjs";
 import { safePath, verifyManifest } from "./verified-assets.mjs";
 
 export async function runFormalPythonJob(data, loadPyodide, postMessage) {
-  const { jobId, sources, manifest, entrypoint, args, files } = data;
+  const { jobId, sources, manifest, entrypoint, args, files, cwd = null } = data;
   let status = "setup-error";
   try {
     if (typeof jobId !== "string" || !["smtbmc", "sby", "witness"].includes(entrypoint) ||
+        (cwd !== null && (!safePath(cwd) || cwd.includes("\0") || cwd.length > 512)) ||
         !Array.isArray(args) || args.length > 64 || !args.every(arg => typeof arg === "string" && arg.length < 4096 && !arg.includes("\0"))) {
       throw new TypeError("Invalid formal Python job");
     }
@@ -48,15 +50,17 @@ export async function runFormalPythonJob(data, loadPyodide, postMessage) {
       FS.mkdirTree(`/work/${path.split("/").slice(0, -1).join("/")}`);
       FS.writeFile(`/work/${path}`, bytes);
     }
-    pyodide.registerJsModule("_formal_host", createFormalProcessClient(postMessage, jobId));
+    pyodide.registerJsModule("_formal_host", { ...createFormalProcessClient(postMessage, jobId),
+      ...createFormalToolClient(postMessage, jobId, FS) });
     pyodide.globals.set("_formal_args", args);
     pyodide.globals.set("_formal_entry", entrypoint);
+    pyodide.globals.set("_formal_cwd", cwd ?? "");
     const exitCode = pyodide.runPython(`
-import os, sys, runpy, traceback
+import gc, os, sys, runpy, traceback
 sys.path.insert(0, "/upstream")
 sys.dont_write_bytecode = True
 sys.argv = [_formal_entry] + list(_formal_args.to_py())
-os.chdir("/work")
+os.chdir("/work/" + _formal_cwd)
 os.environ["MAKEFLAGS"] = ""
 _formal_exit = 0
 _formal_failed = False
@@ -68,6 +72,7 @@ except BaseException:
     traceback.print_exc()
     _formal_failed = True
     _formal_exit = 1
+gc.collect()
 sys.stdout.flush()
 sys.stderr.flush()
 _formal_exit

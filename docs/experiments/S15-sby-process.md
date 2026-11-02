@@ -1,6 +1,6 @@
 # S15 P3 原本SBY・SMTBMCのprocess境界
 
-- 状態: 実施中。native原本SBYの予備12条件と、原本SMTBMCのnative/Pyodide予備16条件を実施。Pyodideを始点とするSBY全体の接続は未完了。
+- 状態: 実施中。native原本SBYの予備12条件と、原本SMTBMCのnative/Pyodide予備16条件を実施。下記は接続前の経緯を保持し、その後の[SBY全体の仮想process接続](S15-sby-runtime.md)を別記しました。正式反復と製品統合は未完了です。
 - 関連: [S15の事前基準](S15-formal-verification.md)、[P2の正式比較](S15-solver-native-wasi.md)、[調査索引](../../RESEARCH.md#7-分割した調査)
 
 ## 目的と仮説
