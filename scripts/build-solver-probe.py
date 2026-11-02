@@ -100,7 +100,20 @@ def build_boolector(args, output, source, metadata, run, environment, compiler, 
     (prefix / "lib").mkdir()
     cadical = stage_dependency("cadical", setup_dependency(source, "cadical"), output, metadata, run)
     btor = stage_dependency("btor2tools", setup_dependency(source, "btor2tools"), output, metadata, run)
-    run("cadical-configure", [cadical / "configure", "-O2"], cadical, environment)
+    cadical_options = []
+    if args.runtime == "wasi":
+        for index, name in enumerate(("cadical-wasi-cross.patch", "cadical-wasi-pipes.patch",
+                                      "cadical-wasi-resources.patch", "cadical-wasi-alarm.patch")):
+            patch = ROOT / "patches" / name
+            snapshot = output / f"cadical-patch-{index}.patch"
+            snapshot.write_bytes(patch.read_bytes())
+            metadata["patches"].append({"path": str(patch.relative_to(ROOT)), "sha256": digest(snapshot),
+                                         "snapshot": snapshot.name})
+            run(f"cadical-patch-{index}", ["patch", "--batch", "--fuzz=0", "-p1", "-i", snapshot], cadical)
+        cadical_options = ["--cross"]
+        metadata["cadical_native_rss_available"] = False
+        environment["LDFLAGS"] = f"{link_flags} -lunwind -lsetjmp"
+    run("cadical-configure", [cadical / "configure", "-O2", *cadical_options], cadical, environment)
     run("cadical-build", ["make", f"-j{args.jobs}", "libcadical.a"], cadical / "build", environment)
     shutil.copyfile(cadical / "build/libcadical.a", prefix / "lib/libcadical.a")
     shutil.copyfile(cadical / "src/ccadical.h", prefix / "include/ccadical.h")
@@ -164,6 +177,11 @@ def build(args):
             result.check_returncode()
 
     try:
+        snapshot = output / "build-solver-probe.py"
+        snapshot.write_bytes(Path(__file__).read_bytes())
+        if digest(snapshot) != metadata["script_sha256"]:
+            raise ValueError("Build driver changed while starting")
+        metadata["script_snapshot"] = snapshot.name
         solver_pin = json.loads(pin("formal-pins"))[args.solver]
         metadata["source"] = solver_pin
         metadata["base_commit"] = subprocess.check_output(["git", "-C", str(ROOT), "rev-parse", "HEAD"], text=True).strip()
