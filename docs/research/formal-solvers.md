@@ -42,6 +42,12 @@ Z3の原本では、`hwf_manager::set_rounding_mode`が実際の丸め変更を�
 
 SMT-LIB 2.6系の応答を区切る基盤も追加しました。固定Yices2の`smt2_read_string_var`とcomment処理に合わせ、文字列の二重引用符、縦棒付きsymbol、括弧、UTF-8の分割、途中欠落と上限を検査します。式の解析・意味判定は上流solverに任せ、字句境界が閉じたことを成功や証明としません。旧2.0のbackslash escapeは対象外です。単体12件は成功しましたが、実solverの正式比較・反復と画面統合は未完了です。
 
+### Z3 nativeのbuild完了と独立した監査
+
+その後、明示したABI linkを含む清浄なbuildが完了し、Z3 nativeの実binaryから5.3.3の版表示を得ました。bit-vector・array・長い値・構文エラー・応答の欠落・unknownの6条件と、通常のSMT浮動小数点、hardware丸めのnative対照、計算要求後の期限切れと取消が予備検査で成功しました。hardware対照は`subpaving :numeral hwf`がgoalを返すことの検査であり、証明ではありません。WASIのbuildと両系の比較は未完了です。binaryのhashと実際のC++ compiler、CMake、build時間は[実応答の記録](../experiments/S15-solver-protocol.md)へ残します。
+
+Yices2 WASIでも入力待ちとは別に、80変数を79種類の値へ割り当てる計算要求を送り、期限切れと取消を確認しました。CSVの全31列をraw log・結果JSON・build metadataへ照合する独立したPython監査器も追加しました。正常出力の全byte比較、行の欠落・重複、A/A、source snapshot、失敗分類、負の対照と欠測を含む資源集計を検査します。予備21実行の監査は成功しましたが、正式5回反復の完了やT6全体の完成とは扱いません。
+
 ## 標準入力と輸送の境界
 
 ### 実Yices2の応答で確認した境界

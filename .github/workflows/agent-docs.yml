@@ -70,3 +70,6 @@ jobs:
 
       - name: 文書の大きさ検査のテスト
         run: sh tests/check-document-size/run.sh
+
+      - name: ソルバー応答の監査器の単体テスト
+        run: python3 -m unittest discover -s tests/check-solver-protocol
