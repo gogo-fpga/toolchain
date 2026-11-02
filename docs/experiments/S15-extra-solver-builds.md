@@ -1,6 +1,6 @@
 # S15 P4 追加ソルバーの固定依存と診断ビルド
 
-- 状態: 清浄なcommitでBoolector native/WASIを生成し、CLIの5条件が一致。正式比較・反復・警告の精査とBitwuzlaは未完了
+- 状態: 清浄なcommitでBoolector native/WASIを生成し、CLIの5条件が一致。型幅・traceの正式反復は別記。SMTBMC認定とBitwuzlaは未完了
 - 基準: [S15の共通基準](S15-formal-verification.md)、[候補と無効理由](../research/formal-capabilities.md)
 - 戻り先: [実験索引](README.md)、[形式検証の調査](../research/formal-solvers.md)
 
