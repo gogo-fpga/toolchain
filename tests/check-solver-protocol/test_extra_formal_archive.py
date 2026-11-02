@@ -46,6 +46,12 @@ class ExtraFormalArchiveTest(unittest.TestCase):
             ARCHIVE.stage([self.campaign], self.base / "changed")
         with self.assertRaises(ValueError):
             ARCHIVE.stage([self.campaign], self.campaign / "nested")
+        linked = self.base / "linked"
+        linked.symlink_to(self.campaign.parent, target_is_directory=True)
+        with self.assertRaises(ValueError):
+            ARCHIVE.stage([linked / self.campaign.name], self.base / "indirect")
+        with self.assertRaises(ValueError):
+            ARCHIVE.stage([self.campaign], linked / "output")
 
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()

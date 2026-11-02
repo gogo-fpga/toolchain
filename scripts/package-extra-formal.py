@@ -138,12 +138,12 @@ def package(directory, output, extras=()):
 def stage(sources, output):
     output = Path(output).absolute()
     output.relative_to(ROOT)
-    require(sources and not output.exists(), "missing sources or existing staging destination")
+    require(sources and not output.exists() and output.resolve() == output, "missing sources or unsafe staging destination")
     entries, links = [], []
     for source in sources:
         source = Path(source).absolute()
         source.relative_to(ROOT)
-        require(source.exists() and not source.is_symlink() and source not in output.parents and source != output, "unsafe staging source")
+        require(source.exists() and source.resolve() == source and source not in output.parents and source != output, "unsafe staging source")
         for path in source.rglob("*") if source.is_dir() else [source]:
             if path.is_dir() and not path.is_symlink():
                 continue
@@ -151,7 +151,9 @@ def stage(sources, output):
             name = path.relative_to(ROOT).as_posix()
             safe_path(name)
             if path.is_symlink():
-                meta = strict_json((path.parent.parent / "metadata.json").read_bytes())
+                metadata = path.parent.parent / "metadata.json"
+                require(not metadata.is_symlink() and path.stat().st_size <= MAX_OBJECT, "unsafe launcher metadata or binary size")
+                meta = strict_json(metadata.read_bytes())
                 commands = meta.get("solverCommands")
                 if commands is None:
                     commands = {solver: probe["command"] for solver, probe in meta["probes"].items()}
