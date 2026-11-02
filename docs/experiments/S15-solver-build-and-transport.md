@@ -74,6 +74,8 @@ python3 scripts/build-solver-probe.py --help
 
 ### 清浄なbuildの追加結果
 
+Z3 WASIの継続buildは全コンパイル後のlinkで失敗しました。SDKの例外libraryとWASIのfork登録を切り分けた[link診断の記録](S15-z3-wasi-link.md)へ、失敗logのhash、patchの理由、手動診断18条件、clean buildの再実行を保存します。正式なnative/WASI比較が未完了という結論は変えません。
+
 その後、`537a140b4ba4e233af6606a78071e80e08ce858b`の清浄なcheckoutで、Yices2のnativeとWASI、Z3 nativeのbuildが完了しました。手動の再linkではなく、記録したdriverを最後まで実行した結果です。各binaryのhash・Z3 nativeの実compilerとbuild時間・実応答の予備結果は[比較の記録](S15-solver-protocol.md)に分けます。Z3 WASIのbuildは続いており、正式反復の成功ではありません。
 
 Z3 nativeの再実行にはClang 21.1.8、隔離したlibc++ 21とCMake 3.31.10を使います。`HOST_CXX_ROOT`はlibc++のpackageを展開したdirectory、`CMAKE`はそのCMake実行ファイルを指すものとします。取得元・packageのhash・実際のargvは元のmetadataと予備証拠に残します。

@@ -21,14 +21,16 @@ export function loadSolverProbe(directory, solver, runtime) {
   assert.equal(info.worktree_status, "");
   const tree = execFileSync("git", ["ls-tree", "HEAD", `vendor/${solver}`], { cwd: root, encoding: "utf8" });
   assert.equal(info.source.commit, tree.match(/^160000 commit ([a-f0-9]{40})\t/)?.[1]);
-  assert.equal(info.script_sha256, digest(readFileSync(path.join(root, "scripts/build-solver-probe.py"))));
+  assert.match(info.base_commit, /^[a-f0-9]{40}$/);
+  const buildScript = execFileSync("git", ["show", `${info.base_commit}:scripts/build-solver-probe.py`], { cwd: root });
+  assert.equal(info.script_sha256, digest(buildScript));
   for (const patch of info.patches) assert.equal(digest(readFileSync(path.join(root, patch.path))), patch.sha256);
   const binaryPath = path.resolve(location, info.artifact.path);
   assert.ok(binaryPath.startsWith(location + path.sep));
   const binary = new Uint8Array(readFileSync(binaryPath));
   assert.equal(binary.length, info.artifact.bytes);
   assert.equal(digest(binary), info.artifact.sha256);
-  return { info, binary, binaryPath, directory: location, metadata, metadataSha256: digest(metadata) };
+  return { info, binary, binaryPath, buildScript, directory: location, metadata, metadataSha256: digest(metadata) };
 }
 
 function collectOutput() {

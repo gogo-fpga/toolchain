@@ -188,6 +188,8 @@ GHDL、NVC、Icarus Verilog など GPL のツールを WASM にビルドして R
 
 ## 7. 分割した調査
 
+Z3 WASIのlink失敗とSDK例外library・fork登録の対処は、[ソルバー調査](docs/research/formal-solvers.md)と[S15の診断記録](docs/experiments/S15-z3-wasi-link.md)に保存しました。手動診断18条件は成功しましたが、clean buildと正式反復は未完了です。
+
 T6は上流SBY・SMTBMCの再利用を選び、固定ソースと[S15の事前基準](docs/experiments/S15-formal-verification.md)を登録しました。Yosys SAT、元のVerilogをIcarusで独立に再実行する検査経路、明示したGHDL形式出力によるVHDL・PSL property保持を追加しました。PSLのコメント解析には上流と同じ2フラグが必要で、activation coverはassertと区別します。[GHDLの診断と初回の失敗](docs/experiments/S15-vhdl-formal.md)も保存します。元VHDLのnative検査経路とその5回反復も追加しましたが、下位化後の比較、追加fixture、SMTソルバー・画面統合と製品版の正式反復は未完了です。以下に方式と制限、初期調査との差、依存、GMPの取得失敗と署名鍵の期限切れも記録します。
 
 大きな調査は `docs/research/` に分けて置きます。
