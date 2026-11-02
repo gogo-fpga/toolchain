@@ -49,3 +49,4 @@
 | [S15 P1 元VHDLの独立再実行](S15-vhdl-native-replay.md) | GHDL標準VPI・PSLレポートと独立VCDで反例を照合 | 清浄な同一commitで55件×5回とA/Aの2回成功。CSV全280行19列を監査。下位化後比較・追加fixtureは未完了 |
 | [S15 P1 VHDLと下位化Verilog](S15-vhdl-lowered-replay.md) | 上流Yosysで下位化し、元VHDLとIcarus native/WASMを比較 | 69件の5回反復とA/Aが成功。[生CSV](S15-vhdl-lowered-results.csv)全420行20列を[監査](S15-vhdl-lowered-audit.json)。[失敗試行](S15-vhdl-lowered-failures.md)も保持 |
 | [S15 P2 ソルバーのビルドと双方向通信](S15-solver-build-and-transport.md) | 固定Yices2・Z3、stdin/stdout、終了・異常系、native/WASMの採否基準 | 輸送の基盤と予備Yices2 WASMを検査。正式なnative/WASM比較と反復は未完了 |
+| [S15 P2 実ソルバーの応答と終了](S15-solver-protocol.md) | bit-vector・array・長い応答、実workerの異常系、終了0のerrorと検査器の初回失敗 | Yices2の予備比較。Z3と正式反復は未完了 |
