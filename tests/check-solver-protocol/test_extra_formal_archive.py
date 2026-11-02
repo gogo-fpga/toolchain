@@ -55,6 +55,83 @@ class ExtraFormalArchiveTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             ARCHIVE.stage([self.campaign], linked / "output")
 
+    def test_staging_materializes_mutated_clone_launchers_only_against_the_original(self):
+        binary = self.base / "clone-native"
+        binary.write_bytes(b"native executable")
+        original = self.campaign / "solver-bin/solver"
+        original.parent.mkdir()
+        original.symlink_to(binary)
+        metadata = {"solverCommands": {"solver": {"path": str(original), "sha256": ARCHIVE.digest(binary.read_bytes())}}}
+        (self.campaign / "metadata.json").write_text(json.dumps(metadata))
+        clone = self.campaign / "mutated-evidence"
+        clone.mkdir()
+        (clone / "metadata.json").write_text(json.dumps(metadata))
+        clone_alias = clone / "solver-bin/solver"
+        clone_alias.parent.mkdir()
+        clone_alias.symlink_to(binary)
+
+        output = self.base / "clone-staged"
+        report = ARCHIVE.stage([self.campaign], output)
+        restored = output / clone_alias.relative_to(self.base)
+        self.assertFalse(restored.is_symlink())
+        self.assertEqual(restored.read_bytes(), binary.read_bytes())
+        self.assertEqual(report["materializedCloneLaunchers"], [{
+            "path": clone_alias.relative_to(self.base).as_posix(),
+            "launcher": original.relative_to(self.base).as_posix(),
+            "sha256": ARCHIVE.digest(binary.read_bytes()),
+        }])
+        self.assertEqual(len(report["materializedLaunchers"]), 1)
+
+        def prepare_case(label, clone_name="mutated-evidence", relative_targets=False):
+            campaign = self.base / "build/S15" / label
+            campaign.mkdir(parents=True)
+            original = campaign / "solver-bin/solver"
+            original.parent.mkdir()
+            clone = campaign / clone_name
+            clone.mkdir()
+            clone_alias = clone / "solver-bin/solver"
+            clone_alias.parent.mkdir()
+            if relative_targets:
+                binary = campaign / "native"
+                clone_binary = clone / "native"
+                link_text = "../native"
+                binary.write_bytes(b"native executable")
+                clone_binary.write_bytes(b"native executable")
+                original.symlink_to(link_text)
+                clone_alias.symlink_to(link_text)
+            else:
+                binary = self.base / (label + "-native")
+                binary.write_bytes(b"native executable")
+                original.symlink_to(binary)
+                clone_alias.symlink_to(binary)
+            metadata = {"solverCommands": {"solver": {
+                "path": str(original), "sha256": ARCHIVE.digest(binary.read_bytes())}}}
+            (campaign / "metadata.json").write_text(json.dumps(metadata))
+            (clone / "metadata.json").write_text(json.dumps(metadata))
+            return campaign, original, clone_alias, binary, clone_binary if relative_targets else binary
+
+        campaign, original, clone_alias, binary, clone_binary = prepare_case("clone-wrong-link")
+        other = self.base / "clone-wrong-link-other"
+        other.write_bytes(binary.read_bytes())
+        clone_alias.unlink()
+        clone_alias.symlink_to(other)
+        with self.assertRaisesRegex(ValueError, "unverified launcher"):
+            ARCHIVE.stage([campaign], self.base / "clone-wrong-link-staged")
+
+        campaign, original, clone_alias, _, _ = prepare_case("clone-missing-original")
+        original.unlink()
+        with self.assertRaisesRegex(ValueError, "unverified launcher"):
+            ARCHIVE.stage([campaign], self.base / "clone-missing-original-staged")
+
+        campaign, _, _, _, _ = prepare_case("clone-wrong-directory", clone_name="mutated")
+        with self.assertRaisesRegex(ValueError, "unverified launcher"):
+            ARCHIVE.stage([campaign], self.base / "clone-wrong-directory-staged")
+
+        campaign, _, _, _, clone_binary = prepare_case("clone-hash-mismatch", relative_targets=True)
+        clone_binary.write_bytes(b"mutated executable")
+        with self.assertRaisesRegex(ValueError, "unverified launcher"):
+            ARCHIVE.stage([campaign], self.base / "clone-hash-mismatch-staged")
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)

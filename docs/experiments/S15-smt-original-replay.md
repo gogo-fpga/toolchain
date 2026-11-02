@@ -2,6 +2,8 @@
 
 状態は実装中です。SAT反例の再実行、原本witnessの形式変換、SMTBMC/SBYのnativeとの成果物比較を、SMT反例の原回路による検証済み実績とは区別します。P5の画面接続より先に、この独立層を検査します。solverの製品有効化・配布closure・実機確認・CI全体の確認は、この記録の完了条件ではありません。
 
+元VerilogのIcarus native/WASMへの接続は、[別の実験記録](S15-smt-verilog-replay.md)へ分けています。正式5回・A/A 2回の全1,484行23列、改変対照316件、証拠ZIPの復元後監査まで通りました。元VHDL/PSL、下位化Verilogとの比較、画面統合は引き続き残っています。
+
 ## 目的と仮説
 
 原本SMTBMCの `--dump-vlogtb` は、内部registerとmemoryへモデルの値を代入します。これを無条件で実行すると、元回路の初期状態を独立に確かめたとは言えません。元VerilogのIcarus再実行、元VHDLのGHDL/VPI再実行、下位化VerilogのIcarus再実行へ、原本が選んだ入力列と期待するport値を渡します。内部状態はforceせず、元HDLの初期化とclockを使います。

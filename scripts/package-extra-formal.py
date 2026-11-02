@@ -4,6 +4,7 @@
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path, PurePosixPath
 import re
 import shutil
@@ -19,16 +20,20 @@ HEX = re.compile(r"[0-9a-f]{64}\Z")
 MAX_OBJECT = 256 * 1024 * 1024
 MAX_ARCHIVE = 2 * 1024 * 1024 * 1024
 MAX_LOGICAL = 16 * 1024 * 1024 * 1024
-MAX_MANIFEST = 16 * 1024 * 1024
+MAX_MANIFEST = 64 * 1024 * 1024
 AUDITORS = ("measure-extra-formal.py", "audit-formal-python.py", "audit-formal-sby.py",
             "audit-formal-controls.py", "sby-artifact-audit.py", "formal-solver-audit.py")
 TRACE_AUDITORS = ("measure-formal-trace.py", "audit-formal-trace.py", "audit-formal-sby.py",
                   "sby-artifact-audit.py", "formal-solver-audit.py", "negative-formal-trace.py")
+REPLAY_AUDITORS = ("measure-smt-replay.py", "audit-smt-replay.py", "negative-smt-replay.py", "audit-formal-trace.py",
+                   "audit-formal-sby.py", "sby-artifact-audit.py", "formal-solver-audit.py")
 
 
 def campaign_sources(plan):
     kind = plan.get("kind")
-    require(kind in [None, "formal-trace-v1"], "unknown campaign kind")
+    require(kind in [None, "formal-trace-v1", "smt-replay-v1"], "unknown campaign kind")
+    if kind == "smt-replay-v1":
+        return ["scripts/" + name for name in REPLAY_AUDITORS] + ["vendor/yosys/backends/smt2/smtio.py"]
     if kind == "formal-trace-v1":
         return ["scripts/" + name for name in TRACE_AUDITORS] + ["vendor/yosys/backends/smt2/smtio.py"]
     return ["scripts/" + name for name in AUDITORS]
@@ -139,7 +144,7 @@ def stage(sources, output):
     output = Path(output).absolute()
     output.relative_to(ROOT)
     require(sources and not output.exists() and output.resolve() == output, "missing sources or unsafe staging destination")
-    entries, links = [], []
+    entries, links, clones = [], [], []
     for source in sources:
         source = Path(source).absolute()
         source.relative_to(ROOT)
@@ -158,17 +163,45 @@ def stage(sources, output):
                 if commands is None:
                     commands = {solver: probe["command"] for solver, probe in meta["probes"].items()}
                 sha = digest(path.read_bytes())
-                require(any(path.parent.name == solver + "-bin" and command["path"] == str(path)
-                            and command["sha256"] == sha for solver, command in commands.items()), "unverified launcher symlink")
-                links.append({"path": name, "sha256": sha})
+                verified = any(path.parent.name == solver + "-bin" and command["path"] == str(path)
+                               and command["sha256"] == sha for solver, command in commands.items())
+                if verified:
+                    links.append({"path": name, "sha256": sha})
+                else:
+                    clone = None
+                    if path.parent.parent.name == "mutated-evidence":
+                        for solver, command in commands.items():
+                            if path.parent.name != solver + "-bin":
+                                continue
+                            try:
+                                original = Path(command["path"])
+                                relative = original.relative_to(ROOT)
+                                verified_clone = (original.is_absolute() and original.parent.name == path.parent.name
+                                                  and original.name == path.name and original.is_symlink()
+                                                  and os.readlink(original) == os.readlink(path)
+                                                  and command["sha256"] == sha)
+                            except (KeyError, OSError, TypeError, ValueError):
+                                continue
+                            if verified_clone:
+                                clone = {"path": name, "launcher": relative.as_posix(), "sha256": sha}
+                                break
+                    require(clone is not None, "unverified launcher symlink")
+                    clones.append(clone)
             entries.append((path, name))
     require(len(entries) == len({name for _, name in entries}), "overlapping staging sources")
     output.mkdir()
+    objects = {}
     for path, name in entries:
         target = output / name
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(path, target, follow_symlinks=True)
-    report = {"sources": [str(Path(source).absolute().relative_to(ROOT)) for source in sources], "files": len(entries), "materializedLaunchers": links}
+        key = (digest(path.read_bytes()), stat.S_IMODE(path.stat().st_mode))
+        if key in objects:
+            os.link(objects[key], target)
+        else:
+            shutil.copy2(path, target, follow_symlinks=True)
+            objects[key] = target
+    report = {"sources": [str(Path(source).absolute().relative_to(ROOT)) for source in sources], "files": len(entries),
+              "materializedLaunchers": links, "materializedCloneLaunchers": clones}
     (output / "staging.json").write_text(json.dumps(report, sort_keys=True) + "\n")
     return report
 
@@ -220,12 +253,18 @@ def restore(archive, destination):
     manifest = validate(archive)
     destination = Path(destination).resolve()
     destination.mkdir()
+    objects = {}
     with zipfile.ZipFile(archive) as data:
         for item in manifest["files"]:
             path = destination / item["path"]
             path.parent.mkdir(parents=True, exist_ok=True)
-            with path.open("xb") as stream:
-                stream.write(data.read("objects/" + item["sha256"]))
+            key = (item["sha256"], item["mode"])
+            if key in objects:
+                os.link(objects[key], path)
+            else:
+                with path.open("xb") as stream:
+                    stream.write(data.read("objects/" + item["sha256"]))
+                objects[key] = path
             path.chmod(item["mode"])
             require(path.stat().st_size == item["bytes"] and digest(path.read_bytes()) == item["sha256"], "restored file bytes")
     report = audited_campaign(destination / manifest["campaign"])
