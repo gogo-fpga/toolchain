@@ -1,6 +1,6 @@
 # S15 P4 BitwuzlaのMeson診断ビルド
 
-- 状態: 固定依存だけの清浄ビルドとCLI予備29実行が通過。正式反復・独立監査器・製品認定は未完了
+- 状態: 固定依存だけの清浄ビルドとCLI予備29実行が通過。[後続の正式5回・全列監査](S15-bitwuzla-cli-qualification.md)も成功。製品認定は未完了
 - 事前基準: [S15共通基準](S15-formal-verification.md)、[追加ソルバーの基準](S15-extra-solver-builds.md)
 - 戻り先: [実験索引](README.md)、[形式検証の候補](../research/formal-capabilities.md)
 
@@ -89,7 +89,7 @@ GMP C++ literalの空白に関する非推奨警告と、CaDiCaLの非trivial型
 
 WASIのGMPにはunused expressionとbitwise conditionalの優先順位、MPFRには `-ffloat-store` の非対応と32 bitの `size_t`/`int` と定数の比較に関する警告もあります。原logを保持し、FPの限定fixtureの一致だけでMPFR全体の準拠性を認定しません。
 
-予備比較に続き、正式5回・A/A 2回と全列の独立監査器を検証します。現段階の性能値や起動時間を改善の根拠にしません。
+予備比較に続く正式5回・A/A 2回と全列の独立監査器は[後続の記録](S15-bitwuzla-cli-qualification.md)に分けました。現段階の性能値や起動時間を改善の根拠にしません。
 
 ```sh
 python3 scripts/build-solver-probe.py --solver bitwuzla --runtime native \

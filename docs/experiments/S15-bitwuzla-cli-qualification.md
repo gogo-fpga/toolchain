@@ -1,6 +1,6 @@
 # S15 P4 BitwuzlaのCLI比較と独立監査
 
-- 状態: 計測器と監査器の事前基準。正式反復・SMTBMC接続・製品認定は未完了
+- 状態: CLIの正式5回・A/A 2回と全列監査が成功。SMTBMC接続・製品認定は未完了
 - 前段: [固定依存と診断ビルド](S15-bitwuzla-build.md)
 - 戻り先: [実験索引](README.md)
 
@@ -33,3 +33,45 @@ python3 scripts/audit-extra-solver-cli.py --input build/S15/bitwuzla-cli-new
 ```
 
 出力先は毎回未使用の名前にします。最後の負の対照は、終了境界修正前の清浄な旧版から作ったWASIバイナリーです。正式結果を追記するときに、実際のcommit・binary・CSV・証拠ZIP・実行回数を記録します。
+
+## 清浄な同一commitによる正式比較
+
+計測器・独立監査器と診断buildを `d8fdbc6cf9ed23ce58e6aebd26d9f9d311c652b5` に固定しました。nativeとWASIを同時にせず、固定Meson 1.12.1と `--jobs 1` で逐次ビルドしました。両方のmetadataは `built`、全コマンドの終了状態は0、worktreeは空です。修正前の負の対照だけは、前段の `c84b76d94e0371d4abfce568f9611175b8743bc4` のWASIを保持しています。
+
+| 資材 | byte数 | SHA-256 |
+|---|---:|---|
+| native修正版 | 7,672,896 | `c618a94953cbce37d14e94db9f53f9f408a463e94f213b9a5535e0c3ec2b8020` |
+| WASI修正版 | 8,356,855 | `069d676fb4408352344bab80474fc74b5a8e39caf31747b40c2951f6cc43ead7` |
+| WASI修正前の負の対照 | 8,357,316 | `f63c7514696d29220c122aaf64753b39f9bbf0042708baf222bd4f76bbdd6e83` |
+
+nativeのcompilerはGCC/G++ 11.4.0、WASIはSDK 34.0のclang 23.1.0、Nodeはv24.21.0、Pythonは3.12.13です。ホストはUbuntu 22.04.5 LTS、x86_64、2 CPUです。SDK archive、固定依存、静的library、header、実行flagの実値とhashは各buildのmetadataとlogに残しています。今回のbuild出力先は前段と異なるため、前段のbinaryとのhash一致は仮定しません。
+
+A/Aを `aa-1`、`aa-2`、正式比較を `formal-1` から `formal-5` の順で実行しました。出力先は `build/S15/bitwuzla-cli-d8fdbc6-<run>` です。各回の29実行と全14列を、保存した入力・生stdout/stderr・worker結果・build資材へ独立に照合しました。A/Aは58行、正式比較は145行で、[A/A CSV](S15-bitwuzla-cli-aa.csv)と[正式CSV](S15-bitwuzla-cli-formal.csv)には元の14列に `run` を加えた15列を保存しています。全7回で入力・出力hash、終了状態、memoryとbuild由来の全列が一致しました。時間とpipe閉鎖時のwrite errorは反復一致の対象外ですが、それぞれの実行の生記録と照合しています。
+
+| 条件 | 全7回で確認した結果 |
+|---|---|
+| 版・help・値取得・push/pop・EOF・model・5丸め方式・NaN・配列 | 修正版native/WASIのstdout/stderrと終了状態が一致 |
+| 構文エラー | 修正版は両方 `exited`・終了1、同じstderr。旧WASIは `runtime-error`・終了値nullで、失敗を成功へ変えない負の対照 |
+| 内部time limit | nativeは終了0。WASIはthread非対応のstderrと `runtime-error`、終了値nullで拒否。workerの外部期限の検査ではない |
+| memory | 修正版WASIの正常終了と構文エラー終了は33,554,432 byte。trapとnativeはnull。RSSや測定値0とは扱わない |
+
+正式5回の経過時間は次のとおりです。単位はmsで、worker起動・輸送を含みます。ソルバーの探索性能を比較する数値ではありません。全条件の最小・中央値・最大は集計器から再生成できます。
+
+| 条件 | native 最小/中央値/最大 | WASI 最小/中央値/最大 |
+|---|---|---|
+| 版表示 | 1.977 / 2.028 / 2.227 | 80.149 / 86.968 / 135.076 |
+| 値とpush/pop | 3.316 / 3.437 / 4.374 | 92.418 / 109.705 / 122.466 |
+| 構文エラー | 5.914 / 6.814 / 9.918 | 72.859 / 86.795 / 96.153 |
+| 内部time limitの境界 | 2.538 / 3.494 / 3.794 | 63.035 / 71.544 / 81.161 |
+
+独立監査器の単体13件は、各CSV列、status、binary・library・header・license・archive・wrap・overlay、patch、buildの失敗、booleanの偽を終了値0と誤認する例、dirty worktree、source snapshot、欠落・余剰・移設などを負の対照にしています。集計器の単体4件では、正式5回とA/A 2回の再生成、回の欠落、公開CSVの列やrun名の改変、異なるcommitの混入を拒否しました。合計17件、既存を含むprotocol検査96件とWeb単体267件が成功しています。
+
+監査器の初回の原archive照合は、CaDiCaLのlicenseがarchive直下にあるという誤った想定で停止しました。実際のpathは `cadical-rel-2.1.2/LICENSE` です。合成fixtureも実archiveの階層へ直し、清浄なcommitから正式比較を始めました。最初に現在の作業ツリーを使って監査器を直した予備結果は、正式比較と分けて保存しています。
+
+```sh
+python3 scripts/summarize-extra-solver-cli.py --prefix build/S15/bitwuzla-cli-d8fdbc6 --out docs/experiments --check
+python3 scripts/package-extra-solver-cli.py --prefix build/S15/bitwuzla-cli-d8fdbc6 --out build/S15/bitwuzla-cli-evidence-new.zip
+python3 scripts/audit-extra-solver-cli.py --input <restore>/build/S15/bitwuzla-cli-d8fdbc6-formal-1 --evidence-root <restore> --git-repo .
+```
+
+集計器は全7回を再監査し、元の14列にrun名だけを加えて公開CSVを作ります。`--check` は書き込みをせず、公開CSVの全byteとrun名を照合します。証拠作成には清浄なcommitが必要です。`--extra` を繰り返し指定すると、正式結果とは別に予備試行・失敗ログ・実行用shellなどを追加できます。復元後の再監査では、元のGit commitを参照できるリポジトリを明示します。
