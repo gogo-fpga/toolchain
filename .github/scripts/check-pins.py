@@ -39,13 +39,27 @@ TAGGED_SUBMODULES = (
     "surfer",
     "zstd",
     "xz-embedded",
+    "yices2",
+    "z3",
+    "boolector",
+    "bitwuzla",
+    "click",
 )
-BRANCH_SUBMODULES = ("libftdi",)
+BRANCH_SUBMODULES = ("libftdi", "sby")
+FORMAL_SOURCES = {
+    "sby": "COPYING",
+    "yices2": "LICENSE.txt",
+    "z3": "LICENSE.txt",
+    "boolector": "COPYING",
+    "bitwuzla": "COPYING",
+    "click": "LICENSE.txt",
+}
 ARCHIVE_TAG_SOURCES = {
     "boost": "https://github.com/boostorg/boost.git",
     "eigen": "https://gitlab.com/libeigen/eigen.git",
     "adawebpack": "https://github.com/godunko/adawebpack.git",
 }
+ARCHIVE_INDEX_SOURCES = {"gmp": "https://ftp.gnu.org/gnu/gmp/"}
 GCC_SOURCE = "https://gcc.gnu.org/git/gcc.git"
 GCC_LIBGNAT_TAG = "releases/gcc-14.1.0"
 APYCULA_REQUIREMENTS = "requirements-nextpnr.txt"
@@ -129,6 +143,49 @@ def parse_research_dependency(text: str, dependency: str) -> dict[str, str]:
         if len(cells) >= 4 and cells[0] == dependency:
             return {"version": cells[1], "commit": cells[2], "url": cells[3]}
     raise RuntimeError(f"RESEARCH.md に {dependency} の pin がありません")
+
+
+def parse_formal_pins(text: str) -> dict[str, dict[str, str]]:
+    pins = {}
+    for name in FORMAL_SOURCES:
+        pin = parse_research_dependency(text, name)
+        if not FULL_SHA.fullmatch(pin["commit"]):
+            raise RuntimeError(f"{name}: formal source pin requires a full commit SHA")
+        prefix = {"yices2": "yices-", "z3": "z3-"}.get(name, "")
+        pattern = "snapshot" if name == "sby" else re.escape(prefix) + r"\d+\.\d+\.\d+"
+        if not re.fullmatch(pattern, pin["version"]):
+            raise RuntimeError(f"{name}: invalid formal source release tag")
+        pins[name] = pin
+    return pins
+
+
+def formal_source_errors(root: Path, modules: list[dict[str, str]]) -> list[str]:
+    by_path = {module.get("path"): module for module in modules}
+    documented = parse_research_commits(read_text(root / "RESEARCH.md"))
+    if not any(f"vendor/{name}" in by_path or name in documented for name in FORMAL_SOURCES):
+        return []
+    try:
+        pins = parse_formal_pins(read_text(root / "RESEARCH.md"))
+    except RuntimeError as error:
+        return [str(error)]
+    errors = []
+    for name, license_path in FORMAL_SOURCES.items():
+        path = f"vendor/{name}"
+        if by_path.get(path, {}).get("url") != pins[name]["url"]:
+            errors.append(f"{path}: formal source URL differs from RESEARCH.md")
+        if not read_text(root / path / license_path).strip():
+            errors.append(f"{path}: missing formal source license {license_path}")
+        for notice in ("NOTICE", "THIRD_PARTY_NOTICES.md"):
+            if name not in read_text(root / notice).lower():
+                errors.append(f"{notice}: missing formal source attribution for {name}")
+    return errors
+
+
+def latest_archive_version(index: str, name: str) -> str:
+    versions = re.findall(r'href=[\"\']' + re.escape(name) + r'-(\d+(?:\.\d+)+)\.tar\.xz[\"\']', index)
+    if not versions:
+        raise RuntimeError(f"{name}: stable source archive is missing from the index")
+    return max(versions, key=parse_version)
 
 
 def parse_surfer_tool_pins(text: str) -> dict[str, dict[str, str]]:
@@ -574,6 +631,7 @@ def consistency(root: Path = ROOT) -> list[str]:
         if module.get("shallow", "").lower() != "true":
             errors.append(f"{path}: shallow = true が必要です")
     errors.extend(library_catalog_errors(root, modules))
+    errors.extend(formal_source_errors(root, modules))
 
     research = parse_research_commits(read_text(root / "RESEARCH.md"))
     try:
@@ -596,7 +654,7 @@ def consistency(root: Path = ROOT) -> list[str]:
         parse_wasi_sdk_pin(read_text(root / "RESEARCH.md"))
     except RuntimeError as error:
         errors.append(f"RESEARCH.md: {error}")
-    for dependency in ARCHIVE_TAG_SOURCES:
+    for dependency in (*ARCHIVE_TAG_SOURCES, *ARCHIVE_INDEX_SOURCES):
         try:
             pin = parse_archive_pin(read_text(root / "RESEARCH.md"), dependency)
             expected_url = {
@@ -612,6 +670,7 @@ def consistency(root: Path = ROOT) -> list[str]:
                     f"https://github.com/godunko/adawebpack/releases/download/{pin['version']}/"
                     f"adawebpack-{pin['version']}.tar.gz"
                 ),
+                "gmp": f"https://ftp.gnu.org/gnu/gmp/gmp-{pin['version']}.tar.xz",
             }[dependency]
             if pin["url"] != expected_url:
                 errors.append(f"RESEARCH.md: {dependency} asset URL が pin と一致しません")
@@ -781,6 +840,10 @@ def upstream_report(root: Path = ROOT) -> str:
                 raise RuntimeError("gitlink に一致する安定版タグがありません")
             if not latest:
                 raise RuntimeError("安定版タグがありません")
+            if name in FORMAL_SOURCES:
+                declared = parse_research_dependency(read_text(root / "RESEARCH.md"), name)["version"]
+                if remote_tag_targets(remote).get(declared) != pinned:
+                    raise RuntimeError("formal source release tag differs from its gitlink")
             add_row(name, fixed, latest, compare_status(fixed, latest))
         except (KeyError, OSError, RuntimeError, subprocess.CalledProcessError) as error:
             print(f"{name}: upstream を取得できません: {error}", file=sys.stderr)
@@ -847,6 +910,15 @@ def upstream_report(root: Path = ROOT) -> str:
             latest = latest_tag
             add_row(f"{name} archive", fixed, latest, compare_status(pin["version"], latest))
         except (OSError, urllib.error.URLError, RuntimeError, subprocess.CalledProcessError) as error:
+            print(f"{name}: upstream を取得できません: {error}", file=sys.stderr)
+            add_row(f"{name} archive", "取得できません", "取得できません", "要確認")
+
+    for name, url in ARCHIVE_INDEX_SOURCES.items():
+        try:
+            pin = parse_archive_pin(read_text(root / "RESEARCH.md"), name)
+            latest = latest_archive_version(fetch(url), name)
+            add_row(f"{name} archive", pin["version"], latest, compare_status(pin["version"], latest))
+        except (OSError, urllib.error.URLError, RuntimeError) as error:
             print(f"{name}: upstream を取得できません: {error}", file=sys.stderr)
             add_row(f"{name} archive", "取得できません", "取得できません", "要確認")
 
@@ -1016,8 +1088,9 @@ def main() -> int:
     subparsers.add_parser("nextpnr-pin", help="print the pinned nextpnr values")
     subparsers.add_parser("iverilog-pin", help="print the pinned Icarus Verilog values")
     subparsers.add_parser("surfer-tool-pins", help="print pinned Surfer build tools")
+    subparsers.add_parser("formal-pins", help="print pinned formal sources as JSON")
     archive_pin = subparsers.add_parser("archive-pin", help="print a pinned source archive")
-    archive_pin.add_argument("dependency", choices=tuple(ARCHIVE_TAG_SOURCES))
+    archive_pin.add_argument("dependency", choices=(*ARCHIVE_TAG_SOURCES, *ARCHIVE_INDEX_SOURCES))
     subparsers.add_parser("pnr-cache-pin", help="print the PnR dependency cache inputs")
     subparsers.add_parser("apycula-wheel-pins", help="print the Apycula wheel requirement hashes")
     subparsers.add_parser("apycula-wheel-info", help="print the pinned Apycula wheel asset")
@@ -1060,6 +1133,9 @@ def main() -> int:
             pins["binaryen"]["version"], pins["binaryen"]["sha256"], pins["binaryen"]["url"],
         ]
         print("\t".join(values))
+        return 0
+    if args.command == "formal-pins":
+        print(json.dumps(parse_formal_pins(read_text(ROOT / "RESEARCH.md")), sort_keys=True))
         return 0
     if args.command == "archive-pin":
         pin = parse_archive_pin(read_text(ROOT / "RESEARCH.md"), args.dependency)

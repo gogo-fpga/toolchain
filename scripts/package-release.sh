@@ -30,6 +30,12 @@ submodules=(
   vendor/ghdl
   vendor/iverilog
   vendor/surfer
+  vendor/sby
+  vendor/yices2
+  vendor/z3
+  vendor/boolector
+  vendor/bitwuzla
+  vendor/click
 )
 surfer_nested_submodules=(
   f128
@@ -197,12 +203,20 @@ trap 'rm -rf -- "$work"' EXIT
 web_root="$work/$web_name"
 source_root="$work/$source_name"
 mkdir -p "$web_root" "$web_root/licenses" "$source_root"
+python3 "$root/scripts/prepare-formal-sources.py" --output "$work/formal-sources"
+cp "$work/formal-sources/licenses/"* "$web_root/licenses/"
 cp -R "$root/dist/." "$web_root/"
 cp "$root/README.md" "$root/LICENSE" "$root/NOTICE" \
   "$root/THIRD_PARTY_NOTICES.md" "$web_root/"
 
 emscripten_root="$root/build/emsdk-$emsdk_version/upstream/emscripten"
 license_copies=(
+  "$root/vendor/sby/COPYING:sby-COPYING"
+  "$root/vendor/yices2/LICENSE.txt:yices2-LICENSE.txt"
+  "$root/vendor/z3/LICENSE.txt:z3-LICENSE.txt"
+  "$root/vendor/boolector/COPYING:boolector-COPYING"
+  "$root/vendor/bitwuzla/COPYING:bitwuzla-COPYING"
+  "$root/vendor/click/LICENSE.txt:click-LICENSE.txt"
   "$root/vendor/openFPGALoader/LICENSE:openFPGALoader-LICENSE"
   "$root/node_modules/fflate/LICENSE:fflate-LICENSE"
   "$root/vendor/libusb/COPYING:libusb-COPYING"
@@ -280,6 +294,8 @@ find "$web_root" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
 )
 
 git -C "$root" archive --format=tar HEAD | tar -xf - -C "$source_root"
+mkdir -p "$source_root/vendor/formal-archives"
+cp "$work/formal-sources/"*.tar.xz "$work/formal-sources/manifest.json" "$source_root/vendor/formal-archives/"
 cp "$root/dist/libraries/catalog.json" "$source_root/libraries/source-manifest.json"
 submodule_lines="$(git -C "$root" ls-tree HEAD -- "${submodules[@]}")"
 declare -A submodule_shas=()

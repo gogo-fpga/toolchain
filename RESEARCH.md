@@ -38,6 +38,12 @@ vendor submodule の commit は次のとおりです。pin checker がこの表�
 | ghdl | v6.0.0 | `e589c698c351369ac5bcfe7abe1f1152ac5d4727` | `https://github.com/ghdl/ghdl.git` |
 | iverilog | v13_0 | `dfeee909ed9f20b4870dd93423156c0170c0e1ff` | `https://github.com/steveicarus/iverilog.git` |
 | surfer | v0.7.0 | `bd749b1f786c1c62cd67893ca71346cbe6983915` | `https://gitlab.com/surfer-project/surfer.git` |
+| sby | snapshot | `79fc9eddca5e33a28cc2f2cd19c9825efd9a7255` | `https://github.com/YosysHQ/sby.git` |
+| yices2 | yices-2.7.0 | `85cf17e44eac76b5d14b297c09fc9bfecf47ef65` | `https://github.com/SRI-CSL/yices2.git` |
+| z3 | z3-5.3.3 | `430d19e697e2ec9bad79ff210d41b4a7a5fcfa3e` | `https://github.com/Z3Prover/z3.git` |
+| boolector | 3.2.4 | `393cdfba3735d334bb4e6525500b8a0280dd41e6` | `https://github.com/Boolector/boolector.git` |
+| bitwuzla | 0.9.1 | `8d1eb01093ae54d9b4586456b69c3bf31000a4c2` | `https://github.com/bitwuzla/bitwuzla.git` |
+| click | 8.3.1 | `1d038f270701498433cb432f54db89f95f07a845` | `https://github.com/pallets/click.git` |
 
 WASI SDK の固定値は pin checker とビルドスクリプトが読む次の表を正とします。
 
@@ -47,6 +53,7 @@ WASI SDK の固定値は pin checker とビルドスクリプトが読む次の�
 | boost | 1.92.0 | `ea7b982002cc9dfbe59b0b217b206f470dc75f3de0bb2973d844118934d82411` | `https://github.com/boostorg/boost/releases/download/boost-1.92.0/boost-1.92.0-b2-nodocs.tar.xz` |
 | eigen | 5.0.1 | `e9c326dc8c05cd1e044c71f30f1b2e34a6161a3b6ecf445d56b53ff1669e3dec` | `https://gitlab.com/libeigen/eigen/-/archive/5.0.1/eigen-5.0.1.tar.gz` |
 | adawebpack | 24.0.0 | `8edaae8b9987a20aec430d750f30033f12f953ce2b6437afb87fbf8cc1063796` | `https://github.com/godunko/adawebpack/releases/download/24.0.0/adawebpack-24.0.0.tar.gz` |
+| gmp | 6.3.0 | `a3c2b80201b89e68616f4ad30bc66aee4927c3ce50e33929ca819d5c43538898` | `https://ftp.gnu.org/gnu/gmp/gmp-6.3.0.tar.xz` |
 
 Surfer WASM build tools:
 
@@ -199,6 +206,8 @@ GHDL、NVC、Icarus Verilog など GPL のツールを WASM にビルドして R
 
 ## 7. 分割した調査
 
+T6は上流SBY・SMTBMCの再利用を選び、固定ソースと[S15の事前基準](docs/experiments/S15-formal-verification.md)を登録しました。実行は未確認です。以下に初期調査との差、依存、GMPの取得失敗と署名鍵の期限切れも記録します。
+
 大きな調査は `docs/research/` に分けて置きます。
 
 | 文書 | 内容 |
@@ -213,6 +222,8 @@ GHDL、NVC、Icarus Verilog など GPL のツールを WASM にビルドして R
 | [文書を意味単位で分割する方針](docs/research/document-structure.md) | 目的・読者による分割、サイズの目安、例外、旧リンクと証拠の保持 |
 | [HDL ライブラリーと CPU コアの調査](docs/research/hdl-libraries.md) | T5 の22候補、ライセンスの原典、対応範囲、固定版と更新監視（2026-11-01） |
 | [HDL ライブラリー候補の初期調査記録](docs/research/hdl-library-survey-history.md) | 初期の11候補、当時の転記、訂正先と原典。現在のカタログとは区別 |
+| [形式検証の原本とブラウザーの制約](docs/research/formal-verification.md) | SBY・SMTBMC、Z3のWASM先例、property、輸送と非成功判定 |
+| [形式検証の固定ソース・依存・配布条件](docs/research/formal-sources.md) | 採用releaseと初期snapshot、依存、SQLite、license、GMP、source closure |
 
 Actions.lock は今回は導入を見送り、現行の完全長 SHA 固定を維持します。取得元 ID と推移依存の保護という追加価値、導入の制限、未確認の事項は上記の調査に記録しました。
 
@@ -225,7 +236,7 @@ Actions.lock は今回は導入を見送り、現行の完全長 SHA 固定を�
 - Apicula と Pyodide の組み合わせ、必要な Python 依存、実行時間、配布サイズ。
 - VeriSim の Icarus Verilog 構成を本リポジトリーへ適用した場合の機能範囲と実行時間。
 - Verilator 生成 C++ をブラウザー内でコンパイル・実行する方法。
-- SymbiYosys / `yosys-smtbmc` の WASM 実行方法とライセンス。Yices2 / Z3 の API 統合と実行性能、Boolector のライセンスは未確認です。
+- SymbiYosys / `yosys-smtbmc`、Yices2 / Z3 のWASM統合と実行性能。初期表で未確認だったSBY・BoolectorのlicenseはISC・MITと確認し、上記の形式検証調査に記録しました。
 - sv-elab の WASM 対応。
 - Chromium 以外のブラウザー、実機 USB、4 ボードでの書き込み。
 - GPL ツールおよび HDL ライブラリーを配布する際の、各 revision に固有のソース提供・表示義務。
