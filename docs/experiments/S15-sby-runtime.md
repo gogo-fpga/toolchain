@@ -50,3 +50,11 @@ node scripts/probe-formal-sby.mjs \
 ```
 
 SQLite読取り器の3件では、作成時刻だけの差は同じ論理行となり、statusの変更は残ること、欠落・破損・未確定のWAL・外部キー違反・未知の表を拒否することを確認しました。読取りでDBのbyteが変わらないことも検査します。子processの4件では通常の非ゼロ終了と、改変・hash不一致・取消・crash・輸送破損を分けて検査しました。初回は単体fixtureのisolation指定と必須optionの不足、その後は期待するファイル一覧の順序を誤って失敗しました。fixtureだけを修正し、製品の拒否条件や比較を緩めていません。
+
+## 清浄な実装commitの予備確認
+
+`ca0ac68003a33c925d01ae588897c26489050f92`からnative基準とPython資材を再生成し、両solver各6条件を再実行しました。双方のmetadataのworktreeは空で、保存した実行コードのsnapshotも同commitと全バイト照合しました。12条件すべてで上記の分類と主要成果物・SQLiteが一致しています。同commitでWeb・実WASI275件とPython35件も成功しました。これは正式反復や全列の独立監査を実施した結果ではありません。
+
+Nodeはv24.21.0、native Pythonは3.12.13、Pyodide packageは314.0.7です。実バイナリーの版表示でYices 2.7.0とGMP 6.3.0、Z3 5.3.3をnative/WASI双方で確認しました。Yosys nativeは0.70、git sha1 28ba3cb92です。solverはP2のclean build、Yosysは製品用資材を使い回し、起動時にbinary・shareのhashを照合しました。OS・CPU・memory・submodule statusは同じVMで試行後に採取したmetadataへ記録し、計測時点の負荷や性能値とは扱いません。
+
+[生CSV](S15-sby-runtime-preliminary.csv)全12行16列、入力・全log・全成果物・source snapshot・stageしたPythonとlicense、初期の失敗と修正後の試行を、証拠ZIP `S15-sby-runtime-evidence-ca0ac68.zip`に保全しました。[全2,624ファイルの目録](S15-sby-runtime-files.csv)をZIPの再読込みでsize・SHA-256照合し、[ZIPのSHA-256](S15-sby-runtime-evidence.sha256)も保存しています。実行用の別名であるnative solverのsymlinkは除外し、実バイナリーのhashと版表示はmetadata・version logに保持しました。証拠のhash照合とproofの独立検査は別です。JNY・JUnit・root logの全フィールド比較、正式反復、負の対照と元回路の反例検査は引き続き残件です。
