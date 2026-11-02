@@ -1,10 +1,12 @@
 import argparse
 import hashlib
 import importlib.util
+import io
 import json
 from pathlib import Path
 import subprocess
 import tempfile
+import tarfile
 import unittest
 from unittest.mock import patch
 
@@ -16,6 +18,110 @@ SPEC.loader.exec_module(BUILD)
 
 
 class BuildTest(unittest.TestCase):
+    def test_upstream_setup_pin_is_literal_and_unique(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "contrib").mkdir()
+            setup = root / "contrib/setup-cadical.sh"
+            text = 'COMMIT_ID="' + '1' * 40 + '"\ndownload_github "upstream/cadical" "$COMMIT_ID" "$DEST"\n'
+            setup.write_text(text)
+            self.assertEqual(BUILD.setup_dependency(root, "cadical"), {
+                "commit": "1" * 40, "url": "https://github.com/upstream/cadical.git",
+            })
+            for changed in (text.replace("1" * 40, "$REVISION"), text + text,
+                            text.replace('"upstream/cadical"', '"$REPO"'), text.replace('"$COMMIT_ID"', '"main"')):
+                with self.subTest(changed=changed):
+                    setup.write_text(changed)
+                    with self.assertRaisesRegex(ValueError, "Unrecognized"):
+                        BUILD.setup_dependency(root, "cadical")
+
+    def test_dependency_fetch_checks_commit_and_preserves_license_hash(self):
+        archive = io.BytesIO()
+        with tarfile.open(fileobj=archive, mode="w") as contents:
+            member = tarfile.TarInfo("LICENSE")
+            member.size = 3
+            contents.addfile(member, io.BytesIO(b"MIT"))
+        dependency = {"commit": "1" * 40, "url": "https://github.com/upstream/cadical.git"}
+        with tempfile.TemporaryDirectory() as temp:
+            output = Path(temp)
+            records = []
+            metadata = {}
+            with patch.object(BUILD.subprocess, "check_output", side_effect=["1" * 40, archive.getvalue()]):
+                source = BUILD.stage_dependency("cadical", dependency, output, metadata,
+                                                lambda name, command: records.append((name, command)))
+            self.assertIn("--depth=1", records[1][1])
+            self.assertEqual((source / "LICENSE").read_bytes(), b"MIT")
+            self.assertEqual(metadata["dependencies"]["cadical"]["licenses"]["LICENSE"],
+                             hashlib.sha256(b"MIT").hexdigest())
+            self.assertEqual(metadata["dependencies"]["cadical"]["archive_sha256"],
+                             hashlib.sha256(archive.getvalue()).hexdigest())
+        with tempfile.TemporaryDirectory() as temp, \
+             patch.object(BUILD.subprocess, "check_output", return_value="2" * 40):
+            with self.assertRaisesRegex(ValueError, "pin mismatch"):
+                BUILD.stage_dependency("cadical", dependency, Path(temp), {}, lambda *_: None)
+
+    def test_boolector_profile_uses_only_explicit_static_dependencies(self):
+        for runtime in ("native", "wasi"):
+            with self.subTest(runtime=runtime), tempfile.TemporaryDirectory() as temp:
+                output = Path(temp)
+                for name, files in {"cadical": ("build/libcadical.a", "src/ccadical.h"),
+                                    "btor2tools": ("src/btor2parser/btor2parser.h",),
+                                    "btor2tools-build": ("lib/libbtor2parser.a",)}.items():
+                    for file in files:
+                        path = output / name / file
+                        path.parent.mkdir(parents=True, exist_ok=True)
+                        path.write_bytes(b"fixture")
+                commands = []
+                args = argparse.Namespace(runtime=runtime, cmake="cmake", jobs=2,
+                                          cxx_flags="-Ihost", cxx_link_flags="-Lhost", cxx_libraries="-lhost")
+                with patch.object(BUILD.subprocess, "check_output", return_value="cmake fixture"), \
+                     patch.object(BUILD, "setup_dependency", return_value={}), \
+                     patch.object(BUILD, "stage_dependency", side_effect=lambda name, *_: output / name):
+                    metadata = {"patches": []}
+                    binary = BUILD.build_boolector(args, output, output / "source", metadata,
+                        lambda label, command, *a, **kw: commands.append((label, command, kw)),
+                        {}, "cc", "c++", "-O2 -std=gnu17", "-lsdk", output / "sdk")
+                config = next(command for label, command, _ in commands if label == "configure")
+                self.assertIn("-DONLY_CADICAL=ON", config)
+                self.assertIn("-DUSE_GMP=OFF", config)
+                self.assertIn("-DCMAKE_DISABLE_FIND_PACKAGE_Threads=TRUE", config)
+                self.assertEqual(binary, output / "objects/bin/boolector")
+                env = next(kw["env"] for label, _, kw in commands if label == "configure")
+                self.assertEqual(env["GIT_CEILING_DIRECTORIES"], str(output))
+                if runtime == "wasi":
+                    configure = next(command for label, command, _ in commands if label == "cadical-configure")
+                    self.assertIn("--cross", configure)
+                    self.assertEqual(metadata["patches"][0]["path"], "patches/cadical-wasi-cross.patch")
+                    self.assertEqual(len(metadata["patches"]), 4)
+                    self.assertIs(metadata["cadical_native_rss_available"], False)
+                    for item in metadata["patches"]:
+                        self.assertEqual(BUILD.digest(output / item["snapshot"]), item["sha256"])
+                    self.assertIn("-DCMAKE_CXX_STANDARD_LIBRARIES=-lunwind -lsetjmp", config)
+                    self.assertEqual(env["AR"], str(output / "sdk/bin/llvm-ar"))
+                else:
+                    self.assertIn("-DCMAKE_EXE_LINKER_FLAGS=-Lhost", config)
+                    self.assertIn("-DCMAKE_CXX_STANDARD_LIBRARIES=-lhost", config)
+                    self.assertIn("-Ihost", env["CXXFLAGS"])
+
+    def test_dependency_rejects_missing_symlinked_and_escaping_license(self):
+        dependency = {"commit": "1" * 40, "url": "https://github.com/upstream/cadical.git"}
+        for kind in ("missing", "empty", "symlink", "escape"):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as temp:
+                archive = io.BytesIO()
+                with tarfile.open(fileobj=archive, mode="w") as contents:
+                    member = tarfile.TarInfo({"missing": "README", "escape": "../LICENSE"}.get(kind, "LICENSE"))
+                    data = b"MIT" if kind != "empty" else b""
+                    if kind == "symlink":
+                        member.type = tarfile.SYMTYPE
+                        member.linkname = "README"
+                        contents.addfile(member)
+                    else:
+                        member.size = len(data)
+                        contents.addfile(member, io.BytesIO(data))
+                with patch.object(BUILD.subprocess, "check_output", side_effect=["1" * 40, archive.getvalue()]):
+                    with self.assertRaises((ValueError, tarfile.TarError)):
+                        BUILD.stage_dependency("cadical", dependency, Path(temp), {}, lambda *_: None)
+
     def run_build(self, runtime):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)

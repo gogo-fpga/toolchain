@@ -54,6 +54,7 @@ WASI SDK の固定値は pin checker とビルドスクリプトが読む次の�
 | eigen | 5.0.1 | `e9c326dc8c05cd1e044c71f30f1b2e34a6161a3b6ecf445d56b53ff1669e3dec` | `https://gitlab.com/libeigen/eigen/-/archive/5.0.1/eigen-5.0.1.tar.gz` |
 | adawebpack | 24.0.0 | `8edaae8b9987a20aec430d750f30033f12f953ce2b6437afb87fbf8cc1063796` | `https://github.com/godunko/adawebpack/releases/download/24.0.0/adawebpack-24.0.0.tar.gz` |
 | gmp | 6.3.0 | `a3c2b80201b89e68616f4ad30bc66aee4927c3ce50e33929ca819d5c43538898` | `https://ftp.gnu.org/gnu/gmp/gmp-6.3.0.tar.xz` |
+| mpfr | 4.2.2 | `b67ba0383ef7e8a8563734e2e889ef5ec3c3b898a01d00fa0a6869ad81c6ce01` | `https://ftp.gnu.org/gnu/mpfr/mpfr-4.2.2.tar.xz` |
 
 Surfer WASM build tools:
 
@@ -210,6 +211,7 @@ T6は上流SBY・SMTBMCの再利用を選び、[S15の事前基準](docs/experim
 | [HDLライブラリーとCPUコアの検証経緯](docs/research/hdl-validation-history.md) | 正式反復と全60組の回帰、失敗と修正、配布ソースの原記録 |
 | [形式検証の固定ソース・依存・配布条件](docs/research/formal-sources.md) | 採用releaseと初期snapshot、依存、SQLite、license、GMP、source closure |
 | [形式検証ソルバーのビルドと実行方式](docs/research/formal-solvers.md) | WASI CLI・C API・公式WASMの比較候補、GMP・timer・丸め・版表示・native ABIの制約、字句境界、終了0の構文エラーと実応答比較 |
+| [追加ソルバーの固定依存と診断](docs/experiments/S15-extra-solver-builds.md) | MPFRの固定archiveと署名、依存license、CaDiCaLのWASI patchと失敗試行。Boolector native/WASIのCLI 5条件は一致。IDの切り詰め・traceの未初期化警告は残り、採用・正式反復・製品配布は未完了 |
 | [形式検証の候補と有効化条件](docs/research/formal-capabilities.md) | SMT全9選択肢・SBY全6エンジンと内蔵SAT。反復検証と製品資材を分離し、未対応候補は理由付きで無効。Bitwuzla・Boolectorのビルドは残件 |
 | [原本SBY・SMTBMCのprocess境界](docs/experiments/S15-sby-process.md) | Pyodideの制約、SQLite、native SBY12条件、SMTBMC仮想processの16条件・AST照合、Yosys子workerと安全なファイル差分、初期の失敗記録 |
 | [SBY全体の仮想process接続](docs/experiments/S15-sby-runtime.md) | SbyPopen・単一slot・子差分・両solver各6条件の比較 |

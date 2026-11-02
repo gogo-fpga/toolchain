@@ -42,6 +42,8 @@
 
 仮想デバイスによる測定値は、実機の値として扱いません。
 
+追加ソルバーの固定依存・取得原文と診断の事前基準は [S15 P4](S15-extra-solver-builds.md) に記録します。Boolector native/WASIのCLI 5条件と失敗試行を確認しましたが、IDの切り詰め・traceの警告が残るため採用は保留します。正式反復・Bitwuzlaのビルド・製品配布は未完了です。
+
 | 実験 | 目的 | 状態 |
 |---|---|---|
 | [S15 形式検証](S15-formal-verification.md) | 上流SBY・SMTBMCとソルバーの再利用、native/WASM、property・反例、輸送と非成功判定 | P1のSAT・反例再実行は別記。SMTソルバーのビルド・証明・正式5回反復は未実施 |
