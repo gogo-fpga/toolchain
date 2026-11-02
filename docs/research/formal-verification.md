@@ -2,13 +2,13 @@
 
 [調査の索引](../../RESEARCH.md#7-分割した調査) / [固定ソースと配布条件](formal-sources.md) / [S15の事前基準](../experiments/S15-formal-verification.md)
 
-原本のprocess調査を経て、[SBY全体の仮想process接続](../experiments/S15-sby-runtime.md)を追加しました。初期実装は単一slotのBMC・prove・coverに限定し、両solver各6条件でstatus・主要成果物・SQLiteを予備比較しています。Pythonの判定処理は維持します。JsNull、SQLite WAL、作業領域の競合とcommand制限の調査、失敗試行も同記録に保存します。正式反復、全列の独立監査、配布と画面統合は未完了です。
+原本のprocess調査を経て、[SBY全体の仮想process接続](../experiments/S15-sby-runtime.md)を追加しました。初期実装は単一slotのBMC・prove・coverに限定し、Pythonの判定処理は維持します。JsNull、SQLite WAL、作業領域の競合とcommand制限の調査、失敗試行も同記録に保存します。その後の[正式5回・A/A 2回](../experiments/S15-sby-repeated.md)は全84行19列・全成果物が一致しました。[異常対照23条件](../experiments/S15-sby-controls.md)と[原本のwitness変換2形式](../experiments/S15-sby-witness.md)も、別の清浄commitで各5回とA/A 2回を終え、全列を独立監査しました。配布と画面統合は未完了です。
 
 ## 結論と確認範囲
 
 T6では upstream の SBY と `yosys-smtbmc` を再利用します。SMT式の生成、BMC、帰納法、モデルとVCDの生成を独自に書き換えません。Yices2とZ3を優先して比較し、BitwuzlaとBoolectorも候補として残します。Yosys内蔵SATは比較経路であり、SMT対応の代わりにはしません。
 
-P0でソースの静的調査と依存確認を行い、S15の事前基準をコミットしました。P1ではYosys内蔵SATと反例の比較経路を追加し、各節に検査範囲を記録しました。P2の[ソルバー予備ビルド](formal-solvers.md)は調査中で、WASM実行と双方向通信の正式な5回反復、ブラウザーの形式検証画面は未完了です。固定ソースの登録だけで、ソルバーを利用可能にはしません。
+P0でソースの静的調査と依存確認を行い、S15の事前基準をコミットしました。P1ではYosys内蔵SATと反例の比較経路を追加し、各節に検査範囲を記録しました。P2の[ソルバー予備ビルド](formal-solvers.md)の失敗と調査を経て、[native/WASI正式比較](../experiments/S15-solver-native-wasi.md)の全329行31列を監査しました。ブラウザーの形式検証画面は未完了です。以下の経緯にある「未完了」は各段階の記録として残し、最新の結果と区別します。固定ソースの登録だけで、ソルバーを利用可能にはしません。
 
 ## 上流の再利用と輸送層
 
