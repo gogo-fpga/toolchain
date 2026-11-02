@@ -39,6 +39,12 @@ export function nativeSimulation(directory, files, options) {
       cwd, encoding: "utf8", timeout: 30000, maxBuffer: 16 * 1024 * 1024,
       env: { ...process.env, SOURCE_DATE_EPOCH: "0", TZ: "UTC" },
     });
+    writeFileSync(path.join(directory, `${tool}.stdout`), result.stdout ?? "");
+    writeFileSync(path.join(directory, `${tool}.stderr`), result.stderr ?? "");
+    writeFileSync(path.join(directory, `${tool}.json`), JSON.stringify({
+      command: [path.join(nativeDir, tool), ...args], cwd,
+      status: result.status, signal: result.signal, error: result.error?.message ?? null,
+    }, null, 2));
     assert.ifError(result.error);
     return { status: result.status, stdout: result.stdout, stderr: result.stderr };
   };
@@ -55,5 +61,7 @@ export function nativeSimulation(directory, files, options) {
   if (compiled.status !== 0) return compiled;
   const simulated = run("vvp", ["design.vvp"], path.join(directory, "work"));
   const vcd = path.join(directory, "work", options.vcdFile ?? "wave.vcd");
-  return { ...simulated, vcd: existsSync(vcd) ? readFileSync(vcd) : null };
+  return { ...simulated,
+    stderr: [preprocessed.stderr, compiled.stderr, simulated.stderr].filter(Boolean).join("\n"),
+    vcd: existsSync(vcd) ? readFileSync(vcd) : null };
 }

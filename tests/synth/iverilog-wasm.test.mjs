@@ -21,6 +21,7 @@ import { runIverilog } from "../../web/lib/iverilog-host.mjs";
 import { inspectInstalledLibraries, prepareLibrarySelection } from "../../web/lib/libraries.mjs";
 import { changeProjectLibraries, prepareProjectInputs } from "../../web/lib/project.mjs";
 import { exportProjectZip, importProjectZip } from "../../web/lib/project-zip.mjs";
+import { nativeSimulation } from "./iverilog-helpers.mjs";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const fixtureDir = path.join(repo, "tests/fixtures/iverilog");
@@ -386,4 +387,17 @@ test("corrupted Icarus WASM is rejected by the WebAssembly validator", () => {
   const bytes = readFileSync(path.join(wasmDir, "vvp.wasm"));
   bytes[0] ^= 0xff;
   assert.throws(() => new WebAssembly.Module(bytes), WebAssembly.CompileError);
+});
+
+test("native reference preserves compiler warnings just like WASM", () => {
+  const directory = mkdtempSync(path.join(repo, "build/iverilog-warning-"));
+  const files = [{ path: "top.v", content: "module top; always @* assert(1'b1); initial #1 $finish; endmodule" }];
+  const native = nativeSimulation(directory, files, { includeDirectories: [], defines: {}, top: "top", formal: true });
+  const wasm = runIverilog({ modules, files, top: "top", formal: true });
+  assert.equal(native.status, 0, native.stderr);
+  assert.equal(wasm.status, 0, wasm.stderr);
+  assert.match(native.stderr, /@\* found no sensitivities/);
+  assert.equal(native.stderr, wasm.stderr);
+  assert.match(readFileSync(path.join(directory, "ivl.stderr"), "utf8"), /@\* found no sensitivities/);
+  assert.equal(JSON.parse(readFileSync(path.join(directory, "ivl.json"), "utf8")).status, 0);
 });

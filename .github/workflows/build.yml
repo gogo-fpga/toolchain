@@ -1440,7 +1440,7 @@ jobs:
 
       - id: formal-vhdl
         name: VHDLとPSLの性質をGHDLとYosysで照合
-        run: node --test --test-concurrency=1 tests/synth/formal-vhdl.test.mjs tests/synth/ghdl-replay.test.mjs
+        run: node --test --test-concurrency=1 tests/synth/formal-vhdl.test.mjs tests/synth/ghdl-replay.test.mjs tests/synth/ghdl-lowered-replay.test.mjs tests/synth/formal-vhdl-lowered.test.mjs
 
       - name: VHDL形式検証の入力・一覧・反例・CSVを保存
         if: always() && steps.formal-vhdl.outcome != 'skipped'

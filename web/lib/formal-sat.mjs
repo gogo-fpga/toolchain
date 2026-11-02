@@ -46,7 +46,7 @@ export function createSatScripts({ sources, includeDirs = [], top, mode = "bmc",
   return {
     prepare: [
       ...read, `hierarchy -check -top ${top}`, "proc", "flatten", "chformal -lower",
-      `write_json ${prefix}before.json`, `prep -top ${top} -flatten`, "memory_map", "opt_clean",
+      `write_json ${prefix}before.json`, `prep -top ${top} -flatten`, "memory_map", "opt_clean", "check -assert",
       `write_json ${prefix}after.json`, `write_rtlil ${prefix}prepared.il`,
     ].join("; "),
     presat: `${prepared}; sat -seq ${depth} ${common}`,

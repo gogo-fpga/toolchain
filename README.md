@@ -10,6 +10,8 @@ T0 から T3 の編集・保存・合成・配置配線・ビットストリー�
 
 形式検証は、[固定ソース・依存・ライセンスの調査](docs/research/formal-sources.md)と[S15の事前基準](docs/experiments/S15-formal-verification.md)を登録しています。[Yosys SATの比較とIcarusによる反例の独立再実行](docs/research/formal-verification.md)、[GHDLのVHDL・PSL property保持](docs/experiments/S15-vhdl-formal.md)、[元のVHDLをGHDLで独立に再実行する検査](docs/experiments/S15-vhdl-native-replay.md)は限定した検査経路として実装中です。通常合成の出力は変えず、形式出力を明示した場合だけGHDLからYosysへ性質を渡します。SBY・Yices2・Z3などのソースを配布対象へ加えていますが、ブラウザーからのVHDL反例再実行、SMTソルバーのWASM実行・形式検証画面はまだ提供していません。
 
+[下位化Verilogとの比較](docs/experiments/S15-vhdl-lowered-replay.md)には、階層・名前付きライブラリー・初期値・reset・複数propertyを加え、元VHDLとIcarus native/WASMで値と最初の違反を照合します。X・未初期化・memory・組合せループは検査経路での未対応理由を記録し、空虚な有界結果を証明にしません。同一commitで69件を5回とA/Aの2回実行し、生CSV420行の全20列を監査しました。ソルバーと画面を含むT6全体は未完了です。
+
 書き込み部は Chromium 系ブラウザーの WebUSB を使います。実機の Tang Nano では試していません。
 
 ## IDE 画面
@@ -60,6 +62,7 @@ VHDL だけのプロジェクトではシミュレーションを無効にし、
 git clone https://github.com/gogo-fpga/toolchain.git
 cd toolchain
 git submodule update --init --depth 1
+git -C third_party/vexriscv submodule update --init --depth 1 -- pythondata_cpu_vexriscv/verilog/ext/VexRiscv
 git -C vendor/emsdk fetch --depth=1 --tags origin  # build-wasm.sh に必要な emsdk のタグを取得。CI の build.yml と同じ
 npm ci
 scripts/build-wasm.sh
