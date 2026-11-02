@@ -19,6 +19,17 @@ SPEC.loader.exec_module(library_assets)
 
 
 class LibraryAssetsTests(unittest.TestCase):
+    def test_e2e_fetches_pinned_library_sources_before_web_server(self):
+        workflow = (ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8")
+        e2e = workflow.split("\n  e2e:\n", 1)[1]
+        checkout = e2e.index("- uses: actions/checkout@")
+        sources = e2e.index("git submodule update --init --depth 1 -- vendor/zstd third_party/")
+        nested = e2e.index("git -C third_party/vexriscv submodule update --init --depth 1 -- pythondata_cpu_vexriscv/verilog/ext/VexRiscv")
+        browser = e2e.index("- name: Playwright E2E")
+        self.assertLess(checkout, sources)
+        self.assertLess(sources, nested)
+        self.assertLess(nested, browser)
+
     def test_cpu_board_availability_matches_all_formal_main_rows(self):
         catalog = json.loads((ROOT / "libraries/catalog.json").read_text())
         with (ROOT / "docs/experiments/S14-production-cpu.csv").open(newline="") as stream:
