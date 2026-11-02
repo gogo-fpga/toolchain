@@ -107,8 +107,10 @@ export function runIverilog({
   top,
   includeDirs = [],
   defines = {},
+  formal = false,
   onPollOneoff = () => {},
 }) {
+  if (typeof formal !== "boolean") throw new TypeError("Formal replay flag must be boolean");
   if (!modules?.ivlpp || !modules?.ivl || !modules?.vvp) {
     throw new TypeError("ivlpp, ivl, and vvp modules are required");
   }
@@ -130,11 +132,12 @@ export function runIverilog({
     "functor:nodangle",
     `root:${top}`,
     "out:/work/design.vvp",
-    "generation:2",
+    `generation:${formal ? "2012" : "2"}`,
   ].join("\n");
   const flags = [
     ...includeDirs.map((directory) => `I:/work/${normalizePath(directory).join("/")}`),
     ...Object.entries(defines).map(([name, value]) => `D:${name}=${value}`),
+    ...(formal ? ["D:FORMAL=1"] : []),
   ].join("\n");
   writeFile(root, "/work/ivl.conf", config);
   writeFile(root, "/work/ivlpp.flags", flags);
