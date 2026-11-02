@@ -16,6 +16,7 @@ with Vhdl.Canon;
 with Vhdl.Nodes; use Vhdl.Nodes;
 with Vhdl.Configuration;
 with Vhdl.Sem_Lib;
+with Vhdl.Scanner;
 with Vhdl.Utils;
 with Vhdl.Std_Package;
 with Elab.Vhdl_Insts;
@@ -88,6 +89,19 @@ package body Synth_Api is
       end if;
       return 0;
    end Synth_Set_Library;
+
+   function Synth_Set_Formal (Enable : Integer; Psl : Integer) return Integer is
+   begin
+      if Enable not in 0 .. 1 or else Psl not in 0 .. 1
+        or else (Psl = 1 and then Enable = 0)
+      then
+         return -1;
+      end if;
+      Netlists.Disp_Verilog.Flag_Formal := Enable = 1;
+      Vhdl.Scanner.Flag_Psl_Comment := Psl = 1;
+      Vhdl.Scanner.Flag_Comment_Keyword := Psl = 1;
+      return 0;
+   end Synth_Set_Formal;
 
    function Analyze_File
      (File : Thin_String_Ptr; Len : Natural) return Integer

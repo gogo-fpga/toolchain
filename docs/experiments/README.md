@@ -43,3 +43,4 @@
 | [S15 形式検証](S15-formal-verification.md) | 上流SBY・SMTBMCとソルバーの再利用、native/WASM、property・反例、輸送と非成功判定 | P1のSAT・反例再実行は別記。SMTソルバーのビルド・証明・正式5回反復は未実施 |
 | [S15 P0 配布ソース照合](S15-formal-source-closure.md) | 固定ソース、GMP原archive、licenseとGit情報なしの再生成 | c41e5c5で配布ソースとZIPを照合。形式検証の実行とは区別 |
 | [S15 P1 SAT反例の独立再実行](S15-formal-replay.md) | 元のVerilogをIcarusのnative/WASMで再実行し、壊した出力・resetを拒否 | 清浄なbf042daで210件成功。生CSV38行15列を監査。正式5回反復と画面統合は未完了 |
+| [S15 P1 VHDL・PSL property保持](S15-vhdl-formal.md) | 上流GHDLの解析とmonitorを再利用し、明示した形式出力をYosysへ渡す | 清浄な72080beで33件成功、生CSV44行11列を監査。PSL解析の失敗も記録。独立再実行と正式反復は未完了 |

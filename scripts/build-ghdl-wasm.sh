@@ -339,7 +339,11 @@ if [[ $(git -C "$gcc_source" rev-parse HEAD) != "$gcc_commit" ]]; then
   exit 1
 fi
 
-readonly ghdl_source="$root/vendor/ghdl"
+readonly ghdl_source="$work_dir/ghdl-native-source"
+mkdir -p "$ghdl_source"
+tar -C "$root/vendor/ghdl" --exclude=.git -cf - . | tar -C "$ghdl_source" -xf -
+patch --directory "$ghdl_source/src/synth" --strip=0 < "$root/patches/ghdl/formal-verilog.patch"
+patch --directory "$ghdl_source/src/ghdldrv" --strip=0 < "$root/patches/ghdl/formal-verilog-driver.patch"
 readonly frontend="$work_dir/ghdl-wasm-full"
 mkdir -p "$frontend"
 
@@ -389,7 +393,7 @@ readonly ghdl_libgnat="$gcc_source/gcc/ada/libgnat"
 while IFS= read -r unit; do
   [[ -z "$unit" || "$unit" == \#* ]] && continue
   mapfile -d '' source_units < <(
-    find "$ghdl_source/src" -type f \
+    find "$root/vendor/ghdl/src" -type f \
       \( -name "$unit.ads" -o -name "$unit.adb" \) -print0 | sort -z
   )
   if [[ ${#source_units[@]} -eq 0 ]]; then
@@ -409,6 +413,7 @@ cp "$root/scripts/ghdl-wasm/synth-vhdl_foreign.adb" "$frontend/"
 cp "$native_build/grt-readline.ads" "$frontend/"
 patch --directory "$frontend" --strip=0 < "$root/patches/ghdl/grt-stdio.patch"
 patch --directory "$frontend" --strip=0 < "$root/patches/ghdl/blackbox-verilog.patch"
+patch --directory "$frontend" --strip=0 < "$root/patches/ghdl/formal-verilog.patch"
 cp "$root/scripts/ghdl-wasm/grt-stdio.adb" "$frontend/"
 cp "$root/scripts/ghdl-wasm/bug.adb" "$frontend/"
 cp "$root/scripts/ghdl-wasm/version.ads" "$frontend/"
@@ -555,6 +560,7 @@ extra_objects+=("$work_dir/ghdl-wasm-wasi.o")
   -Wl,--export=ghdlwasm_init \
   -Wl,--export=synth_api__synth_set_std \
   -Wl,--export=synth_api__synth_init \
+  -Wl,--export=synth_api__synth_set_formal \
   -Wl,--export=synth_api__synth_set_library \
   -Wl,--export=synth_api__analyze_file \
   -Wl,--export=synth_api__synth_top \
@@ -598,6 +604,11 @@ tar --create --file "$work_dir/libraries.tar" \
 gzip --no-name --best --stdout "$work_dir/libraries.tar" > "$output_dir/libraries.tar.gz"
 {
 printf 'ghdl_commit\t%s\n' "$ghdl_pin"
+  for input in patches/ghdl/formal-verilog.patch patches/ghdl/formal-verilog-driver.patch \
+    scripts/ghdl-wasm/synth_api.ads scripts/ghdl-wasm/synth_api.adb; do
+    printf 'source_sha256:%s\t%s\n' "$input" "$(sha256sum "$root/$input" | cut -d' ' -f1)"
+  done
+  printf 'native_sha256\t%s\n' "$(sha256sum "$native_prefix/bin/ghdl" | cut -d' ' -f1)"
   printf 'variant\t%s\n' "$variant"
   printf 'ada_compile_flags\t%s\n' "$ada_flag_summary"
   printf 'wasi_c_compile_flags\t%s\n' "$c_flag_summary"
