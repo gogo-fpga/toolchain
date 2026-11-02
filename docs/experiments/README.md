@@ -39,6 +39,7 @@
 | [S14 昇格後の最終回帰と配布ソース](S14-final-regression.md) | 全60組の全列CSV・診断・選択制限とGit情報なしの再生成 | 整列後の07e2256でもHDL32組成功、CPU成功18・容量超過6・frontend非対応4。全7,700値、22候補107資材と全配布ファイルを照合 |
 | [S14 整列後のE2Eと配布物再生成](S14-post-stack-e2e.md) | 保存API・配布前検査の修正、失敗試行、同一commitのWeb再生成 | 876c2a8で全体E2E76件成功・比較4件skip、22候補107資材とWeb全661ファイルが一致 |
 | [S14A SERV / 20Kの演算の縮約](S14A-pnr-fp-contract.md) | 元のCI artifact、同じGCCのfast / off対照、製品用再ビルド、A/Aと厳密比較 | 全60実行・60行11列を監査。heap placerだけ縮約を無効化 |
+| [S14A 修正commitの全60組回帰](S14A-final-regression.md) | HDL32組・CPU28組、全列・診断・通常選択制限と証拠 | HDL32成功、CPU18成功・6容量超過・4frontend非対応。7,700セルを監査 |
 
 仮想デバイスによる測定値は、実機の値として扱いません。
 
