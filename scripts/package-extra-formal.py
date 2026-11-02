@@ -83,7 +83,7 @@ def audited_campaign(directory):
 def collect(sources):
     paths = []
     for source in sources:
-        source = Path(source)
+        source = Path(source).absolute()
         require(source.exists() and not source.is_symlink(), "missing or linked evidence source")
         candidates = source.rglob("*") if source.is_dir() else [source]
         for path in candidates:

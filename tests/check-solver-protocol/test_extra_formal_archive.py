@@ -39,6 +39,8 @@ class ExtraFormalArchiveTest(unittest.TestCase):
         self.assertEqual(restored.read_bytes(), binary.read_bytes())
         self.assertEqual(len(report["materializedLaunchers"]), 1)
         self.assertTrue(alias.is_symlink())
+        with patch("os.getcwd", return_value=str(self.base)):
+            self.assertEqual(len(ARCHIVE.collect([str(output.relative_to(self.base))])), report["files"] + 1)
         with self.assertRaises(ValueError):
             ARCHIVE.stage([self.campaign], output)
         binary.write_bytes(b"changed native")
