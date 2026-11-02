@@ -26,7 +26,7 @@ T0 から T3 の編集・保存・合成・配置配線・ビットストリー�
 
 [追加候補の独立監査と反復](docs/experiments/S15-extra-formal-audit.md)では、清浄な同一commitで正式5回・A/A 2回の全420行を全列監査しました。実構文エラー・未許可code・実行中停止に加え、改変対照20件、証拠ZIP全38,413ファイルの復元後監査も通りました。製品資材・依存の配布条件・製品認定は未完了で、両候補は無効のままです。
 
-[SMT反例の原回路による再実行](docs/experiments/S15-smt-original-replay.md)は、まず原本SMTBMCのVCD出力境界から値を記録する明示的な検査経路を追加しています。[記録の全17列独立監査](docs/experiments/S15-smt-trace-audit.md)は4候補の正式5回・A/A 2回、全896行19列と改変対照170件、証拠ZIPの復元後監査まで通りました。SMT解析・判定は変更せず、記録できたことだけを反例の独立検証済みとは扱いません。[元VerilogのIcarus再実行](docs/experiments/S15-smt-verilog-replay.md)は予備212行の全21列監査を通りましたが、清浄commitの正式反復は未完了です。元VHDL/PSLによる再実行と画面接続も残っています。
+[SMT反例の原回路による再実行](docs/experiments/S15-smt-original-replay.md)は、まず原本SMTBMCのVCD出力境界から値を記録する明示的な検査経路を追加しています。[記録の全17列独立監査](docs/experiments/S15-smt-trace-audit.md)は4候補の正式5回・A/A 2回、全896行19列と改変対照170件、証拠ZIPの復元後監査まで通りました。SMT解析・判定は変更せず、記録できたことだけを反例の独立検証済みとは扱いません。[元VerilogのIcarus再実行](docs/experiments/S15-smt-verilog-replay.md)は、4候補の正式5回・A/A 2回の全1,484行23列、改変対照316件、証拠ZIPの復元後監査まで通りました。元VHDL/PSLによる再実行と画面接続は残っています。
 
 ## IDE 画面
 

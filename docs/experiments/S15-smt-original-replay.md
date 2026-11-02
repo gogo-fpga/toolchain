@@ -2,7 +2,7 @@
 
 状態は実装中です。SAT反例の再実行、原本witnessの形式変換、SMTBMC/SBYのnativeとの成果物比較を、SMT反例の原回路による検証済み実績とは区別します。P5の画面接続より先に、この独立層を検査します。solverの製品有効化・配布closure・実機確認・CI全体の確認は、この記録の完了条件ではありません。
 
-元VerilogのIcarus native/WASMへの接続は、[別の実験記録](S15-smt-verilog-replay.md)へ分けています。予備212行の全21列監査は通りましたが、清浄commitの正式反復は未完了です。元VHDL/PSL、下位化Verilogとの比較、画面統合も引き続き残っています。
+元VerilogのIcarus native/WASMへの接続は、[別の実験記録](S15-smt-verilog-replay.md)へ分けています。正式5回・A/A 2回の全1,484行23列、改変対照316件、証拠ZIPの復元後監査まで通りました。元VHDL/PSL、下位化Verilogとの比較、画面統合は引き続き残っています。
 
 ## 目的と仮説
 
