@@ -36,6 +36,39 @@ const yosysCommand = [
   "read_verilog src/top.v; synth_gowin -top top -json top.json",
 ];
 
+test("Yosys WASI reads a sibling source from the selected working directory", () => {
+  const tree = createMemoryTree({
+    job: { src: { "top.v": "module top(); endmodule\n" }, model: {
+      "design.ys": "read_verilog ../src/top.v\nwrite_json design.json\n",
+    } },
+  });
+  const workingDirectory = tree.entries.get("job").entries.get("model");
+  const output = [];
+  const oldBoundary = runWasiP1(yosysModule, {
+    args: ["yosys", "-Q", "-T", "-q", "design.ys"],
+    preopens: { "/": tree, ".": workingDirectory },
+    stderr: bytes => output.push(new TextDecoder().decode(bytes)),
+  });
+  assert.equal(oldBoundary.exitCode, 1);
+  assert.match(output.join(""), /File `\.\.\/src\/top\.v' not found/);
+  output.length = 0;
+  const result = runWasiP1(yosysModule, {
+    args: ["yosys", "-Q", "-T", "-q", "design.ys"],
+    preopens: { "/": tree }, workingDirectory,
+    stderr: bytes => output.push(new TextDecoder().decode(bytes)),
+  });
+  assert.equal(result.exitCode, 0, output.join(""));
+  assert.ok(workingDirectory.entries.get("design.json")?.data.length > 0);
+  assert.throws(() => runWasiP1(yosysModule, {
+    args: ["yosys", "-V"], preopens: { "/": tree }, workingDirectory: createMemoryTree({}),
+  }), /Working directory must be within the root preopen/);
+  const cyclic = createMemoryTree({});
+  cyclic.parent = cyclic;
+  assert.throws(() => runWasiP1(yosysModule, {
+    args: ["yosys", "-V"], preopens: { "/": tree }, workingDirectory: cyclic,
+  }), /cyclic parent/);
+});
+
 function readTree(directory) {
   const result = {};
   for (const entry of readdirSync(directory, { withFileTypes: true })) {

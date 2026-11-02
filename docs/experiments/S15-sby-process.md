@@ -101,3 +101,20 @@ node scripts/probe-formal-python-engine.mjs \
 失敗試行も保持します。最初の手動probeはmanifestのruntime keyとbinaryのpropertyを取り違え、その後はadapterにwaitがなく停止しました。比較driverの初回はlocal変数がNodeのprocessを隠して停止しました。初めて全16条件を試した`preliminary-3`では、反例・coverの生成中に原本が呼ぶpollが未実装で6条件が失敗しました。waitとpollを接続した後に上記の一致を確認しています。AST検査の初回はnormalizer自身が空要素を残して不一致となりました。normalizerだけを直し、原本の判定処理は変更していません。
 
 この層にはSBYのprocess起動、Yosys子workerとのfilesystem反映、仮想selectをまだ実装していません。資材生成器のGitなし配布ソースへの接続、独立全列監査、清浄commitでの正式5回・A/A、元回路による反例再実行、画面統合も残件です。
+
+## Yosys子workerとファイル差分の予備検査
+
+目的はSBYが生成したYosys scriptを、ブラウザー内の独立workerで実行し、親の作業領域を壊さずに成果物だけを返すことです。既存の固定版Yosys WASIと配布用share tarをSHA-256で照合してから起動します。元のYosysのコマンドを実行し、合成や証明アルゴリズムは変更しません。現段階はYosys子worker単体の予備検査であり、SBY本体への接続、正式反復、画面上での確認ではありません。
+
+元のWASI preopenで`.`を作業ディレクトリーへ割り当てるだけでは、そのcapability rootから隣の`../src/top.v`を読めず、Yosysは終了コード1でした。専用の`workingDirectory`で`.`を追加し、許可される親を`/`のpreopen内に限定したところ、隣のファイルを読み、JSONを出力して終了コード0になりました。別のrootと親参照の循環は拒否します。`tests/synth/wasi-p1.test.mjs`には失敗する元の構成も負の対照として残しています。
+
+子workerは`yosys -ql design*.log design*.ys`だけを受け、作業ディレクトリーと入力のpath・件数・合計サイズを検査します。元の作業領域のsnapshotと子の結果との差から変更、追加、削除だけを抽出し、変更前と変更後のSHA-256を付けます。適用前にframe長、path、hash、現在の親ファイルとspawn時snapshotの衝突を確認し、すべて通ったときに更新後のファイル一覧を返します。親が独自に書いたlogは差分にない限り保持します。破損したbinary、shell構文、作業領域外のpath、競合、欠落・余剰byte、改変されたpayloadを負の対照で拒否しました。差分の親Pyodideへの反映は未接続です。
+
+再実行には製品用の`build/synth/yosys.wasm`、`build/synth/yosys-share.tar`とmanifestが必要です。Node単体は作業領域の差分だけを検査し、実WASI試験は固定版のbuild資材を使います。計測値やnativeとの一致は、この予備試行から主張しません。
+
+```sh
+node --test tests/web/formal-workspace.test.mjs
+node --test tests/synth/wasi-p1.test.mjs tests/synth/formal-wasi.test.mjs
+```
+
+初回はpreopenの選択順でも解決できず、最初のcwd祖先検査には循環を検出する処理がありませんでした。両方を修正し、負の対照を追加しました。上記の予備試行では単体2件と実WASI13件が成功しましたが、清浄な提出commitでの再検証とSBY全体比較はまだです。通常のYosys解析エラーも終了コード1とlogを返し、輸送の失敗と区別します。

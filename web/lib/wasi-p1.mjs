@@ -146,6 +146,7 @@ export function createWasiP1ImportObject({
   args = [],
   env = {},
   preopens = {},
+  workingDirectory = null,
   stdin = () => new Uint8Array(),
   stdout = () => {},
   stderr = () => {},
@@ -166,6 +167,20 @@ export function createWasiP1ImportObject({
   ];
   stdio.forEach((descriptor, fd) => descriptors.set(fd, descriptor));
 
+  if (workingDirectory !== null) {
+    let parent = workingDirectory;
+    const visited = new Set();
+    while (parent && parent !== preopens["/"] && !visited.has(parent)) {
+      visited.add(parent);
+      parent = parent.parent;
+    }
+    if (!parent || workingDirectory.type !== "directory" || Object.hasOwn(preopens, ".")) {
+      throw new TypeError("Working directory must be within the root preopen");
+    }
+    if (visited.has(parent)) throw new TypeError("Working directory has a cyclic parent");
+    preopens = { ...preopens, ".": workingDirectory };
+  }
+
   for (const [mountPath, directory] of Object.entries(preopens)) {
     if (directory?.type !== "directory") {
       throw new TypeError(`Preopen ${mountPath} must be a memory tree directory`);
@@ -174,7 +189,7 @@ export function createWasiP1ImportObject({
     const descriptor = {
       kind: "directory",
       node: directory,
-      capabilityRoot: directory,
+      capabilityRoot: mountPath === "." && workingDirectory !== null ? preopens["/"] : directory,
       position: 0n,
       flags: 0,
       rights: SUPPORTED_RIGHTS,
