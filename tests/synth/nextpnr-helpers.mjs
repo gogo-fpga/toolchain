@@ -17,12 +17,13 @@ import { WASI } from "node:wasi";
 
 export const root = path.resolve(import.meta.dirname, "../..");
 const wasiBuildRoot = path.resolve(root, process.env.S5_WASI_ROOT ?? "build/wasi");
+const nativeBuildRoot = path.resolve(root, process.env.S5_NATIVE_ROOT ?? "build/native");
 export const yosysWasmPath = path.join(wasiBuildRoot, "yosys/yosys.wasm");
 export const yosysSharePath = path.join(wasiBuildRoot, "yosys/share");
 export const nextpnrWasmPath = path.join(wasiBuildRoot, "nextpnr/nextpnr-himbaechel-gowin.wasm");
-export const nextpnrNativePath = path.join(root, "build/native/nextpnr/nextpnr-himbaechel-gowin");
+export const nextpnrNativePath = path.join(nativeBuildRoot, "nextpnr/nextpnr-himbaechel-gowin");
 export const wasiSharePath = path.join(wasiBuildRoot, "nextpnr/share");
-export const nativeSharePath = path.join(root, "build/native/nextpnr/share");
+export const nativeSharePath = path.join(nativeBuildRoot, "nextpnr/share");
 export const chipdbPath = path.join(wasiSharePath, "himbaechel/gowin");
 export const nativeChipdbPath = path.join(nativeSharePath, "himbaechel/gowin");
 export const wasmModule = new WebAssembly.Module(readFileSync(nextpnrWasmPath));
@@ -73,9 +74,9 @@ export function runWasi(workdir, args, sharePath = wasiSharePath, executable = w
   const started = performance.now();
   let status = 1;
   let error;
+  let instance;
   try {
     const importObject = wasi.getImportObject();
-    let instance;
     if (clockTimeGet) {
       importObject.wasi_snapshot_preview1.clock_time_get = (clockId, precision, timePointer) =>
         clockTimeGet(instance.exports.memory, clockId, precision, timePointer);
@@ -93,6 +94,7 @@ export function runWasi(workdir, args, sharePath = wasiSharePath, executable = w
     stdout: readFileSync(stdoutPath, "utf8"),
     stderr: readFileSync(stderrPath, "utf8"),
     elapsed: performance.now() - started,
+    memoryBytes: instance?.exports.memory instanceof WebAssembly.Memory ? instance.exports.memory.buffer.byteLength : null,
     error,
   };
 }
@@ -111,16 +113,17 @@ export function runNative(workdir, args) {
     stderr: result.stderr ?? "",
     elapsed: performance.now() - started,
     error: result.error,
+    signal: result.signal,
   };
 }
 
-export function runYosysWasi(workdir, source) {
+export function runYosysWasi(workdir, source, command = "read_verilog src/top.v; synth_gowin -top top -json top.json") {
   writeFileSync(path.join(workdir, "src/top.v"), source);
   const stdout = openSync(path.join(workdir, "yosys.stdout"), "w");
   const stderr = openSync(path.join(workdir, "yosys.stderr"), "w");
   const wasi = new WASI({
     version: "preview1",
-    args: ["yosys", "-q", "-p", "read_verilog src/top.v; synth_gowin -top top -json top.json"],
+    args: ["yosys", "-q", "-p", command],
     env: { TMPDIR: "/tmp" },
     preopens: {
       "/": workdir,
@@ -133,8 +136,10 @@ export function runYosysWasi(workdir, source) {
   });
   let status = 1;
   let error;
+  let instance;
   try {
-    status = wasi.start(new WebAssembly.Instance(yosysModule, wasi.getImportObject()));
+    instance = new WebAssembly.Instance(yosysModule, wasi.getImportObject());
+    status = wasi.start(instance);
   } catch (caught) {
     error = caught;
   } finally {
@@ -144,6 +149,7 @@ export function runYosysWasi(workdir, source) {
   const stderrText = readFileSync(path.join(workdir, "yosys.stderr"), "utf8");
   assert.equal(status, 0, `WASI Yosys synthesis failed:\n${stderrText}\n${error ?? ""}`);
   assert.ok(statSync(path.join(workdir, "top.json")).size > 0, "Yosys produced no JSON");
+  return { memoryBytes: instance.exports.memory.buffer.byteLength };
 }
 
 export function pnrArgs(board, cstPath = "constraints/board.cst") {

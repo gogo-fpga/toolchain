@@ -21,7 +21,7 @@ cd "$root"
 # Apicula's chipdb generator iterates hash-ordered sets; pin the seed so chipdb output is reproducible.
 export PYTHONHASHSEED=0
 
-for tool in cmake curl git node python3 sha256sum tar; do
+for tool in cmake curl git node patch python3 sha256sum tar; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     printf 'Required command not found: %s\n' "$tool" >&2
     exit 1
@@ -273,6 +273,8 @@ mkdir -p "$(dirname "$native_build")"
 native_chipdb_root=$(CDPATH='' cd "$(dirname "$native_build")" && pwd)/nextpnr/share
 native_prefix_flags="-I$root/$boost_source -ffile-prefix-map=$root=/src -ffile-prefix-map=$root/$native_build=/build -ffile-prefix-map=$root/$boost_source=/boost -ffile-prefix-map=$root/$eigen_source=/eigen -DNPNR_DISABLE_THREADS"
 cmake -S vendor/nextpnr -B "$native_build" \
+  -DCMAKE_PROJECT_INCLUDE="$root/scripts/nextpnr-patches.cmake" \
+  -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_CXX_FLAGS="$native_prefix_flags" \
   -DCMAKE_DISABLE_FIND_PACKAGE_Threads=ON \
@@ -361,16 +363,13 @@ if [ -n "${WASI_EXTRA_LDFLAGS:-}" ]; then
   linker_flags="$linker_flags $WASI_EXTRA_LDFLAGS"
 fi
 run_cmake() {
-  if [ -n "${WASI_OPT_FLAGS:-}" ]; then
-    cmake "$@" \
-      -DCMAKE_PROJECT_INCLUDE="$root/scripts/s5-wasi-opt-flags.cmake" \
-      -DWASI_OPT_FLAGS="$WASI_OPT_FLAGS"
-  else
-    cmake "$@"
-  fi
+  cmake "$@" \
+    -DCMAKE_PROJECT_INCLUDE="$root/scripts/nextpnr-patches.cmake" \
+    -DWASI_OPT_FLAGS="$WASI_OPT_FLAGS"
 }
 run_cmake -S vendor/nextpnr -B "$wasi_build" \
   -DCMAKE_TOOLCHAIN_FILE="$root/$sdk_dir/share/cmake/wasi-sdk-p1.cmake" \
+  -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_C_FLAGS="$c_flags" \
   -DCMAKE_CXX_FLAGS="$cxx_flags" \

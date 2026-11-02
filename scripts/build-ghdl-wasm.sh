@@ -555,6 +555,7 @@ extra_objects+=("$work_dir/ghdl-wasm-wasi.o")
   -Wl,--export=ghdlwasm_init \
   -Wl,--export=synth_api__synth_set_std \
   -Wl,--export=synth_api__synth_init \
+  -Wl,--export=synth_api__synth_set_library \
   -Wl,--export=synth_api__analyze_file \
   -Wl,--export=synth_api__synth_top \
   -Wl,--whole-archive \

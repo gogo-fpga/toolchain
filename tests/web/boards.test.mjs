@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { BOARDS, getBoard } from "../../web/lib/boards.mjs";
+import { BOARDS, getBoard, gowinSynthesisCommand } from "../../web/lib/boards.mjs";
 
 test("BOARDS contains the supported Tang Nano devices", () => {
   assert.deepEqual(BOARDS, [
@@ -23,6 +23,7 @@ test("BOARDS contains the supported Tang Nano devices", () => {
       nextpnrDevice: "GW1NSR-LV4CQN48PC7/I6",
       packDevice: "GW1NSR-LV4CQN48PC7/I6",
       nextpnrFamily: "GW1NS-4",
+      synthNoLutram: true,
       idcode: 0x0100981b,
       flashBytes: 4 * 1024 * 1024,
       writeTargets: ["SRAM", "内蔵フラッシュ"],
@@ -53,4 +54,15 @@ test("BOARDS contains the supported Tang Nano devices", () => {
   assert.equal(Object.isFrozen(BOARDS), true);
   assert.equal(getBoard("tangnano9k").part, "GW1N(R)-9C");
   assert.equal(getBoard("missing"), null);
+});
+
+test("Gowin synthesis disables distributed RAM for the pinned GW1NS-4 database", () => {
+  for (const board of BOARDS) {
+    assert.equal(gowinSynthesisCommand(board.id, "top", "build/top.json"),
+      `synth_gowin${board.id === "tangnano4k" ? " -nolutram" : ""} -top top -json build/top.json`);
+  }
+  for (const args of [["missing", "top", "top.json"], ["tangnano4k", "top; shell", "top.json"],
+    ["tangnano4k", "top", "../top.json"], ["tangnano4k", "top", "top.json; shell"]]) {
+    assert.throws(() => gowinSynthesisCommand(...args), /Invalid Gowin/);
+  }
 });

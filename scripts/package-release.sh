@@ -95,6 +95,14 @@ if [[ ${CHECK_SURFER_LICENSES_ONLY:-0} == 1 ]]; then
   printf 'Surfer license files: OK\n'
   exit 0
 fi
+library_paths="$(git -C "$root" ls-tree -r --name-only HEAD -- third_party/)"
+if [[ -z "$library_paths" ]]; then
+  printf 'Missing third_party library gitlinks.\n' >&2
+  exit 1
+fi
+mapfile -t library_submodules <<< "$library_paths"
+submodules+=("${library_submodules[@]}")
+
 yosys_nested_submodules=(
   abc
   libs/cxxopts
@@ -137,6 +145,7 @@ required_files=(
   "$root/dist/pack/pyodide/pyodide.asm.wasm.zst"
   "$root/dist/pack/pyodide/pyodide-lock.json.zst"
   "$root/dist/pack/pyodide/python_stdlib.zip"
+  "$root/dist/libraries/catalog.json"
   "$root/dist/_headers"
   "$root/README.md"
   "$root/LICENSE"
@@ -271,6 +280,7 @@ find "$web_root" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
 )
 
 git -C "$root" archive --format=tar HEAD | tar -xf - -C "$source_root"
+cp "$root/dist/libraries/catalog.json" "$source_root/libraries/source-manifest.json"
 submodule_lines="$(git -C "$root" ls-tree HEAD -- "${submodules[@]}")"
 declare -A submodule_shas=()
 while IFS=$'\t' read -r metadata path; do
@@ -283,7 +293,26 @@ while IFS=$'\t' read -r metadata path; do
   submodule_shas["$path"]="$sha"
   mkdir -p "$source_root/$path"
   git -C "$root/$path" archive --format=tar "$sha" | tar -xf - -C "$source_root/$path"
+  if [[ "$path" == third_party/* ]]; then
+    printf '%s\n' "$sha" > "$source_root/$path/.gitcommit"
+  fi
 done <<< "$submodule_lines"
+python3 - "$root" "$source_root" <<'PY'
+import importlib.util
+import json
+from pathlib import Path
+import sys
+
+root, output = map(Path, sys.argv[1:])
+spec = importlib.util.spec_from_file_location("library_assets", root / "scripts/build-library-assets.py")
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+manifest = json.loads((output / "libraries/source-manifest.json").read_text(encoding="utf-8"))
+module.copy_nested_assets(root, manifest, output)
+PY
+python3 "$source_root/scripts/build-library-assets.py" \
+  --root "$source_root" --output "$work/library-rebuild"
+cmp "$root/dist/libraries/catalog.json" "$work/library-rebuild/catalog.json"
 for path in "${submodules[@]}"; do
   if [[ -z "${submodule_shas[$path]:-}" ]]; then
     printf 'Missing submodule gitlink: %s\n' "$path" >&2
@@ -522,7 +551,7 @@ for path in submodules:
             text=True,
         )
         pinned_version = tag.stdout.strip() if tag.returncode == 0 else "commit-pinned"
-    rows.append(f"| {labels[path]} | {pinned_version} | `{sha}` |")
+    rows.append(f"| {labels.get(path, path.removeprefix('third_party/'))} | {pinned_version} | `{sha}` |")
 
 text = [
     f"# 午後のFPGA Web Toolchain {version}",
@@ -532,7 +561,7 @@ text = [
     f"- `openFPGALoader.wasm` SHA-256: `{build_info['artifacts']['openFPGALoader.wasm']}`",
     f"- `openFPGALoader.mjs` SHA-256: `{build_info['artifacts']['openFPGALoader.mjs']}`",
     "",
-    "## vendor の固定版",
+    "## 外部依存の固定版",
     "",
     "| 部品 | version / tag | commit |",
     "|---|---|---|",

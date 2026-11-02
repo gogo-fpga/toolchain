@@ -80,6 +80,8 @@ export function createBuildRunner({
           top: input.top,
           vhdlStandard: input.vhdlStandard,
           files: input.files,
+          includeDirectories: input.includeDirectories,
+          defines: input.defines,
         },
         callbacks,
         operation,

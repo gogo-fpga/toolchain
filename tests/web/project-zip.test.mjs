@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { strToU8, zipSync } from "fflate";
 import { createBlinkTemplate } from "../../web/lib/templates.mjs";
+import { createLibraryProject } from "./library-fixture.mjs";
 import {
   exportProjectZip,
   importProjectZip,
@@ -35,8 +36,8 @@ function manifestEntries(project, fileEntries = {}) {
   };
 }
 
-function expectJapaneseFailure(bytes, expectedPattern) {
-  assert.throws(
+async function expectJapaneseFailure(bytes, expectedPattern) {
+  await assert.rejects(
     () => importProjectZip(bytes),
     (error) => {
       assert.match(error.message, expectedPattern);
@@ -91,9 +92,9 @@ function setCentralDirectorySize(bytes, name, uncompressedSize) {
   throw new Error("中央ディレクトリーの項目が見つかりません。");
 }
 
-test("project ZIP preserves text and binary file bytes", () => {
+test("project ZIP preserves text and binary file bytes", async () => {
   const { project, files } = makeProject();
-  const imported = importProjectZip(exportProjectZip(project, files));
+  const imported = await importProjectZip(await exportProjectZip(project, files));
 
   assert.deepEqual(imported.project, project);
   for (const [path, content] of files) {
@@ -102,28 +103,28 @@ test("project ZIP preserves text and binary file bytes", () => {
   }
 });
 
-test("project ZIP preserves the selected VHDL standard", () => {
+test("project ZIP preserves the selected VHDL standard", async () => {
   const { project, files } = makeProject();
   project.vhdlStandard = "2019";
-  const imported = importProjectZip(exportProjectZip(project, files));
+  const imported = await importProjectZip(await exportProjectZip(project, files));
   assert.equal(imported.project.vhdlStandard, "2019");
 });
 
-test("project ZIP round-trips simulation settings", () => {
+test("project ZIP round-trips simulation settings", async () => {
   const { project, files } = makeProject();
   project.simulation = {
     top: "custom_tb",
     files: ["src/top.v"],
     timeLimitSeconds: 35,
   };
-  const imported = importProjectZip(exportProjectZip(project, files));
+  const imported = await importProjectZip(await exportProjectZip(project, files));
   assert.deepEqual(imported.project.simulation, project.simulation);
 });
 
-test("legacy project ZIPs default the VHDL standard to 2008", () => {
+test("legacy project ZIPs default the VHDL standard to 2008", async () => {
   const template = createBlinkTemplate("tangnano9k", "verilog");
   delete template.project.vhdlStandard;
-  const imported = importProjectZip(
+  const imported = await importProjectZip(
     makeZip(manifestEntries(
       template.project,
       Object.fromEntries(
@@ -134,11 +135,12 @@ test("legacy project ZIPs default the VHDL standard to 2008", () => {
   assert.equal(imported.project.vhdlStandard, "2008");
 });
 
-test("legacy project ZIPs migrate to default simulation settings", () => {
+test("legacy project ZIPs migrate to default simulation settings", async () => {
   const template = createBlinkTemplate("tangnano9k", "verilog");
   template.project.version = 1;
   delete template.project.simulation;
-  const imported = importProjectZip(
+  delete template.project.libraries;
+  const imported = await importProjectZip(
     makeZip(manifestEntries(
       template.project,
       Object.fromEntries(
@@ -146,7 +148,8 @@ test("legacy project ZIPs migrate to default simulation settings", () => {
       ),
     )),
   );
-  assert.equal(imported.project.version, 2);
+  assert.equal(imported.project.version, 3);
+  assert.deepEqual(imported.project.libraries, []);
   assert.deepEqual(imported.project.simulation, {
     top: "top_tb",
     files: null,
@@ -154,16 +157,16 @@ test("legacy project ZIPs migrate to default simulation settings", () => {
   });
 });
 
-test("project ZIP export rejects a file map that differs from the manifest", () => {
+test("project ZIP export rejects a file map that differs from the manifest", async () => {
   const { project, files } = makeProject();
   files.delete("src/top.v");
-  assert.throws(
+  await assert.rejects(
     () => exportProjectZip(project, files),
     /プロジェクトの一覧とファイルの内容が一致しません/,
   );
 });
 
-test("project ZIP export rejects archives outside the supported limits", () => {
+test("project ZIP export rejects archives outside the supported limits", async () => {
   const oversizedProject = makeProject();
   for (
     let index = 0;
@@ -174,7 +177,7 @@ test("project ZIP export rejects archives outside the supported limits", () => {
     oversizedProject.project.files.push({ path });
     oversizedProject.files.set(path, "");
   }
-  assert.throws(
+  await assert.rejects(
     () => exportProjectZip(oversizedProject.project, oversizedProject.files),
     /項目数は 256 件以内/,
   );
@@ -182,91 +185,91 @@ test("project ZIP export rejects archives outside the supported limits", () => {
   const oversizedFile = makeProject();
   oversizedFile.project.files.push({ path: "large.v" });
   oversizedFile.files.set("large.v", new Uint8Array(MAX_UNCOMPRESSED_BYTES));
-  assert.throws(
+  await assert.rejects(
     () => exportProjectZip(oversizedFile.project, oversizedFile.files),
     /合計サイズは 16 MiB 以内/,
   );
 });
 
-test("project ZIP import rejects a missing project.json", () => {
-  expectJapaneseFailure(makeZip({ "src/top.v": "module top; endmodule" }), /project\.json/);
+test("project ZIP import rejects a missing project.json", async () => {
+  await expectJapaneseFailure(makeZip({ "src/top.v": "module top; endmodule" }), /project\.json/);
 });
 
-test("project ZIP import rejects malformed project.json", () => {
-  expectJapaneseFailure(makeZip({ "project.json": "{" }), /project\.json/);
+test("project ZIP import rejects malformed project.json", async () => {
+  await expectJapaneseFailure(makeZip({ "project.json": "{" }), /project\.json/);
 });
 
-test("project ZIP import rejects an invalid project schema", () => {
+test("project ZIP import rejects an invalid project schema", async () => {
   const { project } = makeProject();
   project.version = 99;
-  expectJapaneseFailure(makeZip(manifestEntries(project)), /project\.json/);
+  await expectJapaneseFailure(makeZip(manifestEntries(project)), /project\.json/);
 });
 
-test("project ZIP import rejects an invalid file path", () => {
+test("project ZIP import rejects an invalid file path", async () => {
   const { project, files } = makeProject();
   const entries = manifestEntries(
     project,
     Object.fromEntries([...files].map(([path, value]) => [path, value])),
   );
   entries["bad-path"] = strToU8("invalid");
-  expectJapaneseFailure(makeZip(entries), /パスが不正/);
+  await expectJapaneseFailure(makeZip(entries), /パスが不正/);
 });
 
-test("project ZIP import rejects unmanifested entries", () => {
+test("project ZIP import rejects unmanifested entries", async () => {
   const { project, files } = makeProject();
   const entries = manifestEntries(
     project,
     Object.fromEntries([...files].map(([path, value]) => [path, value])),
   );
   entries["src/extra.v"] = strToU8("module extra; endmodule");
-  expectJapaneseFailure(makeZip(entries), /プロジェクトにないファイル/);
+  await expectJapaneseFailure(makeZip(entries), /プロジェクトにないファイル/);
 });
 
-test("project ZIP import rejects manifest files that are missing", () => {
+test("project ZIP import rejects manifest files that are missing", async () => {
   const { project } = makeProject();
-  expectJapaneseFailure(makeZip(manifestEntries(project)), /必要なファイルがありません/);
+  await expectJapaneseFailure(makeZip(manifestEntries(project)), /必要なファイルがありません/);
 });
 
-test("project ZIP import rejects duplicate entries", () => {
+test("project ZIP import rejects duplicate entries", async () => {
   const duplicateZip = makeZip({
     "project.json": "{}",
     "duplicate/a.v": "module a;",
     "duplicate/b.v": "module b;",
   });
-  expectJapaneseFailure(
+  await expectJapaneseFailure(
     renameCentralDirectoryEntry(duplicateZip, "duplicate/b.v", "duplicate/a.v"),
     /同じ項目が複数/,
   );
 });
 
-test("project ZIP import rejects traversal paths", () => {
+test("project ZIP import rejects traversal paths", async () => {
   const { project, files } = makeProject();
   const entries = manifestEntries(
     project,
     Object.fromEntries([...files].map(([path, value]) => [path, value])),
   );
   entries["../escape.v"] = strToU8("module escape; endmodule");
-  expectJapaneseFailure(makeZip(entries), /パスが不正/);
+  await expectJapaneseFailure(makeZip(entries), /パスが不正/);
 });
 
-test("project ZIP import rejects more than 256 entries", () => {
+test("project ZIP import rejects more than 256 entries", async () => {
   const entries = Object.create(null);
   entries["project.json"] = strToU8("{}");
   for (let index = 0; index < 256; index += 1) {
     entries[`extra/file-${index}.v`] = strToU8("");
   }
-  expectJapaneseFailure(zipSync(entries), /項目数は 256 件以内/);
+  await expectJapaneseFailure(zipSync(entries), /項目数は 256 件以内/);
 });
 
-test("project ZIP import rejects declared uncompressed size over 16 MiB", () => {
+test("project ZIP import rejects declared uncompressed size over 16 MiB", async () => {
   const { project } = makeProject();
   project.files.push({ path: "large.v" });
   const bytes = new Uint8Array(MAX_UNCOMPRESSED_BYTES + 1);
   const zip = makeZip({ ...manifestEntries(project), "large.v": bytes });
-  expectJapaneseFailure(zip, /合計サイズは 16 MiB 以内/);
+  await expectJapaneseFailure(zip, /合計サイズは 16 MiB 以内/);
 });
 
-test("project ZIP import rejects actual uncompressed size over 16 MiB", () => {
+test("project ZIP import rejects actual uncompressed size over 16 MiB", async () => {
   const { project } = makeProject();
   project.files.push({ path: "large.v" });
   const bytes = new Uint8Array(MAX_UNCOMPRESSED_BYTES + 1);
@@ -274,5 +277,35 @@ test("project ZIP import rejects actual uncompressed size over 16 MiB", () => {
   entries["large.v"] = bytes;
   const zip = zipSync(entries, { level: 0 });
   const forgedSize = setCentralDirectorySize(zip, "large.v", 1);
-  expectJapaneseFailure(forgedSize, /合計サイズ|展開/);
+  await expectJapaneseFailure(forgedSize, /合計サイズ|展開/);
+});
+
+test("portable ZIP preserves the dependency closure, original licenses, fixed revision and lock hashes", async () => {
+  const { project, files } = await createLibraryProject();
+  const imported = await importProjectZip(await exportProjectZip(project, files));
+  assert.deepEqual(imported.project, project);
+  for (const [path, content] of files) {
+    assert.deepEqual(imported.files.get(path), typeof content === "string" ? strToU8(content) : content, path);
+  }
+});
+
+test("portable ZIP import and export reject corrupted or unregistered dependencies", async () => {
+  const { project, files } = await createLibraryProject();
+  const path = "libraries/dependency/sources/rtl/unit.v";
+  const entries = manifestEntries(project, Object.fromEntries(files));
+  entries[path] = "module tampered; endmodule";
+  await expectJapaneseFailure(makeZip(entries), /ハッシュ/);
+  files.set(path, entries[path]);
+  await assert.rejects(exportProjectZip(project, files), /ハッシュ/);
+});
+
+test("version 2 ZIPs gain an empty library selection without changing simulation settings", async () => {
+  const { project, files } = makeProject();
+  project.version = 2;
+  delete project.libraries;
+  project.simulation.timeLimitSeconds = 25;
+  const imported = await importProjectZip(makeZip(manifestEntries(project, Object.fromEntries(files))));
+  assert.equal(imported.project.version, 3);
+  assert.deepEqual(imported.project.libraries, []);
+  assert.equal(imported.project.simulation.timeLimitSeconds, 25);
 });

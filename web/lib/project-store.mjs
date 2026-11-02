@@ -1,51 +1,10 @@
 import {
+  createProjectSnapshot,
   migrateProject,
-  validatePath,
   validateProject,
   validateProjectName,
 } from "./project.mjs";
-
-function cloneContent(content) {
-  return typeof content === "string" ? content : new Uint8Array(content);
-}
-
-function cloneFiles(files) {
-  return new Map(
-    [...files.entries()].map(([path, content]) => [path, cloneContent(content)]),
-  );
-}
-
-function validateStoreInput(project, files) {
-  const validation = validateProject(project);
-  if (!validation.ok) {
-    throw new Error(`プロジェクトが不正です: ${validation.errors.join(" ")}`);
-  }
-  if (!(files instanceof Map)) {
-    throw new Error("プロジェクトのファイルは Map で指定してください。");
-  }
-
-  const declaredPaths = new Set(project.files.map((file) => file.path));
-  if (
-    declaredPaths.size !== files.size ||
-    [...files.keys()].some((path) => !declaredPaths.has(path))
-  ) {
-    throw new Error("プロジェクトの一覧とファイルの内容が一致しません。");
-  }
-
-  for (const [path, content] of files) {
-    if (!validatePath(path).ok) {
-      throw new Error(`ファイルのパスが不正です: ${path}`);
-    }
-    if (typeof content !== "string" && !(content instanceof Uint8Array)) {
-      throw new Error(`ファイルの内容を保存できません: ${path}`);
-    }
-  }
-
-  return {
-    projectJson: JSON.stringify(project),
-    files: cloneFiles(files),
-  };
-}
+import { exportProjectZip, importProjectZip } from "./project-zip.mjs";
 
 function parseProjectJson(projectJson, name) {
   let project;
@@ -89,19 +48,13 @@ export function createMemoryStore({ records = new Map() } = {}) {
         throw new Error(`プロジェクトが見つかりません: ${name}`);
       }
       const project = parseProjectJson(record.projectJson, name);
-      const files = new Map();
-      for (const { path } of project.files) {
-        if (!(record.files instanceof Map) || !record.files.has(path)) {
-          throw new Error(`プロジェクトのファイルが見つかりません: ${path}`);
-        }
-        files.set(path, cloneContent(record.files.get(path)));
-      }
-      return { project, files };
+      const snapshot = await createProjectSnapshot(project, record.files);
+      return { project: snapshot.project, files: snapshot.files };
     },
 
     async save(project, files) {
-      const record = validateStoreInput(project, files);
-      records.set(project.name, record);
+      const record = await createProjectSnapshot(project, files);
+      records.set(record.project.name, { projectJson: record.projectJson, files: record.files });
     },
 
     async remove(name) {
@@ -128,18 +81,6 @@ async function getFileDirectory(projectDirectory, path, create) {
   return { directory, fileName: segments.at(-1) };
 }
 
-async function writeOpfsFile(projectDirectory, path, content) {
-  const { directory, fileName } = await getFileDirectory(
-    projectDirectory,
-    path,
-    true,
-  );
-  const handle = await directory.getFileHandle(fileName, { create: true });
-  const writable = await handle.createWritable();
-  await writable.write(content);
-  await writable.close();
-}
-
 async function readOpfsFile(projectDirectory, path) {
   const { directory, fileName } = await getFileDirectory(
     projectDirectory,
@@ -148,24 +89,6 @@ async function readOpfsFile(projectDirectory, path) {
   );
   const handle = await directory.getFileHandle(fileName);
   return new Uint8Array(await (await handle.getFile()).arrayBuffer());
-}
-
-async function removeUnusedEntries(directory, prefix, keptPaths) {
-  for await (const [name, handle] of directory.entries()) {
-    const path = prefix ? `${prefix}/${name}` : name;
-    if (handle.kind === "directory") {
-      const hasKeptFile = [...keptPaths].some((kept) =>
-        kept.startsWith(`${path}/`),
-      );
-      if (hasKeptFile) {
-        await removeUnusedEntries(handle, path, keptPaths);
-      } else {
-        await directory.removeEntry(name, { recursive: true });
-      }
-    } else if (!keptPaths.has(path)) {
-      await directory.removeEntry(name);
-    }
-  }
 }
 
 export function createOpfsStore(storage) {
@@ -182,7 +105,17 @@ export function createOpfsStore(storage) {
       const names = [];
       for await (const [name, handle] of projects.entries()) {
         if (handle.kind === "directory" && validateProjectName(name).ok) {
-          names.push(name);
+          for (const manifest of ["workspace.zip", "project.json"]) {
+            try {
+              const file = await (await handle.getFileHandle(manifest)).getFile();
+              if (file.size > 0) {
+                names.push(name);
+                break;
+              }
+            } catch (error) {
+              if (error?.name !== "NotFoundError") throw error;
+            }
+          }
         }
       }
       return names.sort();
@@ -193,6 +126,17 @@ export function createOpfsStore(storage) {
       try {
         const projects = await getProjectsDirectory(storage, false);
         const projectDirectory = await projects.getDirectoryHandle(name);
+        let archive;
+        try { archive = await projectDirectory.getFileHandle("workspace.zip"); }
+        catch (error) { if (error?.name !== "NotFoundError") throw error; }
+        if (archive) {
+          const file = await archive.getFile();
+          if (file.size > 0) {
+            const loaded = await importProjectZip(new Uint8Array(await file.arrayBuffer()));
+            if (loaded.project.name !== name) throw new Error("プロジェクト名が一致しません。");
+            return loaded;
+          }
+        }
         const manifest = await projectDirectory.getFileHandle("project.json");
         const project = parseProjectJson(
           await (await manifest.getFile()).text(),
@@ -202,7 +146,8 @@ export function createOpfsStore(storage) {
         for (const { path } of project.files) {
           files.set(path, await readOpfsFile(projectDirectory, path));
         }
-        return { project, files };
+        const snapshot = await createProjectSnapshot(project, files);
+        return { project: snapshot.project, files: snapshot.files };
       } catch (error) {
         if (error instanceof Error && error.message.startsWith("project.json")) {
           throw error;
@@ -212,28 +157,31 @@ export function createOpfsStore(storage) {
     },
 
     async save(project, files) {
-      const record = validateStoreInput(project, files);
+      const name = project?.name;
+      const archive = await exportProjectZip(project, files, { compressionLevel: 0 });
       try {
         const projects = await getProjectsDirectory(storage, true);
-        const projectDirectory = await projects.getDirectoryHandle(project.name, {
+        const projectDirectory = await projects.getDirectoryHandle(name, {
           create: true,
         });
-        for (const [path, content] of record.files) {
-          await writeOpfsFile(projectDirectory, path, content);
+        const handle = await projectDirectory.getFileHandle("workspace.zip", {
+          create: true,
+        });
+        const writable = await handle.createWritable();
+        try {
+          await writable.write(archive);
+          await writable.close();
+        } catch (error) {
+          await writable.abort().catch(() => {});
+          throw error;
         }
-        const keptPaths = new Set([
-          "project.json",
-          ...project.files.map((file) => file.path),
-        ]);
-        await removeUnusedEntries(projectDirectory, "", keptPaths);
-        const manifest = await projectDirectory.getFileHandle("project.json", {
-          create: true,
-        });
-        const writable = await manifest.createWritable();
-        await writable.write(record.projectJson);
-        await writable.close();
+        for await (const [path, entry] of projectDirectory.entries()) {
+          if (path !== "workspace.zip") {
+            await projectDirectory.removeEntry(path, { recursive: entry.kind === "directory" });
+          }
+        }
       } catch (error) {
-        throw new Error(`プロジェクトを保存できません: ${project.name}`, {
+        throw new Error(`プロジェクトを保存できません: ${name}`, {
           cause: error,
         });
       }

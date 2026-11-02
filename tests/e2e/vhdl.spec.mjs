@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { BOARDS } from "../../web/lib/boards.mjs";
+import { storedFile } from "./project-storage-helpers.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
 const screenshots = resolve(root, "build/T3-2/screenshots");
@@ -62,18 +63,6 @@ async function buildProject(page) {
     await page.locator("#bottom-tab-log").click();
     throw new Error(`Browser synthesis failed:\n${await page.locator("#program-log").innerText()}`);
   }
-}
-
-async function storedFile(page, projectName, path) {
-  const parts = path.split("/");
-  return page.evaluate(async ({ name, parts: fileParts }) => {
-    let directory = await navigator.storage.getDirectory();
-    for (const part of ["projects", name, ...fileParts.slice(0, -1)]) {
-      directory = await directory.getDirectoryHandle(part);
-    }
-    const file = await directory.getFileHandle(fileParts.at(-1));
-    return new Uint8Array(await (await file.getFile()).arrayBuffer());
-  }, { name: projectName, parts });
 }
 
 async function assertFsMatches(page, projectName, expectedName) {

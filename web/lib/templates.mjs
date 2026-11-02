@@ -155,6 +155,7 @@ export function createBlinkTemplate(boardId, language) {
     top: "top",
     vhdlStandard: "2008",
     simulation: defaultSimulationSettings(),
+    libraries: [],
     files: [
       { path: sourcePath },
       ...(language === "verilog" ? [{ path: testbenchPath }] : []),

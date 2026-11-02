@@ -50,3 +50,113 @@
 	path = vendor/surfer
 	url = https://gitlab.com/surfer-project/surfer.git
 	shallow = true
+[submodule "third_party/colibri"]
+	path = third_party/colibri
+	url = https://gitlab.cern.ch/colibri/colibri.git
+	shallow = true
+	branch = master
+[submodule "third_party/open-logic"]
+	path = third_party/open-logic
+	url = https://github.com/open-logic/open-logic.git
+	shallow = true
+	branch = main
+[submodule "third_party/hdl-modules"]
+	path = third_party/hdl-modules
+	url = https://github.com/hdl-modules/hdl-modules.git
+	shallow = true
+	branch = main
+[submodule "third_party/verilog-axis"]
+	path = third_party/verilog-axis
+	url = https://github.com/alexforencich/verilog-axis.git
+	shallow = true
+	branch = master
+[submodule "third_party/verilog-uart"]
+	path = third_party/verilog-uart
+	url = https://github.com/alexforencich/verilog-uart.git
+	shallow = true
+	branch = master
+[submodule "third_party/libfpga"]
+	path = third_party/libfpga
+	url = https://github.com/libfpga/libfpga.git
+	shallow = true
+	branch = main
+[submodule "third_party/serv"]
+	path = third_party/serv
+	url = https://github.com/olofk/serv.git
+	shallow = true
+	branch = main
+[submodule "third_party/picorv32"]
+	path = third_party/picorv32
+	url = https://github.com/YosysHQ/picorv32.git
+	shallow = true
+	branch = main
+[submodule "third_party/neorv32"]
+	path = third_party/neorv32
+	url = https://github.com/stnolting/neorv32.git
+	shallow = true
+	branch = main
+[submodule "third_party/hazard3"]
+	path = third_party/hazard3
+	url = https://github.com/Wren6991/Hazard3.git
+	shallow = true
+	branch = stable
+[submodule "third_party/vexriscv"]
+	path = third_party/vexriscv
+	url = https://github.com/litex-hub/pythondata-cpu-vexriscv.git
+	shallow = true
+	branch = master
+[submodule "third_party/ibex"]
+	path = third_party/ibex
+	url = https://github.com/lowRISC/ibex.git
+	shallow = true
+	branch = master
+[submodule "third_party/cv32e40p"]
+	path = third_party/cv32e40p
+	url = https://github.com/openhwfoundation/cv32e40p.git
+	shallow = true
+	branch = master
+[submodule "third_party/vexiiriscv"]
+	path = third_party/vexiiriscv
+	url = https://github.com/SpinalHDL/VexiiRiscv.git
+	shallow = true
+	branch = dev
+[submodule "third_party/darkriscv"]
+	path = third_party/darkriscv
+	url = https://github.com/darklife/darkriscv.git
+	shallow = true
+	branch = master
+[submodule "third_party/femtorv"]
+	path = third_party/femtorv
+	url = https://github.com/BrunoLevy/learn-fpga.git
+	shallow = true
+	branch = master
+[submodule "third_party/osvvm"]
+	path = third_party/osvvm
+	url = https://github.com/OSVVM/OSVVM.git
+	shallow = true
+	branch = main
+[submodule "third_party/uvvm"]
+	path = third_party/uvvm
+	url = https://github.com/UVVM/UVVM.git
+	shallow = true
+	branch = master
+[submodule "third_party/vunit"]
+	path = third_party/vunit
+	url = https://github.com/VUnit/vunit.git
+	shallow = true
+	branch = master
+[submodule "third_party/verilog-axi"]
+	path = third_party/verilog-axi
+	url = https://github.com/alexforencich/verilog-axi.git
+	shallow = true
+	branch = master
+[submodule "third_party/verilog-ethernet"]
+	path = third_party/verilog-ethernet
+	url = https://github.com/alexforencich/verilog-ethernet.git
+	shallow = true
+	branch = master
+[submodule "third_party/taxi"]
+	path = third_party/taxi
+	url = https://github.com/fpganinja/taxi.git
+	shallow = true
+	branch = master

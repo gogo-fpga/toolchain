@@ -1,4 +1,5 @@
 import { runIverilog } from "./lib/iverilog-host.mjs";
+import { validateCompileOptions } from "./lib/libraries.mjs";
 
 const moduleNames = ["ivlpp", "ivl", "vvp"];
 const moduleCache = new Map();
@@ -40,11 +41,12 @@ self.addEventListener("message", async ({ data }) => {
       throw new Error("The simulation has no Verilog files");
     }
     const sourceFiles = data.files
-      .filter(({ path }) => /\.v$/i.test(path))
+      .filter(({ path, role }) => role !== "data" && /\.v$/i.test(path))
       .map(({ path }) => path);
     if (sourceFiles.length === 0) {
       throw new Error("The simulation has no Verilog source files");
     }
+    const options = validateCompileOptions(data);
     const modules = Object.fromEntries(
       await Promise.all(moduleNames.map(async (name) => [name, await loadModule(name)])),
     );
@@ -54,7 +56,8 @@ self.addEventListener("message", async ({ data }) => {
       files: data.files,
       sourceFiles,
       top: data.top,
-      includeDirs: [...new Set(data.files.map(({ path }) => directoryOf(path)).filter(Boolean))],
+      includeDirs: [...new Set([...options.includeDirectories, ...data.files.map(({ path }) => directoryOf(path)).filter(Boolean)])],
+      defines: options.defines,
     });
     const diagnosticText = Object.entries(result.stages).map(([tool, stage]) => ({
       tool,

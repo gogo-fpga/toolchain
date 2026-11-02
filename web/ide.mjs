@@ -1,6 +1,7 @@
 import { createOpfsStore } from "./lib/project-store.mjs";
 import {
   findConstraintBoardMismatch,
+  prepareProjectInputs,
   validatePath,
   validateProjectName,
 } from "./lib/project.mjs";
@@ -13,8 +14,14 @@ import { createHdlEditor, languageForPath } from "./editor/editor.bundle.mjs";
 import { createBuildRunner } from "./lib/build-runner.mjs";
 import { parseToolDiagnostics } from "./lib/tool-diagnostics.mjs";
 import { createSimRunner, vcdRootScopes } from "./lib/sim-runner.mjs";
+import { isLibraryPath } from "./lib/libraries.mjs";
+import { createLibrarySelector } from "./lib/library-selector.mjs";
 
 const UI_STATE_PREFIX = "toolchain.ide.";
+
+function isBinaryPath(path) {
+  return typeof path === "string" && /\.(?:fs|bin)$/.test(path);
+}
 
 function decodeContent(content) {
   return typeof content === "string"
@@ -42,7 +49,7 @@ function templateForPath(path) {
     ].join("\n");
   }
   if (path.endsWith(".cst")) return "// ピン割り当ては未設定です。\n";
-  return path.endsWith(".fs") ? new Uint8Array() : "";
+  return isBinaryPath(path) ? new Uint8Array() : "";
 }
 
 function readUiState(name, project) {
@@ -51,7 +58,7 @@ function readUiState(name, project) {
       localStorage.getItem(`${UI_STATE_PREFIX}${name}`) ?? "null",
     );
     const filePaths = new Set(
-      project.files.filter(({ path }) => !path.endsWith(".fs")).map(({ path }) => path),
+      project.files.filter(({ path }) => !isBinaryPath(path)).map(({ path }) => path),
     );
     const openTabs = Array.isArray(saved?.openTabs)
       ? [...new Set(saved.openTabs.filter((path) => filePaths.has(path)))]
@@ -74,6 +81,7 @@ export function initializeIde({
   onBuildStateChange = () => {},
   onSimulationStateChange = () => {},
   canStartSimulation = () => true,
+  canChangeLibraries = () => true,
 }) {
   const store = createOpfsStore(navigator.storage);
   const projectName = document.querySelector("#project-name");
@@ -169,6 +177,64 @@ export function initializeIde({
   let availableVcds = [];
   let waveformVersion = 0;
   let simulationVersion = 0;
+  let buildVersion = 0;
+  let libraryBusy = false;
+
+  function setWorkspaceBusy(busy) {
+    libraryBusy = busy;
+    for (const control of [
+      newProjectButton, newProjectCreateButton, projectSelect,
+      importProjectButton, projectZipInput, exportProjectButton,
+      boardSelect, addFileButton, filePathSaveButton, vhdlStandardSelect,
+    ]) control.disabled = busy;
+    updateEditor();
+    renderFileList();
+    updateSynthesisControls();
+    onBuildStateChange(busy || buildRunning || simulationRunning);
+  }
+
+  async function withWorkspaceChange(action) {
+    if (libraryBusy || !project) return;
+    setWorkspaceBusy(true);
+    void librarySelector.refresh(false);
+    try {
+      return await action();
+    } finally {
+      setWorkspaceBusy(false);
+      void librarySelector.refresh(false);
+    }
+  }
+
+  const librarySelector = createLibrarySelector(document.querySelector("#library-selector"), {
+    getWorkspace: () => ({ project, files: fileContents }),
+    getBoard: () => boardSelect.value,
+    canChange: () => !libraryBusy && canChangeLibraries(),
+    beforeChange: () => {
+      buildVersion += 1;
+      simulationVersion += 1;
+      buildRunner.cancel();
+      simRunner.stop();
+      buildRunning = false;
+      simulationRunning = false;
+      onSimulationStateChange(false);
+      onBuildStateChange(libraryBusy);
+      clearWaveforms();
+      synthesisStage.textContent = "処理を停止し、構成の変更を準備しています。";
+      simulationStatus.textContent = "";
+      simulationStatus.dataset.outcome = "";
+      updateSynthesisControls();
+    },
+    onChange: async (next, original) => {
+      await flushPendingSave();
+      if (project !== original) throw new Error("プロジェクトが切り替わったため保存を中止しました。");
+      await store.save(next.project, next.files);
+      if (project === original) {
+        activateProject(next);
+        synthesisStage.textContent = "ライブラリーを変更し、ビルド結果を破棄しました。";
+      }
+    },
+    onBusy: setWorkspaceBusy,
+  });
 
   function appendProjectLog(message) {
     const prior = programLog.textContent.trim();
@@ -251,7 +317,7 @@ export function initializeIde({
     const hasVhdl = (project?.files ?? []).some(({ path }) => /\.(?:vhd|vhdl)$/i.test(path));
     const board = BOARDS.find(({ id }) => id === boardSelect.value);
     const supported = (hasVerilog || hasVhdl) && Boolean(board);
-    synthesisButton.disabled = (!supported && !buildRunning) || simulationRunning;
+    synthesisButton.disabled = (!supported && !buildRunning) || simulationRunning || libraryBusy;
     synthesisReason.textContent = supported ? "" : "HDL プロジェクトを開いてください。";
     vhdlStandardControl.hidden = !hasVhdl;
     if (project) {
@@ -295,7 +361,7 @@ export function initializeIde({
     simulationTop.value = project.simulation.top;
     simulationTimeLimit.value = String(project.simulation.timeLimitSeconds);
     simulationFiles.replaceChildren();
-    const candidates = project.files.filter(({ path }) => /\.(?:v|vh)$/i.test(path));
+    const candidates = project.files.filter(({ path }) => !isLibraryPath(path) && /\.(?:v|vh)$/i.test(path));
     for (const { path } of candidates) {
       const label = document.createElement("label");
       label.className = "simulation-file";
@@ -304,7 +370,7 @@ export function initializeIde({
       input.value = path;
       input.checked =
         project.simulation.files === null || project.simulation.files.includes(path);
-      input.disabled = simulationRunning || buildRunning;
+      input.disabled = simulationRunning || buildRunning || libraryBusy;
       input.addEventListener("change", () => {
         project.simulation.files = [
           ...simulationFiles.querySelectorAll("input:checked"),
@@ -332,15 +398,15 @@ export function initializeIde({
       : !hasVerilog
         ? "Verilog ファイルを含むプロジェクトを開いてください。"
         : "";
-    simulationButton.disabled = simulationRunning
+    simulationButton.disabled = libraryBusy || (simulationRunning
       ? false
       : !hasVerilog || !board || buildRunning || !canStartSimulation() ||
         !simulationTop.value.trim() ||
         !Number.isInteger(Number(simulationTimeLimit.value)) ||
         Number(simulationTimeLimit.value) < 1 ||
-        Number(simulationTimeLimit.value) > 120;
-    simulationTop.disabled = simulationRunning || buildRunning;
-    simulationTimeLimit.disabled = simulationRunning || buildRunning;
+        Number(simulationTimeLimit.value) > 120);
+    simulationTop.disabled = simulationRunning || buildRunning || libraryBusy;
+    simulationTimeLimit.disabled = simulationRunning || buildRunning || libraryBusy;
     renderSimulationSettings();
   }
 
@@ -459,6 +525,7 @@ export function initializeIde({
   }
 
   async function runProjectSimulation() {
+    if (libraryBusy) return;
     if (simulationRunning) {
       simRunner.stop();
       return;
@@ -470,17 +537,6 @@ export function initializeIde({
     const simulationProject = project;
     await flushPendingSave();
     if (project !== simulationProject || simulationRunning || buildRunning || !canStartSimulation()) return;
-    const settings = project.simulation;
-    const selected = settings.files === null
-      ? project.files.map(({ path }) => path)
-      : settings.files;
-    const files = project.files
-      .filter(({ path }) => selected.includes(path) && /\.(?:v|vh)$/i.test(path))
-      .map(({ path }) => ({ path, content: fileContents.get(path) }));
-    if (files.length === 0) {
-      simulationStatus.textContent = "シミュレーション対象の Verilog ファイルがありません。";
-      return;
-    }
     const version = ++simulationVersion;
     clearWaveforms();
     simulationRunning = true;
@@ -493,8 +549,13 @@ export function initializeIde({
     if (hasVhdl) appendProjectLog("VHDL ファイルはシミュレーションから除外しました。");
     renderProblems();
     try {
+      const input = await prepareProjectInputs(simulationProject, fileContents, { simulation: true });
+      if (version !== simulationVersion) return;
+      const settings = input.project.simulation;
       const result = await simRunner.run({
-        files,
+        files: input.files,
+        includeDirectories: input.includeDirectories,
+        defines: input.defines,
         top: settings.top,
         timeLimitMs: settings.timeLimitSeconds * 1000,
       });
@@ -529,12 +590,14 @@ export function initializeIde({
   }
 
   async function runProjectBuild() {
+    if (libraryBusy || simulationRunning) return;
     if (buildRunning) {
       buildRunner.cancel();
       return;
     }
     if (!project) return;
-    await flushPendingSave();
+    const buildProject = project;
+    const version = ++buildVersion;
     buildRunning = true;
     onBuildStateChange(true);
     synthesisButton.textContent = "中止";
@@ -544,17 +607,19 @@ export function initializeIde({
     const diagnostics = [];
     const toolText = new Map();
     try {
-      const files = project.files
-        .filter(({ path }) =>
-          !path.startsWith("build/") && !/(?:^|\/)top_tb\.v$/i.test(path)
-        )
-        .map(({ path }) => ({ path, content: fileContents.get(path) }));
+      await flushPendingSave();
+      if (version !== buildVersion || project !== buildProject) return;
+      const input = await prepareProjectInputs(buildProject, fileContents);
+      if (version !== buildVersion || project !== buildProject) return;
+      const files = input.files;
       const result = await buildRunner.build(
         {
-          board: boardSelect.value,
-          top: project.top,
-          vhdlStandard: project.vhdlStandard ?? "2008",
+          board: input.project.board,
+          top: input.project.top,
+          vhdlStandard: input.project.vhdlStandard ?? "2008",
           files,
+          includeDirectories: input.includeDirectories,
+          defines: input.defines,
         },
         {
           onStage: (stage) => {
@@ -581,6 +646,7 @@ export function initializeIde({
           },
         },
       );
+      if (version !== buildVersion || project !== buildProject) return;
       for (const [tool, text] of toolText) {
         diagnostics.push(...parseToolDiagnostics(tool, text));
       }
@@ -612,6 +678,7 @@ export function initializeIde({
         `合成 ${result.timings.synth.toFixed(0)} ms、配置配線 ${result.timings.pnr.toFixed(0)} ms、ビットストリーム ${result.timings.pack.toFixed(0)} ms`,
       );
     } catch (error) {
+      if (version !== buildVersion || project !== buildProject) return;
       if (error.name !== "AbortError") {
         for (const [tool, text] of toolText) {
           diagnostics.push(...parseToolDiagnostics(tool, text));
@@ -655,10 +722,12 @@ export function initializeIde({
         synthesisStage.textContent = "中止しました";
       }
     } finally {
-      buildRunning = false;
-      synthesisButton.textContent = "合成・配置配線";
-      onBuildStateChange(false);
-      updateSynthesisControls();
+      if (version === buildVersion) {
+        buildRunning = false;
+        synthesisButton.textContent = "合成・配置配線";
+        onBuildStateChange(libraryBusy);
+        updateSynthesisControls();
+      }
     }
   }
 
@@ -675,7 +744,7 @@ export function initializeIde({
   }
 
   function renderFsFileInfo() {
-    if (!selectedPath?.endsWith(".fs")) {
+    if (!isBinaryPath(selectedPath)) {
       fsFileInfo.hidden = true;
       fsFileInfo.textContent = "";
       return;
@@ -780,12 +849,12 @@ export function initializeIde({
 
   function projectTexts() {
     return project.files
-      .filter(({ path }) => !path.endsWith(".fs"))
+      .filter(({ path }) => !isBinaryPath(path))
       .map(({ path }) => textForPath(path));
   }
 
   function persistEditorContent(text) {
-    if (!activeTab || !fileContents.has(activeTab)) return;
+    if (libraryBusy || !activeTab || isLibraryPath(activeTab) || !fileContents.has(activeTab)) return;
     fileContents.set(activeTab, text);
     scheduleSave();
   }
@@ -793,6 +862,7 @@ export function initializeIde({
   function updateEditor() {
     if (!editor) return;
     editor.setLanguage(activeTab ? languageForPath(activeTab) : "plain");
+    editor.setReadOnly(libraryBusy || !activeTab || isLibraryPath(activeTab));
     editor.setText(activeTab ? textForPath(activeTab) : "");
     saveUiState();
   }
@@ -863,7 +933,7 @@ export function initializeIde({
       button.setAttribute("aria-label", `${path} を開く`);
       button.setAttribute("aria-pressed", String(path === selectedPath));
       button.addEventListener("click", () => {
-        if (path.endsWith(".fs")) {
+        if (isBinaryPath(path)) {
           selectedPath = path;
           renderFileList();
           return;
@@ -873,7 +943,7 @@ export function initializeIde({
       item.append(button);
       fileList.append(item);
     }
-    const hasSelection = Boolean(selectedPath);
+    const hasSelection = !libraryBusy && Boolean(selectedPath) && !isLibraryPath(selectedPath);
     renameFileButton.disabled = !hasSelection;
     deleteFileButton.disabled = !hasSelection;
     renderFsFileInfo();
@@ -924,6 +994,8 @@ export function initializeIde({
   }
 
   function showFileDialog(mode) {
+    if (libraryBusy) return;
+    if (mode === "rename" && isLibraryPath(selectedPath)) return;
     fileDialogMode = mode;
     const renaming = mode === "rename";
     fileDialogHeading.textContent = renaming ? "ファイル名を変更" : "ファイルを追加";
@@ -937,8 +1009,13 @@ export function initializeIde({
   }
 
   async function submitFileDialog() {
+    if (libraryBusy) return;
     const path = filePathInput.value.trim();
     const validation = validatePath(path);
+    if (isLibraryPath(path) || (fileDialogMode === "rename" && isLibraryPath(selectedPath))) {
+      filePathError.textContent = "ライブラリーの専用領域は直接変更できません。";
+      return;
+    }
     if (!validation.ok) {
       filePathError.textContent = validation.errors[0];
       filePathInput.setAttribute("aria-invalid", "true");
@@ -953,20 +1030,21 @@ export function initializeIde({
       }
       const upload = fileContentInput.files[0];
       let content = templateForPath(path);
-      if (path.endsWith(".fs")) {
-        if (!upload || !upload.name.toLowerCase().endsWith(".fs")) {
-          filePathError.textContent = ".fs ファイルを選んでください。";
+      if (isBinaryPath(path)) {
+        const extension = path.slice(path.lastIndexOf("."));
+        if (!upload || !upload.name.toLowerCase().endsWith(extension)) {
+          filePathError.textContent = `${extension} ファイルを選んでください。`;
           return;
         }
         content = new Uint8Array(await upload.arrayBuffer());
       } else if (upload) {
-        filePathError.textContent = "アップロードできるのは .fs ファイルだけです。";
+        filePathError.textContent = "アップロードできるのは .fs と .bin ファイルだけです。";
         return;
       }
       project.files.push({ path });
       fileContents.set(path, content);
       selectedPath = path;
-      if (!path.endsWith(".fs")) {
+      if (!isBinaryPath(path)) {
         openTabs = [...openTabs, path];
         activeTab = path;
       }
@@ -1006,7 +1084,7 @@ export function initializeIde({
   }
 
   function deleteSelectedFile() {
-    if (!selectedPath) return;
+    if (libraryBusy || !selectedPath || isLibraryPath(selectedPath)) return;
     const path = selectedPath;
     if (!window.confirm(`「${path}」を削除しますか。`)) return;
     project.files = project.files.filter((file) => file.path !== path);
@@ -1042,6 +1120,11 @@ export function initializeIde({
   }
 
   function activateProject(loaded) {
+    buildVersion += 1;
+    buildRunner.cancel();
+    buildRunning = false;
+    onBuildStateChange(libraryBusy);
+    synthesisButton.textContent = "合成・配置配線";
     simulationVersion += 1;
     simRunner.stop();
     simulationRunning = false;
@@ -1058,7 +1141,7 @@ export function initializeIde({
     openTabs = savedState.openTabs;
     activeTab = savedState.activeTab;
     if (!activeTab) {
-      const firstTextFile = project.files.find(({ path }) => !path.endsWith(".fs"));
+      const firstTextFile = project.files.find(({ path }) => !isBinaryPath(path));
       if (firstTextFile) {
         openTabs = [firstTextFile.path];
         activeTab = firstTextFile.path;
@@ -1071,6 +1154,7 @@ export function initializeIde({
       editor = createHdlEditor(editorMount, {
         doc: activeTab ? textForPath(activeTab) : "",
         language: activeTab ? languageForPath(activeTab) : "plain",
+        readOnly: libraryBusy || !activeTab || isLibraryPath(activeTab),
         onChange: persistEditorContent,
         onDiagnostics: renderProblems,
         getProjectTexts: projectTexts,
@@ -1084,6 +1168,7 @@ export function initializeIde({
     void refreshProjectSwitcher();
     boardSelect.dispatchEvent(new Event("change", { bubbles: true }));
     setProjectStatus("保存しました。");
+    void librarySelector.refresh();
   }
 
   async function openProject(name) {
@@ -1142,10 +1227,10 @@ export function initializeIde({
     }
   }
 
-  function exportCurrentProject() {
+  async function exportCurrentProject() {
     if (!project) return;
     try {
-      const bytes = exportProjectZip(project, fileContents);
+      const bytes = await exportProjectZip(project, fileContents);
       const url = URL.createObjectURL(
         new Blob([bytes], { type: "application/zip" }),
       );
@@ -1166,7 +1251,7 @@ export function initializeIde({
     const file = projectZipInput.files[0];
     if (!file) return;
     try {
-      const imported = importProjectZip(
+      const imported = await importProjectZip(
         new Uint8Array(await file.arrayBuffer()),
       );
       const names = await store.listProjects();
@@ -1213,7 +1298,7 @@ export function initializeIde({
   });
   projectSelect.addEventListener("change", () => {
     if (!project || projectSelect.value === project.name) return;
-    void openProject(projectSelect.value).catch((error) => {
+    void withWorkspaceChange(() => openProject(projectSelect.value)).catch((error) => {
       setProjectActionStatus(`プロジェクトを切り替えられません: ${error.message}`);
       void refreshProjectSwitcher();
     });
@@ -1234,13 +1319,19 @@ export function initializeIde({
     scheduleSave();
   });
   newProjectCreateButton.addEventListener("click", () => {
-    void createProject();
+    void withWorkspaceChange(createProject);
   });
   newProjectCancelButton.addEventListener("click", () => newProjectDialog.close());
-  exportProjectButton.addEventListener("click", exportCurrentProject);
+  exportProjectButton.addEventListener("click", () => {
+    void withWorkspaceChange(exportCurrentProject);
+  });
   importProjectButton.addEventListener("click", () => projectZipInput.click());
   projectZipInput.addEventListener("change", () => {
-    void importProjectFile();
+    if (libraryBusy) {
+      projectZipInput.value = "";
+      return;
+    }
+    void withWorkspaceChange(importProjectFile);
   });
   fsSource.addEventListener("change", () => {
     const selected = fsSource.value;
@@ -1262,6 +1353,7 @@ export function initializeIde({
     if (project) project.board = boardSelect.value;
     updateBoardInformation();
     scheduleSave();
+    void librarySelector.refresh();
   });
   form.addEventListener("change", updateBoardInformation);
   tabButtons.forEach((button) => {
