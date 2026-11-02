@@ -1,0 +1,135 @@
+import { attachBytePipe } from "./byte-pipe.mjs";
+import { startSolverProcess } from "./solver-process.mjs";
+import { safePath } from "./verified-assets.mjs";
+
+const FAILURE_STATUSES = new Set(["setup-error", "integrity-error", "runtime-error"]);
+
+export function startFormalPython({ sources, manifest, entrypoint, args, files, solvers,
+  timeoutMs = 30_000, onStdout = () => {}, onStderr = () => {},
+  workerFactory = () => new Worker(new URL("../formal-python-worker.mjs", import.meta.url), { type: "module" }),
+  solverWorkerFactory,
+}) {
+  if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 300_000) throw new RangeError("Invalid formal deadline");
+  if (typeof onStdout !== "function" || typeof onStderr !== "function") throw new TypeError("Invalid formal callbacks");
+  const worker = workerFactory();
+  if (!worker || !["postMessage", "terminate", "addEventListener", "removeEventListener"].every(name => typeof worker[name] === "function")) {
+    worker?.terminate?.();
+    throw new TypeError("Invalid formal worker");
+  }
+  const jobId = crypto.randomUUID();
+  const active = new Map();
+  const identities = new Set();
+  const results = [];
+  const started = performance.now();
+  let terminal = false;
+  let outputBytes = 0;
+  let resolve;
+  const completion = new Promise(done => { resolve = done; });
+  const deadline = setTimeout(() => finish("timeout"), timeoutMs);
+
+  function finish(status, payload = {}) {
+    if (terminal) return;
+    terminal = true;
+    clearTimeout(deadline);
+    const stopping = [];
+    for (const child of active.values()) {
+      try { child.abort(); } catch { status = "transport-error"; }
+      if (child.completion) stopping.push(child.completion);
+    }
+    worker.removeEventListener("message", message);
+    worker.removeEventListener("error", error);
+    worker.removeEventListener("messageerror", decodingError);
+    try { worker.terminate()?.catch?.(() => {}); } catch { status = "transport-error"; }
+    void Promise.allSettled(stopping).then(() => {
+      resolve({ ...payload, status, jobId, children: [...results], elapsedMs: performance.now() - started });
+    });
+  }
+
+  function spawn(data) {
+    if (identities.has(data.processId) || typeof data.processId !== "string" ||
+        !data.processId.startsWith(jobId + ":") || identities.size >= 256) throw new Error("Invalid virtual process identity");
+    identities.add(data.processId);
+    if (!(data.control instanceof SharedArrayBuffer) || data.control.growable || data.control.byteLength !== 8) throw new Error("Invalid process control");
+    const control = new Int32Array(data.control);
+    if (Atomics.load(control, 0) !== 0 || Atomics.load(control, 1) !== 0) throw new Error("Invalid initial process control");
+    const input = attachBytePipe(data.channels.stdin, "reader");
+    const output = attachBytePipe(data.channels.stdout, "writer");
+    const stderr = attachBytePipe(data.channels.stderr, "writer");
+    let process;
+    let writes = Promise.resolve();
+    const mergedOutput = bytes => {
+      writes = writes.then(() => output.writeAsync(bytes));
+      return writes;
+    };
+    const child = { abort() {
+      Atomics.store(control, 0, 2); Atomics.notify(control, 0);
+      for (const endpoint of [input, output, stderr]) endpoint.cancel();
+      process?.cancel();
+    } };
+    active.set(data.processId, child);
+    try {
+      if (!Array.isArray(data.args) || !Object.hasOwn(solvers, data.args[0])) throw new Error("Unsupported virtual solver");
+      process = startSolverProcess({ ...solvers[data.args[0]], args: data.args,
+        timeoutMs: Math.max(1, Math.ceil(timeoutMs - (performance.now() - started))),
+        workerFactory: solverWorkerFactory,
+        onStdout: mergedOutput,
+        onStderr: mergedOutput,
+      });
+      // The two solver streams share one writer, just as subprocess.STDOUT does.
+      void (async () => {
+        try {
+          for (;;) {
+            const bytes = await input.readAsync(64 * 1024);
+            if (bytes.length === 0) { process.endInput(); return; }
+            await process.write(bytes);
+          }
+        } catch (error) { if (active.has(data.processId)) process.cancel(); }
+      })();
+      child.completion = process.completion.then(result => {
+        results.push({ processId: data.processId, args: data.args, ...result });
+        if (terminal) return;
+        if (result.status !== "exited" || !result.integrityVerified) child.abort();
+        else {
+          output.end(); stderr.end();
+          Atomics.store(control, 1, result.exitCode);
+          Atomics.store(control, 0, 1); Atomics.notify(control, 0);
+        }
+      }).catch(() => finish("transport-error")).finally(() => active.delete(data.processId));
+    } catch (error) { child.abort(); throw error; }
+  }
+
+  function message({ data }) {
+    if (terminal || data?.jobId !== jobId) return;
+    try {
+      if (data.type === "spawn-solver") spawn(data);
+      else if (data.type === "stop-process") active.get(data.processId)?.abort();
+      else if (data.type === "stdout" || data.type === "stderr") {
+        if (typeof data.text !== "string") throw new Error("Invalid formal log");
+        outputBytes += new TextEncoder().encode(data.text).length;
+        if (outputBytes > 8 * 1024 * 1024) { finish("output-limit"); return; }
+        (data.type === "stdout" ? onStdout : onStderr)(data.text);
+      } else if (data.type === "exit" && Number.isInteger(data.exitCode) && data.exitCode >= 0 && data.exitCode <= 255 && data.integrityVerified === true) {
+        if (!Array.isArray(data.files) || data.files.length > 4096) throw new Error("Invalid formal result files");
+        const paths = new Set();
+        let bytes = 0;
+        for (const file of data.files) {
+          if (!safePath(file?.path) || file.path.includes("\0") || paths.has(file.path) || !(file.bytes instanceof Uint8Array)) throw new Error("Invalid formal result file");
+          paths.add(file.path); bytes += file.bytes.length;
+          if (bytes > 32 * 1024 * 1024) throw new Error("Formal result file limit");
+        }
+        if (active.size || results.some(result => result.status !== "exited" || !result.integrityVerified || result.exitCode !== 0)) {
+          finish("transport-error", { error: "Formal subprocess did not terminate cleanly", exitCode: data.exitCode });
+        } else finish("exited", data);
+      } else if (data.type === "failure" && FAILURE_STATUSES.has(data.status) && typeof data.error === "string" && data.error.length <= 1024) finish(data.status, { error: data.error });
+      else throw new Error("Invalid formal worker message");
+    } catch (error) { finish("protocol-error", { error: String(error.message).slice(0, 1024) }); }
+  }
+  function error(event) { event.preventDefault?.(); finish("crashed", { error: String(event.message).slice(0, 1024) }); }
+  function decodingError() { finish("protocol-error"); }
+  worker.addEventListener("message", message);
+  worker.addEventListener("error", error);
+  worker.addEventListener("messageerror", decodingError);
+  try { worker.postMessage({ jobId, sources, manifest, entrypoint, args, files }); }
+  catch (error) { finish("setup-error", { error: String(error.message).slice(0, 1024) }); }
+  return Object.freeze({ jobId, completion, cancel() { finish("cancelled"); } });
+}

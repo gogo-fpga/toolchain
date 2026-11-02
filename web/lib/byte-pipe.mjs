@@ -112,9 +112,9 @@ export function attachBytePipe(descriptor, role) {
     await Atomics.waitAsync(header, EPOCH, epoch).value;
   }
 
-  function waitSync(epoch) {
+  function waitSync(epoch, timeoutMs = Infinity) {
     if (typeof globalThis.document !== "undefined") throw new BytePipeError("worker-required");
-    Atomics.wait(header, EPOCH, epoch);
+    Atomics.wait(header, EPOCH, epoch, timeoutMs);
   }
 
   const common = {
@@ -145,6 +145,29 @@ export function attachBytePipe(descriptor, role) {
     }
     return Object.freeze({
       ...common,
+      readAvailable(maxBytes) {
+        enter(maxBytes);
+        try { return take(maxBytes); }
+        finally { pending = false; }
+      },
+      waitReadableSync(timeoutMs) {
+        if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 300_000) {
+          throw new RangeError("Invalid byte pipe wait time");
+        }
+        enter(0);
+        const deadline = performance.now() + timeoutMs;
+        try {
+          for (;;) {
+            const epoch = Atomics.load(header, EPOCH);
+            const { read, write, state } = snapshot();
+            checkState(state);
+            if (read !== write || state === EOF) return true;
+            const remaining = deadline - performance.now();
+            if (remaining <= 0) return false;
+            waitSync(epoch, remaining);
+          }
+        } finally { pending = false; }
+      },
       readSync(maxBytes) {
         enter(maxBytes);
         try {

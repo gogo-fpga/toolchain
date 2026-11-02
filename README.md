@@ -16,6 +16,8 @@ T0 から T3 の編集・保存・合成・配置配線・ビットストリー�
 
 [Yices2・Z3のnative/WASI正式比較](docs/experiments/S15-solver-native-wasi.md)は、各5回とA/A 2回、全329行31列・294負の対照の監査を実施しました。bit-vector・array・長い応答とworker異常系を実CLIで検査し、構文エラーの終了0やunknownを証明成功へ読み替えません。これはNodeの検査経路であり、SBY接続・配布・ブラウザーの形式検証画面を含むT6全体は未完了です。
 
+[原本SMTBMCのPyodide接続](docs/experiments/S15-sby-process.md)は、process・pipe・待機だけを仮想化し、両solverのBMC・basecase・induction・coverをnativeと比較しています。予備16条件ではログ・VCD・YW・testbenchが一致し、13列CSVの独立監査も通りました。SBY全体の接続、清浄commitでの正式反復、元回路による反例検証と画面統合は残っています。
+
 ## IDE 画面
 
 IDE は、左にプロジェクトのファイル一覧、中央に HDL エディターとログ・問題・成果物・波形、右にボード情報と書き込み設定を表示します。プロジェクトと設計ファイルはブラウザー内の OPFS に保存し、ZIP で書き出し・読み込みができます。設計データをサーバーへ送信せず、合成・配置配線・ビットストリーム作成をブラウザー内で実行します。
