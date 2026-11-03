@@ -132,6 +132,7 @@ export function verifyGhdlReplay(plan, execution) {
     assert.ok(begin && Number(begin[1]) === plan.steps && Number(begin[2]) === plan.ports.length &&
       Number(begin[3]) >= -15 && Number(begin[3]) <= -9, "Missing GHDL startup marker");
     const observed = [], diagnostics = [], failures = [], trailing = [];
+    const designFiles = new Set(plan.properties.map((property) => property.source.slice(0, property.source.lastIndexOf(":"))));
     for (let index = 0; index < lines.length; index++) {
       const line = lines[index];
       if (line.startsWith("FORMAL_GHDL_")) { observed.push(line); continue; }
@@ -139,15 +140,23 @@ export function verifyGhdlReplay(plan, execution) {
       assert.ok(match, "Unknown original VHDL diagnostic");
       const [, file, sourceLine, column, digits, unit, type] = match;
       const kind = type === "psl cover" ? "cover" : type === "psl assumption" ? "assume" : "assert";
+      if (!designFiles.has(file)) {
+        // Library-internal diagnostics (e.g. NUMERIC_STD metavalue warnings) are
+        // not design properties; skip their instance/from continuation lines.
+        while (lines[index + 1]?.startsWith("  instance:") || lines[index + 1]?.startsWith("  from:")) index++;
+        continue;
+      }
       const property = propertyAt(plan, file, Number(sourceLine), kind);
       assert.ok(property.source.startsWith(`${file}:${sourceLine}.${column}-`), "Original VHDL diagnostic column mismatch");
-      assert.match(lines[++index] ?? "", new RegExp(`^  instance: /${plan.top}(?:/[a-z0-9_/]+)?$`), "Missing VHDL diagnostic instance");
+      const instance = new RegExp(`^  instance: (/${plan.top}(?:/[a-z0-9_/]+)?)$`).exec(lines[++index] ?? "");
+      const dotted = "/" + property.id.replaceAll(".", "/");
+      assert.ok(instance && (instance[1] === `/${plan.top}` || instance[1].endsWith(dotted)), "Missing or mismatched VHDL diagnostic instance");
       if (lines[index + 1]?.startsWith("  from: process ")) {
         const origin = lines[++index];
         const annotation = / at ([^:\r\n]+):(\d+)$/.exec(origin);
         if (annotation) assert.ok(annotation[1] === file && Number(annotation[2]) === Number(sourceLine), "Original VHDL process source mismatch");
         const process = annotation ? origin.slice(0, annotation.index) : origin;
-        assert.ok(process.endsWith(`.${property.id}`), "Original VHDL diagnostic label mismatch");
+        assert.ok(process.endsWith(`.${property.id.split(".").at(-1)}`), "Original VHDL diagnostic label mismatch");
       }
       const ns = timeNs(digits, unit), psl = type.startsWith("psl ");
       assert.ok(observed.length > 0 && observed.length < plan.markers.length &&
