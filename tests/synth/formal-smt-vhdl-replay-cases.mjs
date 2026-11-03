@@ -178,6 +178,6 @@ begin
   P_BOUND: assert y = '1';
 end architecture;
 `, depth: 3, status: "ERROR", replay: "rejected" },
-].map(fixture => ({ mode: "bmc", status: "FAIL", replay: "verified", edge: "posedge", clock: null, psl: false, ...fixture,
+].map(fixture => ({ mode: "bmc", status: "FAIL", replay: "verified", edge: "posedge", clock: null, psl: false, vhdl: true, ...fixture,
   kind: fixture.status === "ERROR" ? "tool-error" : fixture.status === "PASS" ? "bounded-pass" : "counterexample",
   witness: !["PASS", "ERROR"].includes(fixture.status) }));
