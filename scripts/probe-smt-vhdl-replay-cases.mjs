@@ -222,7 +222,7 @@ for (const solver of solvers) {
     const config = { ...fixture, phase, top: "top", document: documents[0] };
     const base = { solver, case: fixture.name, phase, sourceSha256: digest(fixture.source), vhdlSha256: digest(fixture.source),
       loweredSha256: digest(lowered), designSha256: digest(JSON.stringify(documents[0])) };
-    if (fixture.kind === "tool-error" && fixture.name === "combinational-loop") {
+    if (fixture.kind === "tool-error") {
       const label = solver + "-" + fixture.name;
       save(label + "/top.vhd", fixture.source); save(label + "/top.v", lowered); json(label + "/upstream.json", reference);
       record({ ...base, origin: "native", runtime: "none", target: "none", expected: "tool-error", actual: reference.kind, exitCode: reference.exitCode, elapsedMs: reference.elapsedMs });
