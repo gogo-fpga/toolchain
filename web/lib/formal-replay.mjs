@@ -91,7 +91,7 @@ export function createSatReplay({ document, top, witness, clock = null, edge = "
   return buildReplay({ inventory, ports, top, clock, edge, steps });
 }
 
-export async function createSmtReplay({ document, top, capture, model, vcd, clock = null,
+export async function createSmtReplay({ document, top, capture, model, vcd, clock = null, observe,
   edge = "posedge", mode = "bmc", phase = "bmc", depth }) {
   if (typeof top !== "string" || !identifier.test(top) || !Number.isSafeInteger(depth) || depth < 1 || depth > 1024) {
     throw new Error("Invalid replay top or depth");
@@ -180,6 +180,18 @@ export async function createSmtReplay({ document, top, capture, model, vcd, cloc
   const [modelSha256, traceSha256] = await Promise.all(inputs.map(digest));
   if (modelSha256 !== record.model.sha256 || traceSha256 !== trace.sha256) throw new Error("SMT replay model or VCD hash mismatch");
   const observations = [...signals.values()].filter(signal => signal.clock === null && !Object.hasOwn(module.ports, signal.name));
+  if (observe !== undefined) {
+    // Some recorded internal nets are solver-arbitrary (e.g. dead fragments left
+    // unconstrained in the smt2 model). Callers may restrict checks to named
+    // signals such as state element outputs; every name must be a real signal.
+    if (!Array.isArray(observe) || observe.some(name => !observations.some(signal => signal.name === name))) {
+      throw new Error("SMT replay observation names must match recorded internal signals");
+    }
+    const keep = new Set(observe);
+    for (let index = observations.length - 1; index >= 0; index--) {
+      if (!keep.has(observations[index].name)) observations.splice(index, 1);
+    }
+  }
   return { ...buildReplay({ inventory, ports, observations, top, clock, edge, steps: trace.steps.length }),
     origin: "smt", phase, modelSha256, traceSha256 };
 }

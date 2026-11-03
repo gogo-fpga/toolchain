@@ -38,7 +38,7 @@ export function readSbyStatus(text, exitCode, stdout) {
   return status;
 }
 
-export function probeNative({ manifestFile, out, formal = false, solver, cases = sbyCases }) {
+export function probeNative({ manifestFile, out, formal = false, solver, cases = sbyCases, casesFile = null }) {
   const solvers = selectFormalSolvers(solver);
   const directory = path.resolve(out);
   assert.ok(!/[\s;'"`$\\]/.test(directory), "The upstream native shell requires an unambiguous workdir");
@@ -51,7 +51,12 @@ export function probeNative({ manifestFile, out, formal = false, solver, cases =
   const nativeCommands = { yosys, "yosys-smtbmc": `${quoted(python)} ${quoted(path.join(root, "vendor/yosys/backends/smt2/smtbmc.py"))}`,
     "yosys-witness": `${quoted(python)} ${quoted(path.join(root, "vendor/yosys/backends/smt2/witness.py"))}` };
   const sourceFiles = ["scripts/probe-upstream-formal.mjs", "tests/synth/formal-sby-cases.mjs", "tests/synth/solver-protocol-helpers.mjs"];
-  if (cases !== sbyCases) sourceFiles.push("tests/synth/formal-smt-replay-cases.mjs");
+  if (cases !== sbyCases) sourceFiles.push(casesFile);
+  const ghdl = path.join(root, "build/ghdl-native/bin/ghdl");
+  const lowers = cases.some(fixture => fixture.vhdl);
+  if (lowers) for (const input of ["patches/ghdl/formal-verilog.patch", "patches/ghdl/formal-verilog-driver.patch"]) {
+    sourceFiles.push(input);
+  }
   for (const name of ["sby", "click", "yosys"]) {
     const prefix = name === "yosys" ? "vendor/yosys/backends/smt2" : name === "sby" ? "vendor/sby/sbysrc" : "vendor/click/src/click";
     sourceFiles.push(...filesBelow(path.join(root, prefix)).filter(p => p.endsWith(".py")).map(p => `${prefix}/${p}`));
@@ -65,6 +70,11 @@ export function probeNative({ manifestFile, out, formal = false, solver, cases =
     yosys: { sha256: digest(readFileSync(yosys)), version: execFileSync(yosys, ["-V"], { encoding: "utf8" }).trim() },
     sources: Object.fromEntries(sourceFiles.map(p => [p, digest(readFileSync(path.join(root, p)))])),
   };
+  if (lowers) {
+    const version = spawnSync(ghdl, ["--version"], { encoding: "utf8", timeout: 30_000 });
+    assert.ifError(version.error); assert.equal(version.status, 0);
+    metadata.ghdl = { path: "build/ghdl-native/bin/ghdl", sha256: digest(readFileSync(ghdl)), version: `${version.stdout}${version.stderr}`.trim().split("\n")[0] };
+  }
   writeFileSync(path.join(directory, "metadata.json"), JSON.stringify(metadata, null, 2) + "\n");
   const rows = [];
   for (const solver of solvers) {
@@ -80,7 +90,22 @@ export function probeNative({ manifestFile, out, formal = false, solver, cases =
     for (const fixture of cases) {
       const working = path.join(directory, `${solver}-${fixture.name}`);
       mkdirSync(working);
-      writeFileSync(path.join(working, "top.v"), fixture.source);
+      if (fixture.vhdl) {
+        writeFileSync(path.join(working, "top.vhd"), fixture.source);
+        const flags = ["--std=08", ...(fixture.psl ? ["-fpsl"] : [])];
+        const analyze = spawnSync(ghdl, ["-a", ...flags, "top.vhd"], { cwd: working, encoding: "utf8", timeout: 30_000, maxBuffer: 8 * 1024 * 1024 });
+        writeFileSync(path.join(working, "analyze.stdout"), analyze.stdout ?? "");
+        writeFileSync(path.join(working, "analyze.stderr"), analyze.stderr ?? "");
+        assert.ifError(analyze.error); assert.equal(analyze.status, 0, analyze.stderr);
+        const compiled = spawnSync(ghdl, ["--synth", ...flags, "--out=verilog", "--formal-verilog", "top"], { cwd: working, encoding: "utf8", timeout: 30_000, maxBuffer: 8 * 1024 * 1024 });
+        writeFileSync(path.join(working, "lower.stdout"), compiled.stdout);
+        writeFileSync(path.join(working, "lower.stderr"), compiled.stderr);
+        assert.ifError(compiled.error); assert.equal(compiled.status, 0, compiled.stderr);
+        assert.ok(compiled.stdout.trim(), "Missing lowered Verilog");
+        writeFileSync(path.join(working, "top.v"), compiled.stdout);
+      } else {
+        writeFileSync(path.join(working, "top.v"), fixture.source);
+      }
       writeFileSync(path.join(working, "job.sby"), sbyConfig(fixture, solver));
       const args = [path.join(root, "vendor/sby/sbysrc/sby.py"), "--yosys", yosys,
         "--smtbmc", nativeCommands["yosys-smtbmc"], "--witness", nativeCommands["yosys-witness"],
@@ -125,8 +150,10 @@ export function probeNative({ manifestFile, out, formal = false, solver, cases =
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const { values } = parseArgs({ options: { probes: { type: "string" }, out: { type: "string" }, solver: { type: "string" }, suite: { type: "string", default: "standard" }, formal: { type: "boolean", default: false } } });
   assert.ok(values.probes && values.out, "Use --probes MANIFEST --out NEW_DIRECTORY");
-  assert.ok(["standard", "replay"].includes(values.suite), "Unknown native fixture suite");
+  assert.ok(["standard", "replay", "vhdl-replay"].includes(values.suite), "Unknown native fixture suite");
+  const suiteFiles = { replay: "../tests/synth/formal-smt-replay-cases.mjs", "vhdl-replay": "../tests/synth/formal-smt-vhdl-replay-cases.mjs" };
+  const cases = values.suite === "standard" ? sbyCases : (await import(suiteFiles[values.suite]))[values.suite === "replay" ? "smtReplayCases" : "smtVhdlReplayCases"];
   const rows = probeNative({ manifestFile: values.probes, out: values.out, formal: values.formal, solver: values.solver,
-    cases: values.suite === "replay" ? (await import("../tests/synth/formal-smt-replay-cases.mjs")).smtReplayCases : sbyCases });
+    cases, casesFile: values.suite === "standard" ? null : suiteFiles[values.suite].replace(/^\.\.\//, "") });
   if (rows.some(row => row.error)) process.exitCode = 1;
 }

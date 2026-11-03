@@ -39,7 +39,7 @@ depth ${fixture.depth}
 smtbmc ${solver === "yices2" ? "yices" : solver}
 
 [script]
-read -formal top.v
+read -formal ${fixture.vhdl ? "-icells " : ""}top.v
 prep -top top
 
 [files]
