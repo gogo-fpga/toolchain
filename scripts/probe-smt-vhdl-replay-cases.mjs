@@ -310,9 +310,9 @@ for (const solver of solvers) {
       const ghdlPlan = createGhdlReplay(replay, { top: "top", psl: fixture.psl });
       save(label + "/ghdl-replay.txt", ghdlPlan.content); json(label + "/ghdl-plan.json", { ...ghdlPlan, content: undefined, contentSha256: digest(ghdlPlan.content) });
       const target = label + "/replay-vhdl";
-      const started = performance.now();
+      const startedGhdl = performance.now();
       const execution = runGhdlReplay({ native: ghdlNative, plugin: replayPlugin, directory: path.join(out, target), source: fixture.source, plan: ghdlPlan });
-      const elapsedMs = performance.now() - started;
+      const elapsedMs = performance.now() - startedGhdl;
       const verification = verifyGhdlReplay(ghdlPlan, execution);
       json(target + "/execution.json", { status: execution.status, elapsedMs }); json(target + "/verification.json", verification);
       record({ ...fields, runtime: "ghdl", target: "vhdl", expected: "verified", actual: verification.status, exitCode: execution.status,
